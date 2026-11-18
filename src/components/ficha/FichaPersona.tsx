@@ -384,6 +384,8 @@ function VistaVentas({ e, p, ventaResaltada, conChat }: { e: EstadoApp; p: Perso
   /* La venta que se elimina de verdad (EliminarVenta). */
   const [eliminar, setEliminar] = useState<Venta | null>(null);
   const [nuevaVenta, setNuevaVenta] = useState(false);
+  /* La reserva que se completa (el asistente de venta, sobre esa misma venta). */
+  const [completar, setCompletar] = useState<Venta | null>(null);
   const plegado = usePlegado();
 
   /* Si se abrió desde una venta, esa venta a la vista. */
@@ -453,6 +455,7 @@ function VistaVentas({ e, p, ventaResaltada, conChat }: { e: EstadoApp; p: Perso
                     onEditar={() => setEditar(desdeVenta(e, v))}
                     onEstado={(estado) => setBaja({ venta: v, estado })}
                     onEliminar={() => setEliminar(v)}
+                    onCompletar={() => setCompletar(v)}
                   />
                 );
               })}
@@ -478,6 +481,14 @@ function VistaVentas({ e, p, ventaResaltada, conChat }: { e: EstadoApp; p: Perso
           cliente={{ contactoId: p.leads[0]?.id ?? p.clave, nombre: p.nombre, email: p.email }}
           onCerrar={() => setNuevaVenta(false)}
           onListo={(_id, nombre) => { setNuevaVenta(false); toast(`Venta de ${nombre} registrada.`); }}
+        />
+      )}
+      {completar && (
+        <AsistenteVenta
+          completar={completar.id}
+          cliente={{ contactoId: p.leads[0]?.id ?? p.clave, nombre: p.nombre, email: p.email }}
+          onCerrar={() => setCompletar(null)}
+          onListo={() => setCompletar(null)}
         />
       )}
     </>

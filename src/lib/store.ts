@@ -54,6 +54,7 @@ import { atarPropuesta, conciliarReembolsos, quienDelReembolso, type ReembolsoCr
 import { porcentajeDelSetterMarcado, setterDeAgendas } from "./setter-agendas";
 import { paseDeLaVenta, responsableTrasPase } from "./pasar-llamadas";
 import { rearmarPlan } from "./cambio-de-plan";
+import { planParaCompletar, problemaDeCompletar } from "./reservas";
 import { anotarRechazo, motivoDeLaBase, olvidarRechazo } from "./rechazos";
 import {
   cambiosDeChequeo, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
@@ -3126,6 +3127,120 @@ export const acciones = {
     empujarTanda(t);
     if (responsableNuevo) empujarUpdate("leads", [responsableNuevo.id], { responsable: responsableNuevo.responsable });
     return venta.id;
+  },
+
+  /* ---------- Completar una reserva (Aldana, 18/11) ----------
+     Quien dejó sólo la reserva y ahora paga el resto NO es una venta nueva: es la misma, que pasa a valer el programa
+     entero (lib/reservas.ts). Carlos Juca: reserva de 400 el 16/11 y 2.600 al otro día; como no había por dónde completarla,
+     se cargó otra venta de 3.000 con la reserva adentro y quedaron 3.400 cobrados.
+
+     La reserva cobrada no se toca (su cobro, su contrato, la fecha de la venta). Sube el valor de la venta, entran las
+     cuotas de lo que falta y, si algo ya se pagó, sus cobros (igual que al registrar un pago). Con el primer pago del
+     programa el alumno arranca ese día, y la llamada que había quedado en «Reserva» pasa a compra. */
+  completarReserva(datos: {
+    ventaId: ID;
+    /* Si al final compra otro servicio (reservó Hackear AI y entra al Downsell). */
+    productoId?: ID;
+    /* Lo que vale el programa entero, con la reserva adentro. */
+    precioAcordado: number;
+    /* Las cuotas de lo que falta (sin la reserva). */
+    cuotas: Pick<Cuota, "id" | "monto" | "vence">[];
+    /* Lo que ya entró de esas cuotas. */
+    cobros: (DatosCobro & { cuotaId: ID })[];
+    notas?: string;
+  }): { ok: true } | { ok: false; error: string } {
+    const e = snapshot();
+    const venta = e.ventas.find((v) => v.id === datos.ventaId);
+    const cuotasVenta = e.cuotas.filter((c) => c.ventaId === datos.ventaId);
+    const idsCuotas = new Set(cuotasVenta.map((c) => c.id));
+    const pagosVenta = e.pagos.filter((p) => idsCuotas.has(p.cuotaId));
+    const precio = Math.round(datos.precioAcordado * 100) / 100;
+    const pedido = { precio, cuotas: datos.cuotas };
+    const problema = problemaDeCompletar(venta, cuotasVenta, pagosVenta, pedido);
+    if (problema || !venta) return { ok: false, error: problema ?? "No encuentro esa venta." };
+    const plan = planParaCompletar(venta, cuotasVenta, pagosVenta, pedido);
+    const idsNuevas = new Set(plan.nuevas.map((c) => c.id));
+    const cobros = datos.cobros.filter((c) => c.monto > 0.001 && idsNuevas.has(c.cuotaId));
+
+    const productoId = datos.productoId ?? venta.productoId;
+    const cuando = ahora();
+    const ventaNueva: Venta = {
+      ...venta, precioAcordado: precio, productoId,
+      ...(datos.notas !== undefined ? { notas: datos.notas } : {}),
+      /* Queda dicho que nació como reserva y cuánto valía: con eso se audita. */
+      extra: { ...(venta.extra ?? {}), reservaCompletada: { en: cuando, por: quienSoy(e), valia: venta.precioAcordado } },
+    };
+
+    /* El alumno de esta venta: el plan sigue al producto, y con el primer pago del programa arranca ese día (hasta ahí era
+       una reserva: no corrían los días). */
+    const alumno = e.alumnos.find((a) => a.ventaId === venta.id);
+    const primerCobro = cobros.map((c) => c.fecha).filter(Boolean).sort()[0];
+    const planNuevo = planDeVenta(e, ventaNueva);
+    const alumnoNuevo: Alumno | null = alumno ? (() => {
+      const cambios: Partial<Alumno> = {};
+      if (productoId !== venta.productoId && planNuevo && alumno.plan !== planNuevo) cambios.plan = planNuevo;
+      if (primerCobro && diaDeNegocio(primerCobro) > diaDeNegocio(alumno.inicio)) cambios.inicio = primerCobro;
+      return Object.keys(cambios).length ? { ...alumno, ...cambios } : null;
+    })() : null;
+
+    const nombreProd = (id?: ID) => e.productos.find((p) => p.id === id)?.nombre ?? "Venta";
+    const detalle = `${venta.contactoNombre} completó la reserva: la venta pasó de ${venta.precioAcordado} a ${precio}`
+      + `${productoId !== venta.productoId ? ` y de ${nombreProd(venta.productoId)} a ${nombreProd(productoId)}` : ""}. `
+      + `Ya había pagado ${plan.cobrado}; lo que falta (${plan.falta}) quedó en ${plan.nuevas.length} ${plan.nuevas.length === 1 ? "cuota" : "cuotas"}.`;
+    const { lista, nuevo } = registrar(e, "transaccion", venta.id, venta.contactoNombre, "actualizo", detalle);
+    let actividad = lista;
+    const registros = [nuevo];
+    if (alumnoNuevo && alumno && alumnoNuevo.inicio !== alumno.inicio) {
+      const r = registrar(
+        { ...e, actividad }, "alumno", alumnoNuevo.id, alumnoNuevo.nombre, "actualizo",
+        `${alumnoNuevo.nombre} completó la reserva: su programa arranca el ${diaDeNegocio(alumnoNuevo.inicio)} (antes ${diaDeNegocio(alumno.inicio)}).`,
+      );
+      actividad = r.lista;
+      registros.push(r.nuevo);
+    }
+
+    /* La llamada de la venta había quedado en «Reserva»: si ya entró plata del programa, pasa a la compra que corresponde.
+       Si alguien le puso otro estado a mano, no se pisa. */
+    const t = nuevaTanda();
+    const llamada = venta.sesionId ? e.sesiones.find((x) => x.id === venta.sesionId) : undefined;
+    if (llamada && cobros.length > 0 && puedo("sesiones")) {
+      const opciones = opcionesDe(e.ajustes, "estadoLlamada");
+      const deReserva = opciones.find((o) => o.oportunidad === "reserva" && o.nombre === llamada.estadoLlamada);
+      const tipo: OportunidadCrm = e.productos.find((p) => p.id === productoId)?.tipo === "downsell" ? "downsell"
+        : plan.nuevas.length > 1 ? "compra-cuotas" : "compra-full";
+      const op = deReserva ? opcionDeCompraPara(opciones, tipo) : undefined;
+      if (op && op.nombre !== llamada.estadoLlamada && op.oportunidad !== "reserva") {
+        cargarLlamadas(t, e, [{
+          id: llamada.id, cambios: { estadoLlamada: op.nombre },
+          detalle: `${llamada.invitado}: Estado de Llamada → ${op.nombre} (completó la reserva).`,
+        }]);
+      }
+    }
+
+    const quitar = new Set(plan.quitadas.map((c) => c.id));
+    guardar(conTanda({
+      ...e,
+      ventas: e.ventas.map((v) => (v.id === venta.id ? ventaNueva : v)),
+      cuotas: [...plan.nuevas, ...e.cuotas.filter((c) => !quitar.has(c.id))],
+      alumnos: alumnoNuevo ? e.alumnos.map((a) => (a.id === alumnoNuevo.id ? alumnoNuevo : a)) : e.alumnos,
+      actividad,
+    }, t));
+    empujar({
+      tipo: "update", tabla: "ventas", ids: [venta.id],
+      cambios: { precioAcordado: precio, productoId: productoId ?? null, notas: ventaNueva.notas ?? "", extra: ventaNueva.extra },
+    });
+    if (quitar.size) empujar({ tipo: "delete", tabla: "cuotas", ids: [...quitar] });
+    empujar({ tipo: "upsert", tabla: "cuotas", filas: plan.nuevas });
+    if (alumnoNuevo) empujar({ tipo: "update", tabla: "alumnos", ids: [alumnoNuevo.id], cambios: { plan: alumnoNuevo.plan, inicio: alumnoNuevo.inicio } });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: registros });
+    empujarTanda(t);
+
+    /* Lo que ya entró, cuota por cuota, por el mismo camino que cualquier pago (concilia el de la pasarela, anota quién lo cargó). */
+    for (const c of plan.nuevas) {
+      const suyos = cobros.filter((x) => x.cuotaId === c.id);
+      if (suyos.length) acciones.registrarPago({ cuotaId: c.id, cobros: suyos, reajuste: "pendiente" });
+    }
+    return { ok: true };
   },
 
   /* ---------- Pago de una cuota ya cargada ----------

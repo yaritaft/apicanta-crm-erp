@@ -25,6 +25,7 @@ import { estaPorAcreditar, fechaDeAcreditacion, retenciones } from "@/lib/acredi
 import { AccionesDeCuota } from "@/components/cobros/AccionesDeCuota";
 import { CambiarPlan } from "@/components/cobros/CambiarPlan";
 import { ContratoCard } from "@/components/contratos/ContratoCard";
+import { reservaSuelta } from "@/lib/reservas";
 
 /* ==================================================================
    Una venta dentro de la ficha: qué compró, cuánto lleva pagado y cada
@@ -42,7 +43,10 @@ const ESTADO: Record<EstadoVenta, { texto: string; variante: "success" | "neutra
   reembolsada: { texto: "Reembolsada", variante: "danger" },
 };
 
-export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar, onEditar, onEstado, onEditarPago, onEliminar }: {
+export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar, onEditar, onEstado, onEditarPago, onEliminar, onCompletar }: {
+  /* La venta es sólo la reserva y la persona paga lo que falta: se completa ESTA venta (no se carga otra). Abre el
+     asistente en ese modo (lib/reservas.ts). */
+  onCompletar?: () => void;
   e: EstadoApp; venta: Venta; resaltada?: boolean;
   abierta: boolean; onAlternar: () => void;
   onPagar: (cuota: Cuota) => void;
@@ -69,6 +73,8 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
   const setter = e.equipo.find((x) => x.id === venta.setterId)?.nombre;
   const activa = venta.estado === "activa";
   const cuotasVenta = e.cuotas.filter((c) => c.ventaId === venta.id);
+  /* Sólo la reserva, sin nada más por cobrar: no es una venta «cobrada», es una reserva que falta completar. */
+  const suelta = reservaSuelta(venta, cuotasVenta);
   /* Los cobros de una cuenta que retiene (Hotmart) que todavía no se acreditaron: no cuentan como plata hasta ese día. */
   const retencion = retenciones(e.procesadores);
   const filas = saldo.cuotas.map((c) => {
@@ -78,6 +84,7 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
 
   /* Plegada, lo que importa del cobro en una palabra. */
   const resumen = !activa ? null
+    : suelta ? <Badge variante="accent">Sólo la reserva</Badge>
     : saldo.saldo <= 0.01 ? <Badge variante="success"><Check size={13} />Cobrada</Badge>
     : filas.some((f) => f.vencida) ? <Badge variante="danger"><AlertTriangle size={13} />Vencida · faltan {M(saldo.saldo)}</Badge>
     : <Badge variante="accent">Faltan {M(saldo.saldo)}</Badge>;
@@ -92,6 +99,7 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
           <span className="row-wrap" style={{ gap: 8 }}>
             <span className="t-strong" style={{ fontSize: 16 }}>{producto}</span>
             <Badge variante={ESTADO[venta.estado].variante}>{ESTADO[venta.estado].texto}</Badge>
+            {suelta && <Badge variante="accent">Reserva</Badge>}
             {venta.excluidoMarketing && <Badge variante="warning">Excluida de marketing</Badge>}
           </span>
           <span className="t-sm t-subtle" style={{ display: "block", marginTop: 2 }}>
@@ -131,6 +139,19 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
 
       {abierta && (
         <div className="venta-card__cuerpo" id={`venta-${venta.id}-cuerpo`}>
+          {/* Carlos Juca (18/11): dejó la reserva, pagó el resto y se le cargó OTRA venta con la reserva adentro. El camino es éste. */}
+          {suelta && (
+            <div className="aviso-cuotas" role="status" data-aviso="reserva-suelta">
+              <span className="t-strong">Es sólo la reserva: todavía no entró al programa</span>
+              <span className="t-sm t-muted">
+                Pagó {M(suelta.pagado, 2)} de reserva. Cuando pague lo que falta, <strong>no cargues otra venta</strong>: completá ésta y pasa a ser
+                la venta del programa entero, con la reserva adentro.
+              </span>
+              {onCompletar && puedeEditar(acceso, "ventas") && (
+                <Button sm variante="primary" style={{ alignSelf: "flex-start" }} onClick={onCompletar}>Completar la reserva · pagó lo que faltaba</Button>
+              )}
+            </div>
+          )}
           <div>
             <div className="row t-sm" style={{ marginBottom: 6 }}>
               <span className="t-subtle">Cobrado</span>

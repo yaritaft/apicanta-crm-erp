@@ -19,6 +19,11 @@ interface Pregunta { clave: string; pregunta: string; respuesta: React.ReactNode
 export function preguntasDeCuotas(): Pregunta[] {
   return [
     {
+      /* Aldana, 18/11 (Carlos Juca): dejó la reserva, pagó el resto y se le cargó otra venta con la reserva adentro. */
+      clave: "reserva-completa", pregunta: "Había dejado sólo la reserva y ahora paga lo que falta (o empieza a pagarlo)",
+      respuesta: <>No cargues una venta nueva: es la misma. En su ficha → Ventas, la venta de la reserva tiene el botón <strong>Completar la reserva · pagó lo que faltaba</strong>. Ponés cuánto vale el programa entero (la reserva ya queda descontada), en cuántas cuotas paga lo que falta, marcás lo que entró y sale el contrato del programa. Queda una sola venta, con la reserva adentro. Si igual abrís «Nueva venta» y elegís a esa persona, la app te avisa y te ofrece <strong>Completar esta reserva</strong>.</>,
+    },
+    {
       clave: "pago-parcial-resto-despues", pregunta: "Pagó una parte hoy y el resto lo paga en unos días",
       respuesta: <>En la ficha de la venta, en esa cuota: <strong>Registrar pago</strong> → poné lo que pagó hoy y la cuenta → en el paso <strong>«Lo que falta»</strong> dejá <strong>«Lo paga después: el resto queda en esta cuota»</strong> y elegí cuándo (En 7 días, En 15 días, A fin de mes o una fecha). La cuota pasa a vencer ese día y muestra «Faltan US$ …». Cuando llegue el resto, volvés a tocar <strong>Registrar pago</strong> en la misma cuota y queda cobrada. Las otras cuotas no se tocan.</>,
     },

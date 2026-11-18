@@ -43,6 +43,9 @@ import { nacimientoDeLaPersona } from "@/lib/persona";
 import { soloSeCobroLaReserva } from "@/lib/accesos-minimo";
 import { ventasIdenticas } from "@/lib/ventas-repetidas";
 import { AvisoVentaIdentica } from "./AvisoVentaIdentica";
+import { reservaSuelta, reservasSueltasDe, reservasSueltasPorContacto, type ReservaSuelta } from "@/lib/reservas";
+import { personaDeVenta } from "@/lib/alumnos";
+import { AvisoReservaSuelta } from "./AvisoReservaSuelta";
 
 /* ==================================================================
    Asistente de venta.
@@ -70,6 +73,8 @@ interface LineaCuota {
   monto: number;
   vence: string;
   cobros: Cobro[];
+  /* Completando una reserva: la cuota que ya estaba cobrada (la reserva). Se muestra y no se toca. */
+  fija?: boolean;
 }
 
 type PasoId = "cliente" | "producto" | "precio" | "equipo" | "plan" | "cobros" | "contrato" | "resumen";
@@ -130,6 +135,9 @@ interface Borrador {
   primerVencimiento: string;
   cuotas: LineaCuota[];
   planTocado: boolean;
+  /* Completando una reserva (lib/reservas.ts): lo que ya estaba cobrado. El plan arranca con esas líneas, fijas, y
+     reparte sólo lo que falta. Vacío en una venta nueva. */
+  fijas: LineaCuota[];
   /* Lo demás de la planilla */
   proyecto: string;
   setterId: string;
@@ -157,6 +165,24 @@ function sumarFecha(iso: string, frecuencia: Frecuencia, pasos: number): string 
 /** Reparte el precio en cuotas parejas; el resto cae en la última. */
 function armarPlan(b: Borrador): LineaCuota[] {
   const lineas: LineaCuota[] = [];
+  if (b.fijas.length > 0) {
+    /* Lo cobrado queda como está; lo que falta se reparte en cuotas que siguen la numeración. */
+    lineas.push(...b.fijas);
+    const falta = redondear(b.precioAcordado - sumar(b.fijas));
+    if (falta <= 0) return lineas;
+    const cuantas = Math.max(1, b.cantidadCuotas);
+    const parte = Math.round((falta / cuantas) * 100) / 100;
+    const desde = Math.max(0, ...b.fijas.map((c) => c.numero));
+    for (let k = 1; k <= cuantas; k++) {
+      lineas.push({
+        id: nuevoId("cuo"), numero: desde + k, esReserva: false,
+        monto: k === cuantas ? redondear(falta - parte * (cuantas - 1)) : parte,
+        vence: sumarFecha(b.primerVencimiento, b.frecuencia, k - 1),
+        cobros: [],
+      });
+    }
+    return lineas;
+  }
   if (b.soloReserva) {
     return b.reserva > 0 ? [{ id: nuevoId("cuo"), numero: 0, esReserva: true, monto: redondear(b.reserva), vence: b.fecha, cobros: [] }] : [];
   }
@@ -180,7 +206,10 @@ function armarPlan(b: Borrador): LineaCuota[] {
   return lineas;
 }
 
-export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, closerId, sesionId, onPagoDeCuota }: {
+export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, closerId, sesionId, onPagoDeCuota, completar }: {
+  /* La venta que es sólo una reserva y se viene a completar (desde su ficha): no se crea otra venta, crece ésa
+     (lib/reservas.ts). También se llega acá adentro, desde el aviso «¿Está completando su reserva?». */
+  completar?: string;
   onCerrar: () => void;
   onListo: (ventaId: string, nombre: string) => void;
   /* Si quien compró ya debe una cuota, lo que se viene a cargar puede ser
@@ -199,18 +228,27 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
   const mon = e.ajustes.monedaBase;
   const M = useCallback((n: number, d = 0) => money(n, mon, d), [mon]);
 
-  const [i, setI] = useState(cliente ? 1 : 0);
+  /* Completar una reserva: mismos pasos, sin elegir cliente ni vendedor (ya los tiene la venta). */
+  const [completarId, setCompletarId] = useState<string | undefined>(() => (completar && sePuedeCompletar(e, completar) ? completar : undefined));
+  const completando = Boolean(completarId);
+  const [i, setI] = useState(completarId ? 1 : cliente ? 1 : 0);
   const toast = useToast();
   const abrirFicha = useAbrirFicha();
   const { esDueno } = useAcceso();
   const configContratos = e.ajustes.contratos;
   const conContrato = contratosPrendidos(configContratos, esDueno);
-  const pasos = useMemo(() => (conContrato ? [...PASOS.slice(0, -1), PASO_CONTRATO, PASOS[PASOS.length - 1]] : PASOS), [conContrato]);
+  const pasos = useMemo(() => {
+    const base = completando ? PASOS.filter((x) => x.id !== "cliente" && x.id !== "equipo") : PASOS;
+    return conContrato ? [...base.slice(0, -1), PASO_CONTRATO, base[base.length - 1]] : base;
+  }, [conContrato, completando]);
 
   /* Quien carga la venta, si es del equipo: queda elegido como closer. */
   const yo = useUsuarioActual();
   const preelegido = useRef(false);
-  const [b, setB] = useState<Borrador>(() => ({ ...inicial(e, desdeMovimiento, cliente), ...(closerId ? { closerId } : {}) }));
+  const [b, setB] = useState<Borrador>(() => {
+    const reserva = completarId ? e.ventas.find((v) => v.id === completarId) : undefined;
+    return reserva ? inicialParaCompletar(e, reserva) : { ...inicial(e, desdeMovimiento, cliente), ...(closerId ? { closerId } : {}) };
+  });
   const set = useCallback((cambios: Partial<Borrador>) => setB((x) => ({ ...x, ...cambios })), []);
   /* El contrato de prueba: con los contratos en «prueba», siempre; encendidos o sólo dueños, si un dueño lo pide. */
   const modoContrato: "produccion" | "prueba" = configContratos?.estado === "prueba" || (esDueno && b.contrato.prueba) ? "prueba" : "produccion";
@@ -220,10 +258,10 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
 
   useEffect(() => {
     const m = yo.miembro;
-    if (preelegido.current || !m || !m.activo || (m.rol !== "closer" && m.rol !== "ceo")) return;
+    if (completando || preelegido.current || !m || !m.activo || (m.rol !== "closer" && m.rol !== "ceo")) return;
     preelegido.current = true;
     setB((x) => (x.closerId ? x : { ...x, closerId: m.id }));
-  }, [yo.miembro]);
+  }, [yo.miembro, completando]);
 
   /* El setter que marcó la agenda de esta persona como suya (Daniel, 24/10): viene elegido. Si el closer
      lo cambia, queda lo que eligió; si lo deja en «Sin setter», la venta igual lo toma (lo hace la base). */
@@ -233,10 +271,10 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
   );
   const setterSugerido = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (!setterMarcado || setterSugerido.current === setterMarcado) return;
+    if (completando || !setterMarcado || setterSugerido.current === setterMarcado) return;
     setterSugerido.current = setterMarcado;
     setB((x) => (x.setterId ? x : { ...x, setterId: setterMarcado }));
-  }, [setterMarcado]);
+  }, [setterMarcado, completando]);
 
   /* El plan se rearma solo mientras nadie lo toque a mano. */
   useEffect(() => {
@@ -247,7 +285,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
       const conCobros = nuevas.map((linea, k) => ({ ...linea, cobros: x.cuotas[k]?.cobros ?? [] }));
       return { ...x, cuotas: conCobros };
     });
-  }, [b.precioAcordado, b.reserva, b.soloReserva, b.cantidadCuotas, b.frecuencia, b.primerVencimiento, b.fecha, b.planTocado]);
+  }, [b.precioAcordado, b.reserva, b.soloReserva, b.cantidadCuotas, b.frecuencia, b.primerVencimiento, b.fecha, b.planTocado, b.fijas]);
 
   const closer = e.equipo.find((x) => x.id === b.closerId);
   const sinComision = Boolean(closer?.sinComision);
@@ -274,14 +312,40 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
     return ventasIdenticas(e, {
       quien: { contactoId: b.contactoId || b.contactoExistenteId, nombre: b.contactoNombre, email: b.contactoEmail, telefono: b.contactoTelefono },
       productoId: b.productoId, precioAcordado: b.precioAcordado, fecha: b.fecha,
-    });
-  }, [e, b.productoId, b.precioAcordado, b.contactoId, b.contactoExistenteId, b.contactoNombre, b.contactoEmail, b.contactoTelefono, b.fecha]);
+    }, { ignorar: completarId });
+  }, [e, b.productoId, b.precioAcordado, b.contactoId, b.contactoExistenteId, b.contactoNombre, b.contactoEmail, b.contactoTelefono, b.fecha, completarId]);
   const [otraCompra, setOtraCompra] = useState(false);
   const repetida = identicas.length > 0 && !otraCompra;
 
+  /* ¿Quien compra ya dejó una reserva que es sólo eso? Entonces lo que se viene a cargar casi seguro es el resto, y no va en
+     una venta nueva (Aldana, 18/11): se avisa apenas se elige a la persona y, en el resumen, no deja registrar otra venta
+     sin decir que es otra compra. Sólo cuenta la persona ya elegida (o su mail o teléfono): un nombre a medio escribir no. */
+  const reservas = useMemo(() => {
+    const contactoId = b.contactoId || b.contactoExistenteId;
+    /* Mientras se busca (todavía sin elegir a nadie ni cargarlo como nuevo) no se propone nada. */
+    if (completando || (!contactoId && !b.crearContacto)) return [];
+    const mail = b.contactoEmail.includes("@") ? b.contactoEmail : undefined;
+    const telefono = b.contactoTelefono.replace(/\D/g, "").length >= 8 ? b.contactoTelefono : undefined;
+    /* El nombre entero también cuenta (la misma persona cargada en dos fichas); una sola palabra no. */
+    const nombre = b.contactoNombre.trim().split(/\s+/).length >= 2 ? b.contactoNombre : undefined;
+    return reservasSueltasDe(e, { contactoId, email: mail, telefono, nombre });
+  }, [e, completando, b.contactoId, b.contactoExistenteId, b.crearContacto, b.contactoNombre, b.contactoEmail, b.contactoTelefono]);
+  const [reservaAparte, setReservaAparte] = useState(false);
+  const conReservaSuelta = reservas.length > 0 && !reservaAparte;
+  /* Pasa el asistente a completar esa reserva: mismo asistente, otra pregunta. */
+  const completarEsta = useCallback((ventaId: string) => {
+    const reserva = e.ventas.find((v) => v.id === ventaId);
+    if (!reserva) return;
+    setCompletarId(ventaId);
+    setB(inicialParaCompletar(e, reserva));
+    setI(1);
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [e]);
+  const pagadoDeReserva = sumar(b.fijas);
+
   const problema = useMemo(
-    () => validar(paso.id, b, diferenciaPlan, { e, subiendo: subiendo.size, modoContrato, repetida }),
-    [paso.id, b, diferenciaPlan, e, subiendo.size, modoContrato, repetida],
+    () => validar(paso.id, b, diferenciaPlan, { e, subiendo: subiendo.size, modoContrato, repetida, completando, conReservaSuelta }),
+    [paso.id, b, diferenciaPlan, e, subiendo.size, modoContrato, repetida, completando, conReservaSuelta],
   );
   const puedeAvanzar = problema === null;
 
@@ -301,10 +365,46 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
   const registrando = useRef(false);
   const [registrada, setRegistrada] = useState(false);
 
+  /* Completar la reserva: no nace otra venta. La misma pasa a valer el programa entero, con las cuotas de lo que falta y lo
+     que ya entró; y sale el contrato del programa (el de la reserva no da accesos). */
+  function guardarCompletada(ventaId: string) {
+    const nuevas = b.cuotas.filter((c) => !c.fija);
+    const r = acciones.completarReserva({
+      ventaId, productoId: b.productoId || undefined, precioAcordado: redondear(b.precioAcordado), notas: b.notas,
+      cuotas: nuevas.map((c) => ({ id: c.id, monto: redondear(c.monto), vence: c.vence })),
+      cobros: nuevas.flatMap((c) => c.cobros.filter((p) => p.monto > 0).map((p) => ({ ...datosDeCobro(p), cuotaId: c.id, monto: redondear(p.monto) }))),
+    });
+    if (!r.ok) {
+      registrando.current = false;
+      setRegistrada(false);
+      toast(r.error, "err");
+      return;
+    }
+    const nombre = b.contactoNombre.trim();
+    const contactoId = b.contactoId;
+    const abrir = { texto: "Abrir su ficha", onClick: () => { if (contactoId) abrirFicha(contactoId, "ventas"); } };
+    onCerrar();
+    toast(`Reserva de ${nombre} completada: quedó una sola venta de ${M(b.precioAcordado)}, con la reserva adentro.`, undefined, abrir);
+    const ct = b.contrato;
+    if (!conContrato || ct.decision !== "mandar" || !ct.datos) return;
+    const datos = ct.datos;
+    void (async () => {
+      const llego = await esperarGuardado();
+      try {
+        await pedirContrato({ accion: "crear", ventaId, sesionId, leadId: contactoId, programa: ct.programaId, datos, prueba: modoContrato === "prueba" });
+        toast(`Contrato del programa mandado a ${datos.email} para firmar.`);
+      } catch (err) {
+        const queVenta = llego ? "La reserva quedó completada" : "No pude confirmar que se haya guardado (revisá tu conexión y mirá su ficha)";
+        toast(`${queVenta}, pero el contrato NO salió y la persona no recibió nada: ${err instanceof Error ? err.message : "no se pudo"}`, "err", abrir);
+      }
+    })();
+  }
+
   function guardar() {
     if (registrando.current) return;
     registrando.current = true;
     setRegistrada(true);
+    if (completarId) { guardarCompletada(completarId); return; }
     const ventaId = nuevoId("ven");
     let contactoId = b.contactoId;
     if (!contactoId && b.crearContacto && b.contactoNombre.trim()) {
@@ -445,13 +545,14 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
   const progreso = ((i + (puedeAvanzar ? 1 : 0.35)) / pasos.length) * 100;
 
   return (
-    <div className="asistente" role="dialog" aria-modal="true" aria-label="Nueva venta">
+    <div className="asistente" role="dialog" aria-modal="true" aria-label={completando ? "Completar la reserva" : "Nueva venta"} data-modo={completando ? "completar" : undefined}>
       <div className="asistente__progreso">
         <div className="asistente__progreso-fill" style={{ width: `${progreso}%` }} />
       </div>
 
       <div className="asistente__head">
         <span className="asistente__paso-n">{i + 1} / {pasos.length}</span>
+        {completando && <Badge variante="accent">Completar la reserva de {b.contactoNombre.split(" ")[0]}</Badge>}
         <span className="asistente__ruta">
           {pasos.map((p, k) => (
             <React.Fragment key={p.id}>
@@ -466,25 +567,39 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
 
       <div className="asistente__main" ref={mainRef}>
         <div className="asistente__paso" key={paso.id}>
-          {paso.id === "cliente" && <PasoCliente b={b} set={set} e={e} M={M} onPagoDeCuota={onPagoDeCuota} />}
-          {paso.id === "producto" && <PasoProducto b={b} set={set} e={e} M={M} />}
+          {paso.id === "cliente" && (
+            <>
+              <PasoCliente b={b} set={set} e={e} M={M} onPagoDeCuota={onPagoDeCuota} />
+              <AvisoReservaSuelta e={e} reservas={reservas} nombre={b.contactoNombre} onCompletar={completarEsta} />
+            </>
+          )}
+          {paso.id === "producto" && (
+            <>
+              {/* Abierto desde la ficha se arranca acá: el aviso de la reserva va antes de elegir el servicio. */}
+              {cliente && <AvisoReservaSuelta e={e} reservas={reservas} nombre={b.contactoNombre} onCompletar={completarEsta} />}
+              <PasoProducto b={b} set={set} e={e} M={M} completando={completando} />
+            </>
+          )}
           {paso.id === "precio" && (
             <>
-              <PasoPrecio b={b} set={set} e={e} M={M} />
+              <PasoPrecio b={b} set={set} e={e} M={M} pagado={completando ? pagadoDeReserva : 0} />
               <AvisoVentaIdentica e={e} identicas={identicas} />
             </>
           )}
           {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} setterMarcado={setterMarcado}
             llamada={sesionId ? e.sesiones.find((x) => x.id === sesionId) : undefined} />}
-          {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} moneda={e.ajustes.monedaBase || "USD"} />}
+          {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} moneda={e.ajustes.monedaBase || "USD"} completando={completando} />}
           {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
           {paso.id === "contrato" && (
-            <PasoContrato b={b} setB={setB} e={e} esDueno={esDueno} modo={modoContrato} encendido={configContratos?.estado === "encendido" || configContratos?.estado === "duenos"} />
+            <PasoContrato b={b} setB={setB} e={e} esDueno={esDueno} modo={modoContrato} encendido={configContratos?.estado === "encendido" || configContratos?.estado === "duenos"} completando={completando} />
           )}
           {paso.id === "resumen" && (
             <PasoResumen
-              b={b} set={set} e={e} M={M} sinComision={sinComision} totalCobrado={totalCobrado} setterMarcado={setterMarcado}
-              aviso={<AvisoVentaIdentica e={e} identicas={identicas} confirmada={otraCompra} onConfirmar={setOtraCompra} />}
+              b={b} set={set} e={e} M={M} sinComision={sinComision} totalCobrado={totalCobrado} setterMarcado={setterMarcado} completando={completando}
+              aviso={<>
+                <AvisoReservaSuelta e={e} reservas={reservas} nombre={b.contactoNombre} onCompletar={completarEsta} confirmada={reservaAparte} onConfirmar={setReservaAparte} />
+                <AvisoVentaIdentica e={e} identicas={identicas} confirmada={otraCompra} onConfirmar={setOtraCompra} />
+              </>}
             />
           )}
         </div>
@@ -501,7 +616,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
           </span>
         )}
         {paso.id === "resumen" ? (
-          <Button variante="primary" icono={<Check size={16} />} onClick={guardar} disabled={!puedeAvanzar || registrada}>{registrada ? "Registrando…" : "Registrar la venta"}</Button>
+          <Button variante="primary" icono={<Check size={16} />} onClick={guardar} disabled={!puedeAvanzar || registrada}>{registrada ? "Registrando…" : completando ? "Completar la reserva" : "Registrar la venta"}</Button>
         ) : (
           <>
             <span className="asistente__pista"><kbd>Enter</kbd><CornerDownLeft size={13} /></span>
@@ -548,6 +663,7 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
     primerVencimiento: mov?.fecha ?? hoy,
     cuotas: [],
     planTocado: false,
+    fijas: [],
     proyecto: "",
     setterId: "",
     referidorNombre: "",
@@ -567,9 +683,50 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
   return b;
 }
 
+/* ¿Esa venta es una reserva suelta, de las que se completan? */
+function sePuedeCompletar(e: EstadoApp, ventaId: string): boolean {
+  const venta = e.ventas.find((v) => v.id === ventaId);
+  return Boolean(venta && reservaSuelta(venta, e.cuotas.filter((c) => c.ventaId === ventaId)));
+}
+
+/* Completar una reserva: el borrador sale de la venta que ya está (quién, qué servicio, quién vendió, cuándo) y sólo queda
+   por decir cuánto vale el programa entero y cómo se paga lo que falta. La reserva cobrada entra como línea fija. */
+function inicialParaCompletar(e: EstadoApp, venta: Venta): Borrador {
+  const base = inicial(e);
+  const suelta: ReservaSuelta | null = reservaSuelta(venta, e.cuotas.filter((c) => c.ventaId === venta.id));
+  const fijas: LineaCuota[] = (suelta?.cobradas ?? []).slice().sort((x, y) => x.numero - y.numero).map((c) => ({
+    id: c.id, numero: c.numero, esReserva: c.esReserva, monto: c.monto, vence: c.vence ?? venta.fecha, cobros: [], fija: true,
+  }));
+  const persona = personaDeVenta(e, venta);
+  const lista = e.productos.find((p) => p.id === venta.productoId)?.precioLista ?? 0;
+  const hoy = new Date().toISOString();
+  const b: Borrador = {
+    ...base,
+    contactoId: venta.contactoId, contactoNombre: persona.nombre || venta.contactoNombre,
+    contactoEmail: persona.email, contactoTelefono: persona.telefono, contactoPais: persona.pais,
+    productoId: venta.productoId ?? "",
+    /* El precio de lista del servicio, si es más que la reserva; si no, lo pone quien carga. */
+    precioAcordado: lista > sumar(fijas) ? lista : 0, precioTocado: false,
+    closerId: venta.closerId ?? "", directorId: venta.directorId ?? "", embudoId: venta.embudoId ?? "", webinarId: venta.webinarId ?? "",
+    /* La venta conserva su fecha (el día que cerró con la reserva); las cuotas nuevas vencen desde hoy. */
+    fecha: venta.fecha, primerVencimiento: hoy,
+    excluidoMarketing: venta.excluidoMarketing, notas: venta.notas ?? "",
+    proyecto: venta.proyecto ?? "", setterId: venta.setterId ?? "",
+    fijas,
+  };
+  b.cuotas = armarPlan(b);
+  return b;
+}
+
 /* ---------- Validación por paso ---------- */
 
-function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: EstadoApp; subiendo: number; modoContrato: "produccion" | "prueba"; repetida: boolean }): string | null {
+function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: {
+  e: EstadoApp; subiendo: number; modoContrato: "produccion" | "prueba"; repetida: boolean;
+  /* Se está completando una reserva (no es una venta nueva). */
+  completando: boolean;
+  /* Quien compra ya dejó una reserva suelta y no se dijo que ésta es otra compra. */
+  conReservaSuelta: boolean;
+}): string | null {
   switch (paso) {
     case "cliente":
       if (b.contactoId) return null;
@@ -586,8 +743,13 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: Estado
       }
       return problemaDeDatos(b.contrato.datos, ctx.modoContrato, undefined, programa?.id);
     }
-    case "precio":
+    case "precio": {
+      const pagado = sumar(b.fijas);
+      if (ctx.completando && !(b.precioAcordado > pagado + 0.009)) {
+        return b.precioAcordado > 0 ? `Tiene que ser más que la reserva que ya pagó (${pagado.toLocaleString("es-AR")}): es el valor del programa entero` : "Poné cuánto vale el programa entero";
+      }
       return b.precioAcordado > 0 ? null : "El valor total tiene que ser mayor a cero";
+    }
     case "equipo":
       if (!b.closerId) return "Decí quién es el vendedor";
       return b.esReferido && !b.referidorNombre.trim() ? "Poné el nombre del referidor" : null;
@@ -601,9 +763,11 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: { e: Estado
       return null;
     case "cobros":
     case "resumen": {
+      if (paso === "resumen" && ctx.conReservaSuelta) return "Ya dejó una reserva: completala, o marcá que es otra compra";
       if (paso === "resumen" && ctx.repetida) return "Ya hay una venta idéntica: marcá que es otra compra, o salí sin registrar";
-      /* Una venta sin estrategia no se cuenta en Marketing ni deja cerrar el mes: se elige acá, en el resumen. */
-      if (paso === "resumen" && !estrategiaDeLaVenta(ctx.e, b.contactoId, b.fecha, b.embudoId)) return FALTA_ESTRATEGIA;
+      /* Una venta sin estrategia no se cuenta en Marketing ni deja cerrar el mes: se elige acá, en el resumen. (Al completar
+         una reserva el origen no se toca: es el de la venta que ya está.) */
+      if (paso === "resumen" && !ctx.completando && !estrategiaDeLaVenta(ctx.e, b.contactoId, b.fecha, b.embudoId)) return FALTA_ESTRATEGIA;
       const nombre = (c: LineaCuota) => (c.esReserva ? "la reserva" : `la cuota ${c.numero}`);
       const mal = b.cuotas.find((c) => sumar(c.cobros) > c.monto + 0.01);
       if (mal) return `Los cobros de ${nombre(mal)} superan su monto`;
@@ -655,8 +819,13 @@ function Opcion({ tecla, nombre, sub, activo, onClick, extra }: {
    que aparecía o desaparecía la lista. */
 
 /* Lo que se sabe de cada persona de la lista, a la derecha. */
-function EstadoPersona({ p, M }: { p: PersonaBuscada; M: (n: number, d?: number) => string }) {
+function EstadoPersona({ p, M, reserva }: {
+  p: PersonaBuscada; M: (n: number, d?: number) => string;
+  /* Lo que dejó de reserva, si su compra es sólo eso: no «ya compró», falta completarla. */
+  reserva?: number;
+}) {
   const debe = p.cuotas.reduce((a, c) => a + c.saldo, 0);
+  if (reserva && debe <= 0) return <Badge variante="accent">Reserva de {M(reserva)}</Badge>;
   if (debe > 0) return <Badge variante={p.cuotas.some((c) => c.diasAtraso > 0) ? "danger" : "accent"}>Debe {M(debe)}</Badge>;
   if (p.compras > 0) return <Badge variante="success">{p.compras === 1 ? "Ya compró" : `${p.compras} compras`}</Badge>;
   return <Badge variante="neutral">Lead</Badge>;
@@ -668,6 +837,8 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
 }) {
   const elegido = personaPorId(e, b.contactoId);
   const escrito = b.contactoNombre.trim();
+  /* Quién dejó sólo una reserva: se dice en la lista y al elegirlo, en vez de «Ya compró». */
+  const conReserva = useMemo(() => reservasSueltasPorContacto(e), [e.ventas, e.cuotas]); // eslint-disable-line react-hooks/exhaustive-deps
   const resultados = useMemo(
     () => (b.contactoId || b.crearContacto ? [] : buscarPersonas(e, b.contactoNombre)),
     [e, b.contactoNombre, b.contactoId, b.crearContacto],
@@ -731,7 +902,7 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
             <span className="cliente-elegido__nombre">{elegido.nombre}</span>
             <span className="t-sm t-subtle">{[elegido.email, elegido.telefono].filter(Boolean).join(" · ") || "Sin correo ni teléfono"}</span>
           </div>
-          <EstadoPersona p={elegido} M={M} />
+          <EstadoPersona p={elegido} M={M} reserva={conReserva.get(elegido.id)?.pagado} />
           <Button sm variante="ghost" onClick={() => set({ contactoId: undefined, contactoNombre: "", contactoEmail: "", contactoTelefono: "" })}>
             Cambiar
           </Button>
@@ -814,7 +985,7 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
                   <Opcion
                     key={p.id} nombre={p.nombre} activo={false}
                     sub={[p.email, p.telefono].filter(Boolean).join(" · ") || "Sin correo ni teléfono"}
-                    extra={<EstadoPersona p={p} M={M} />}
+                    extra={<EstadoPersona p={p} M={M} reserva={conReserva.get(p.id)?.pagado} />}
                     onClick={() => set({ contactoId: p.id, contactoNombre: p.nombre, contactoEmail: p.email ?? "", contactoTelefono: p.telefono ?? "", crearContacto: false })}
                   />
                 ))}
@@ -868,13 +1039,18 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
 
 /* ---------- Paso 2: producto ---------- */
 
-function PasoProducto({ b, set, e, M }: {
-  b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; M: (n: number, d?: number) => string;
+function PasoProducto({ b, set, e, M, completando }: {
+  b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; M: (n: number, d?: number) => string; completando?: boolean;
 }) {
   const productos = e.productos.filter((p) => p.activo).sort((a, b) => a.orden - b.orden);
   return (
     <>
-      <Pregunta texto="¿Qué servicio adquirió?" sub="El precio de lista se carga solo; en el próximo paso ponés el valor total de la venta." />
+      <Pregunta
+        texto={completando ? "¿A qué servicio entra?" : "¿Qué servicio adquirió?"}
+        sub={completando
+          ? "Quedó elegido el de la reserva. Cambialo sólo si al final entra a otro (reservó un programa y compra el Downsell)."
+          : "El precio de lista se carga solo; en el próximo paso ponés el valor total de la venta."}
+      />
       <div className="opciones">
         {productos.map((p, k) => (
           <Opcion
@@ -894,8 +1070,10 @@ function PasoProducto({ b, set, e, M }: {
 
 /* ---------- Paso 3: precio ---------- */
 
-function PasoPrecio({ b, set, e, M }: {
+function PasoPrecio({ b, set, e, M, pagado = 0 }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; M: (n: number, d?: number) => string;
+  /* Completando una reserva: lo que ya pagó. El valor que se pide es el del programa entero, con eso adentro. */
+  pagado?: number;
 }) {
   const producto = e.productos.find((p) => p.id === b.productoId);
   const lista = producto?.precioLista ?? 0;
@@ -904,7 +1082,12 @@ function PasoPrecio({ b, set, e, M }: {
 
   return (
     <>
-      <Pregunta texto="¿Cuál es el valor total de la venta?" sub={lista > 0 ? `El precio de lista de ${producto?.nombre} es ${M(lista)}.` : undefined} />
+      <Pregunta
+        texto={pagado > 0 ? "¿Cuánto vale el programa entero?" : "¿Cuál es el valor total de la venta?"}
+        sub={pagado > 0
+          ? `Con la reserva adentro: ya pagó ${M(pagado, 2)}, que se descuentan.${lista > 0 ? ` El precio de lista de ${producto?.nombre} es ${M(lista)}.` : ""}`
+          : lista > 0 ? `El precio de lista de ${producto?.nombre} es ${M(lista)}.` : undefined}
+      />
       <div className="monto-grande">
         <span className="monto-grande__signo">US$</span>
         <InputMonto
@@ -921,6 +1104,11 @@ function PasoPrecio({ b, set, e, M }: {
           </Chip>
         ))}
       </div>
+      {pagado > 0 && b.precioAcordado > pagado + 0.009 && (
+        <p className="t-sm" role="status" data-falta-de-reserva>
+          Ya pagó {M(pagado, 2)} de reserva: <strong>le falta pagar {M(redondear(b.precioAcordado - pagado), 2)}</strong>.
+        </p>
+      )}
       {lista > 0 && dif !== 0 && (
         <p className="t-sm t-muted">
           {dif < 0
@@ -1021,11 +1209,14 @@ function PasoEquipo({ b, set, e, sinComision, yo, setterMarcado, llamada }: {
 
 /* ---------- Paso 6: plan de cobro ---------- */
 
-function PasoPlan({ b, setB, M, diferencia, moneda }: {
+function PasoPlan({ b, setB, M, diferencia, moneda, completando }: {
   b: Borrador;
   setB: React.Dispatch<React.SetStateAction<Borrador>>;
   M: (n: number, d?: number) => string; diferencia: number; moneda: string;
+  /* Completando una reserva: la reserva ya está cobrada y fija; sólo se arma el plan de lo que falta. */
+  completando?: boolean;
 }) {
+  const pagado = sumar(b.fijas);
   /* «Sólo la reserva»: el valor de la venta pasa a ser la reserva y los datos del contrato se rearman (cambia la
      plantilla). Al volver, recupera el valor que tenía. */
   const elegirSoloReserva = (solo: boolean) => setB((x) => x.soloReserva === solo ? x : ({
@@ -1049,27 +1240,49 @@ function PasoPlan({ b, setB, M, diferencia, moneda }: {
 
   return (
     <>
-      <Pregunta texto="¿Cuál es el plan de pago?" sub={b.soloReserva
-        ? "Sólo deja la reserva: no hay cuotas. El contrato sale con el monto de la reserva."
-        : "La reserva es una cuota más. Después podés mover monto y fecha de cualquiera."} />
+      <Pregunta
+        texto={completando ? "¿Cómo paga lo que falta?" : "¿Cuál es el plan de pago?"}
+        sub={completando
+          ? `La reserva de ${M(pagado, 2)} ya está cobrada y queda como está. Faltan ${M(redondear(b.precioAcordado - pagado), 2)}: en un pago o en cuotas.`
+          : b.soloReserva
+            ? "Sólo deja la reserva: no hay cuotas. El contrato sale con el monto de la reserva."
+            : "La reserva es una cuota más. Después podés mover monto y fecha de cualquiera."}
+      />
 
-      <div className="row-wrap" style={{ gap: 6 }} role="group" aria-label="Qué se cobra">
-        <Chip activo={!b.soloReserva} onClick={() => elegirSoloReserva(false)}>Con plan de cuotas</Chip>
-        <Chip activo={b.soloReserva} onClick={() => elegirSoloReserva(true)}>Sólo la reserva</Chip>
-      </div>
+      {!completando && (
+        <div className="row-wrap" style={{ gap: 6 }} role="group" aria-label="Qué se cobra">
+          <Chip activo={!b.soloReserva} onClick={() => elegirSoloReserva(false)}>Con plan de cuotas</Chip>
+          <Chip activo={b.soloReserva} onClick={() => elegirSoloReserva(true)}>Sólo la reserva</Chip>
+        </div>
+      )}
 
       <div className="form-grid">
-        <div className="hk-field">
-          <label className="hk-label">Fecha de la venta</label>
-          <Input
-            type="date" value={isoDia(b.fecha)} aria-label="Fecha de la venta"
-            onChange={(ev) => {
-              if (!ev.target.value) return;
-              const f = new Date(ev.target.value + "T12:00:00").toISOString();
-              setB((x) => ({ ...x, fecha: f, primerVencimiento: f }));
-            }}
-          />
-        </div>
+        {completando ? (
+          /* La venta conserva su fecha: lo que se elige es desde cuándo vence lo que falta. */
+          <div className="hk-field">
+            <label className="hk-label">Vence la primera cuota</label>
+            <Input
+              type="date" value={isoDia(b.primerVencimiento)} aria-label="Vence la primera cuota"
+              onChange={(ev) => {
+                if (!ev.target.value) return;
+                const f = new Date(ev.target.value + "T12:00:00").toISOString();
+                setB((x) => ({ ...x, primerVencimiento: f, planTocado: false, frecuencia: x.frecuencia === "medida" ? "mensual" : x.frecuencia }));
+              }}
+            />
+          </div>
+        ) : (
+          <div className="hk-field">
+            <label className="hk-label">Fecha de la venta</label>
+            <Input
+              type="date" value={isoDia(b.fecha)} aria-label="Fecha de la venta"
+              onChange={(ev) => {
+                if (!ev.target.value) return;
+                const f = new Date(ev.target.value + "T12:00:00").toISOString();
+                setB((x) => ({ ...x, fecha: f, primerVencimiento: f }));
+              }}
+            />
+          </div>
+        )}
         {!b.soloReserva && (
           <div className="hk-field">
             <label className="hk-label">Plan de pago</label>
@@ -1082,13 +1295,15 @@ function PasoPlan({ b, setB, M, diferencia, moneda }: {
         )}
       </div>
 
-      <div className="form-grid">
-        <div className="hk-field">
-          <label className="hk-label">{b.soloReserva ? "Monto de la reserva" : "Reserva"}</label>
-          <InputMonto value={b.reserva || ""} placeholder="0" aria-label={b.soloReserva ? "Monto de la reserva" : "Reserva"}
-            onChange={(ev) => cambiarReserva(montoDe(ev.target.value))} />
-          <span className="hk-help">{b.soloReserva ? "Es todo lo que paga hoy: se descuenta del precio del programa si avanza." : "Lo que dejó de seña el día que cerró."}</span>
-        </div>
+      {(!completando || b.cantidadCuotas > 1) && <div className="form-grid">
+        {!completando && (
+          <div className="hk-field">
+            <label className="hk-label">{b.soloReserva ? "Monto de la reserva" : "Reserva"}</label>
+            <InputMonto value={b.reserva || ""} placeholder="0" aria-label={b.soloReserva ? "Monto de la reserva" : "Reserva"}
+              onChange={(ev) => cambiarReserva(montoDe(ev.target.value))} />
+            <span className="hk-help">{b.soloReserva ? "Es todo lo que paga hoy: se descuenta del precio del programa si avanza." : "Lo que dejó de seña el día que cerró."}</span>
+          </div>
+        )}
         {/* Con un solo pago no hay nada que espaciar. */}
         {!b.soloReserva && b.cantidadCuotas > 1 && (
           <div className="hk-field">
@@ -1110,7 +1325,7 @@ function PasoPlan({ b, setB, M, diferencia, moneda }: {
               : "Arma las fechas solas desde la primera. Si le diste otras, cambialas abajo una por una."}</span>
           </div>
         )}
-      </div>
+      </div>}
 
       <div className="stack-2">
         <div className="row">
@@ -1119,7 +1334,17 @@ function PasoPlan({ b, setB, M, diferencia, moneda }: {
             <Button sm variante="ghost" className="spacer" onClick={rehacer}>Rehacer parejo</Button>
           )}
         </div>
-        {b.cuotas.map((c) => (
+        {b.cuotas.map((c) => c.fija ? (
+          /* Lo que ya estaba cobrado: se ve, no se cambia. */
+          <div className="cuota-linea" key={c.id} data-fija>
+            <span className="cuota-linea__nombre">
+              {c.esReserva ? "Reserva" : `Cuota ${c.numero}`}
+              <Badge variante="success"><Check size={13} />ya cobrada</Badge>
+            </span>
+            <span className="t-num t-strong" style={{ textAlign: "right", paddingRight: 12 }}>{M(c.monto, 2)}</span>
+            <span className="t-sm t-subtle">{fechaLarga(c.vence)}</span>
+          </div>
+        ) : (
           <div className="cuota-linea" key={c.id}>
             <span className="cuota-linea__nombre">
               {c.esReserva ? "Reserva" : `Cuota ${c.numero}`}
@@ -1139,7 +1364,7 @@ function PasoPlan({ b, setB, M, diferencia, moneda }: {
           </span>
         </div>
         {Math.abs(diferencia) > 0.5 && (
-          <Button sm variante="secondary" onClick={rehacer}>Repartir de nuevo el precio entero</Button>
+          <Button sm variante="secondary" onClick={rehacer}>{completando ? "Repartir de nuevo lo que falta" : "Repartir de nuevo el precio entero"}</Button>
         )}
       </div>
     </>
@@ -1192,8 +1417,10 @@ function PasoCobros({ b, setB, e, M, onSubiendo }: {
   return (
     <>
       <Pregunta
-        texto="¿Algo de esto ya entró?"
-        sub="Marcá lo que ya se cobró. Cada cobro se prueba conciliándolo con el pago que llegó a la pasarela o subiendo el comprobante. Lo que no se cobró queda en Por cobrar."
+        texto={b.fijas.length > 0 ? "¿Ya pagó lo que faltaba?" : "¿Algo de esto ya entró?"}
+        sub={b.fijas.length > 0
+          ? "La reserva ya está cargada: no la vuelvas a cargar. Marcá sólo lo nuevo que entró; cada cobro se prueba con el pago de la pasarela o con el comprobante. Lo que no se cobró queda en Por cobrar."
+          : "Marcá lo que ya se cobró. Cada cobro se prueba conciliándolo con el pago que llegó a la pasarela o subiendo el comprobante. Lo que no se cobró queda en Por cobrar."}
       />
 
       {candidatos.length > 0 && (
@@ -1224,7 +1451,7 @@ function PasoCobros({ b, setB, e, M, onSubiendo }: {
                         { fecha: m.fecha, referencia: m.referencia, movimientoId: m.id },
                       )]);
                     }}
-                    opciones={b.cuotas.map((c) => ({
+                    opciones={b.cuotas.filter((c) => !c.fija).map((c) => ({
                       valor: c.id,
                       texto: `${c.esReserva ? "Reserva" : `Cuota ${c.numero}`} — ${M(c.monto, 2)}`,
                     }))}
@@ -1241,6 +1468,19 @@ function PasoCobros({ b, setB, e, M, onSubiendo }: {
           const cobrado = sumar(c.cobros);
           const falta = redondear(c.monto - cobrado);
           const abierto = c.cobros.length > 0;
+          /* Lo que ya estaba cobrado (la reserva que se completa): a la vista, sin interruptor. */
+          if (c.fija) {
+            return (
+              <div className="cobro-bloque" key={c.id} data-fija>
+                <div className="cobro-bloque__head">
+                  <span className="t-strong">{c.esReserva ? "Reserva" : `Cuota ${c.numero}`}</span>
+                  <span className="t-sm t-subtle">ya estaba cargada</span>
+                  <span className="spacer t-num t-strong">{M(c.monto, 2)}</span>
+                  <Badge variante="success"><Check size={13} />Cobrada</Badge>
+                </div>
+              </div>
+            );
+          }
           return (
             <div className="cobro-bloque" key={c.id}>
               <div className="cobro-bloque__head">
@@ -1286,12 +1526,16 @@ function PasoCobros({ b, setB, e, M, onSubiendo }: {
    plantilla del programa (los del alumno, la modalidad, las sesiones 1 a 1 y los bonos). Si a esa persona ya se
    le mandó un contrato desde la app, queda elegido «Ya se le mandó»: no se le manda otro sin querer. */
 
-function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
+function PasoContrato({ b, setB, e, esDueno, modo, encendido, completando }: {
   b: Borrador; setB: React.Dispatch<React.SetStateAction<Borrador>>; e: EstadoApp;
   esDueno: boolean; modo: "produccion" | "prueba"; encendido: boolean;
+  /* Completando una reserva: el contrato de la reserva ya salió; el que falta es el del programa. */
+  completando?: boolean;
 }) {
   const programas = useMemo(() => programasDe(e.ajustes), [e.ajustes]);
   const [previo, setPrevio] = useState<Contrato | null | undefined>(undefined);
+  /* El contrato de la reserva que ya tiene (sólo al completar): se le cuenta al closer que ahora sale el otro. */
+  const [deReservaPrevio, setDeReservaPrevio] = useState<Contrato | null>(null);
   const ct = b.contrato;
   const setCt = useCallback((cambios: Partial<Borrador["contrato"]>) => setB((x) => ({ ...x, contrato: { ...x.contrato, ...cambios } })), [setB]);
 
@@ -1307,7 +1551,9 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
     const nacimiento = seg?.nacimiento || nacimientoDeLaPersona(e, b.contactoId) || undefined;
     /* Si por ahora sólo se cobró la reserva, el contrato que sale es el de la reserva (el del programa da los accesos al
        firmar: Luis Mejía, 27/10). Se puede cambiar en «Programa». */
-    const deReserva = b.soloReserva || soloSeCobroLaReserva(b.cuotas);
+    const deReserva = !completando && (b.soloReserva || soloSeCobroLaReserva(b.cuotas));
+    /* Completando sin ningún pago nuevo: el contrato del programa puede esperar al pago (queda en «Todavía no»). */
+    const sinPagoNuevo = Boolean(completando) && !b.cuotas.some((l) => !l.fija && l.cobros.length > 0);
     const datos: DatosContrato = {
       nombre: (contacto?.nombre || lead?.nombre || b.contactoNombre).trim(),
       email: (b.contactoEmail || contacto?.email || lead?.email || "").trim(),
@@ -1325,8 +1571,8 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
     };
     /* Sin plantilla: un programa sin contrato no lleva; una reserva sin contrato de reserva se manda después. */
     const sinPlantilla = deReserva ? "despues" : "no-lleva";
-    setCt({ datos, programaId: programa?.id ?? "", decision: plantillaDelContrato(programa, deReserva).id ? ct.decision : sinPlantilla });
-  }, [ct.datos, ct.decision, b, e, programas, setCt]);
+    setCt({ datos, programaId: programa?.id ?? "", decision: !plantillaDelContrato(programa, deReserva).id ? sinPlantilla : sinPagoNuevo ? "despues" : ct.decision });
+  }, [ct.datos, ct.decision, b, e, programas, setCt, completando]);
 
   /* ¿Ya se le mandó uno desde la app? */
   useEffect(() => {
@@ -1334,19 +1580,40 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
     if (!b.contactoId) { setPrevio(null); return; }
     void leerContratos({ leadId: b.contactoId }).then((r) => {
       if (!vivo) return;
-      const vigente = r.contratos.find((c) => c.estado !== "anulado" && c.estado !== "error" && c.estado !== "rechazado") ?? null;
+      const vivos = r.contratos.filter((c) => c.estado !== "anulado" && c.estado !== "error" && c.estado !== "rechazado");
+      /* Completando una reserva, el contrato de la reserva no cuenta como «ya se le mandó»: el que falta es el del programa. */
+      const vigente = (completando ? vivos.find((c) => !c.datos?.reserva) : vivos[0]) ?? null;
       setPrevio(vigente);
+      const deReserva = completando ? vivos.find((c) => c.datos?.reserva) ?? null : null;
+      setDeReservaPrevio(deReserva);
+      /* Lo que ya puso para el contrato de la reserva (documento, domicilio, nacimiento) no se le vuelve a pedir: completa lo vacío. */
+      if (deReserva?.datos) {
+        const antes = deReserva.datos;
+        setB((x) => {
+          const d = x.contrato.datos;
+          if (!d) return x;
+          const lleno: DatosContrato = {
+            ...d,
+            documento: d.documento || antes.documento || "",
+            domicilio: d.domicilio || antes.domicilio || "",
+            telefono: d.telefono || antes.telefono || "",
+            ...(d.nacimiento || !antes.nacimiento ? {} : { nacimiento: antes.nacimiento }),
+            ...(d.perfil || !antes.perfil ? {} : { perfil: antes.perfil }),
+          };
+          return { ...x, contrato: { ...x.contrato, datos: lleno } };
+        });
+      }
       if (vigente) setCt({ decision: "ya" });
     }).catch(() => { if (vivo) setPrevio(null); });
     return () => { vivo = false; };
-  }, [b.contactoId, setCt]);
+  }, [b.contactoId, setCt, setB, completando]);
 
   const programa = programas.find((p) => p.id === ct.programaId);
   /* Lo que se manda es el contrato de la reserva si así quedó elegido en «Programa» (aunque la venta sea con plan de cuotas). */
   const esReserva = Boolean(ct.datos?.reserva) || b.soloReserva;
   const plantilla = plantillaDelContrato(programa, esReserva, ct.datos?.sesiones);
   const opciones: { valor: DecisionContrato; nombre: string; sub: string }[] = [
-    { valor: "mandar", nombre: "Sí, mandalo al registrar la venta", sub: esReserva
+    { valor: "mandar", nombre: completando ? "Sí, mandalo al completar la reserva" : "Sí, mandalo al registrar la venta", sub: esReserva
       ? "Le llega por mail el contrato de la reserva para firmar. No da accesos: los da el contrato del programa."
       : "Le llega por mail para firmar. Al firmar, se le dan los accesos del programa." },
     { valor: "ya", nombre: "Ya se le mandó", sub: "No sale otro." },
@@ -1355,7 +1622,7 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
   ];
   return (
     <div className="stack-4">
-      <Pregunta texto={esReserva ? "¿Se le manda el contrato de la reserva?" : "¿Se le manda el contrato?"}
+      <Pregunta texto={esReserva ? "¿Se le manda el contrato de la reserva?" : completando ? "¿Se le manda el contrato del programa?" : "¿Se le manda el contrato?"}
         sub={plantilla.nombre ? `Sale de la plantilla «${plantilla.nombre}» de PandaDoc.` : "Sale de la plantilla de PandaDoc del programa."} />
       {esReserva && programa && !plantilla.id && (
         <p className="t-sm" style={{ color: "var(--warning)" }}>
@@ -1366,6 +1633,14 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
         <p className="t-sm t-muted">
           Este contrato da todos los accesos al firmar. Si por ahora sólo dejó la reserva de US$ {b.reserva.toLocaleString("es-AR")}, elegí abajo en «Programa» la opción «sólo la reserva»:
           el contrato del programa se manda cuando pague.
+        </p>
+      )}
+      {completando && !previo && (
+        <p className="t-sm t-muted" role="note">
+          {deReservaPrevio
+            ? `Ya tiene el contrato de la reserva (${ROTULO_ESTADO[deReservaPrevio.estado].texto.toLowerCase()}), que no da accesos. `
+            : ""}
+          El del programa es el que da los accesos al firmar{b.cuotas.some((l) => !l.fija && l.cobros.length > 0) ? "." : ": como todavía no cargaste ningún pago nuevo, quedó en «Todavía no»; si lo mandás igual, los accesos esperan al primer pago."}
         </p>
       )}
       {previo && (
@@ -1384,7 +1659,7 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
           <DatosDelContrato
             datos={ct.datos} programas={programas} programaId={ct.programaId}
             onPrograma={(id) => setCt({ programaId: id })}
-            onReserva={(reserva) => {
+            onReserva={completando ? undefined : (reserva) => {
               const { reserva: _antes, ...resto } = ct.datos!;
               const moneda = e.ajustes.monedaBase || "USD";
               setCt({ datos: { ...resto, ...(reserva ? { reserva: true, modalidad: modalidadDeReserva(b.reserva, moneda) } : { modalidad: modalidadDeCuotas(b.cuotas, moneda) }) } });
@@ -1406,9 +1681,11 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido }: {
 
 /* ---------- Paso 8: resumen ---------- */
 
-function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, aviso }: {
+function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, aviso, completando }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp;
   M: (n: number, d?: number) => string; sinComision: boolean; totalCobrado: number; setterMarcado?: string;
+  /* Completando una reserva: se muestra cómo queda ESA venta; el origen, el setter y lo demás no se tocan. */
+  completando?: boolean;
   /* Un cartel arriba del resumen (la venta idéntica ya cargada). */
   aviso?: React.ReactNode;
 }) {
@@ -1428,7 +1705,12 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, a
 
   return (
     <>
-      <Pregunta texto="Así queda la venta" sub="Revisá y confirmá. Después se puede editar todo desde la ficha." />
+      <Pregunta
+        texto="Así queda la venta"
+        sub={completando
+          ? "Es la misma venta de la reserva, ahora por el programa entero: no se crea otra. Revisá y confirmá."
+          : "Revisá y confirmá. Después se puede editar todo desde la ficha."}
+      />
       {aviso}
 
       <dl className="dl">
@@ -1444,7 +1726,7 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, a
         <dt>Valor total</dt><dd className="t-num">{M(b.precioAcordado, 2)}</dd>
         <dt>Vendedor</dt><dd>{closer?.nombre ?? "—"}{sinComision && <span className="t-subtle"> · no comisiona nadie</span>}</dd>
         {!sinComision && <><dt>Director</dt><dd>{director?.nombre ?? "—"}</dd></>}
-        <dt>Origen</dt>
+        {!completando && <><dt>Origen</dt>
         <dd>
           {embudo || proyecto || webinar
             ? [embudo?.nombre, proyecto, webinar?.titulo].filter(Boolean).join(" · ")
@@ -1460,12 +1742,12 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, a
             {o ? `De la UTM ${textoUtm(o.utm)}.`
               : "Quien compró no llegó con una UTM del estándar ni con una que tenga regla: si se asigna en Ajustes → UTMs, se completa solo."}
           </span>
-        </dd>
-        {setter && <><dt>Setter</dt><dd>{setter.nombre}</dd></>}
-        {referidor && <><dt>Referidor</dt><dd>{referidor}{b.esReferido && b.referidorTelefono ? ` · ${b.referidorTelefono}` : ""}</dd></>}
+        </dd></>}
+        {!completando && setter && <><dt>Setter</dt><dd>{setter.nombre}</dd></>}
+        {!completando && referidor && <><dt>Referidor</dt><dd>{referidor}{b.esReferido && b.referidorTelefono ? ` · ${b.referidorTelefono}` : ""}</dd></>}
         <dt>Plan de pago</dt><dd>{b.soloReserva ? `Sólo la reserva: ${M(b.reserva)}`
-          : `${planDePago({ estado: "activa" } as Venta, b.cuotas.map((c) => ({ esReserva: c.esReserva }) as Cuota))}${b.reserva > 0 ? ` + reserva de ${M(b.reserva)}` : ""}`}</dd>
-        <dt>Fecha</dt><dd>{fechaLarga(b.fecha)}</dd>
+          : `${planDePago({ estado: "activa" } as Venta, b.cuotas.map((c) => ({ esReserva: c.esReserva }) as Cuota))}${b.reserva > 0 ? ` + reserva de ${M(b.reserva)}` : b.fijas.some((c) => c.esReserva) ? ` + reserva de ${M(sumar(b.fijas.filter((c) => c.esReserva)))}` : ""}`}</dd>
+        <dt>{completando ? "Fecha de la venta" : "Fecha"}</dt><dd>{fechaLarga(b.fecha)}{completando && <span className="t-subtle"> · la del día de la reserva</span>}</dd>
       </dl>
 
       <div className="stack-2">
@@ -1478,7 +1760,9 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, a
                 <span className="t-strong">{c.esReserva ? "Reserva" : `Cuota ${c.numero}`}</span>
                 <span className="t-subtle">{fechaLarga(c.vence)}</span>
                 <span className="spacer t-num">{M(c.monto, 2)}</span>
-                {cobrado >= c.monto - 0.01
+                {c.fija
+                  ? <Badge variante="success"><Check size={13} />Ya cobrada</Badge>
+                  : cobrado >= c.monto - 0.01
                   ? <Badge variante="success"><Check size={13} />Cobrada</Badge>
                   : cobrado > 0
                     ? <Badge variante="accent">Parcial {M(cobrado, 2)}</Badge>
@@ -1514,14 +1798,16 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, a
         )}
       </div>
 
-      <div className="row-3">
-        <Switch checked={b.excluidoMarketing || sinComision} etiqueta="Excluida de marketing"
-          onChange={(v) => set({ excluidoMarketing: v })} />
-        <span className="t-body t-muted">
-          <strong>Excluida de marketing</strong>
-          {sinComision && <span className="t-subtle"> (se marca sola con este closer)</span>}
-        </span>
-      </div>
+      {!completando && (
+        <div className="row-3">
+          <Switch checked={b.excluidoMarketing || sinComision} etiqueta="Excluida de marketing"
+            onChange={(v) => set({ excluidoMarketing: v })} />
+          <span className="t-body t-muted">
+            <strong>Excluida de marketing</strong>
+            {sinComision && <span className="t-subtle"> (se marca sola con este closer)</span>}
+          </span>
+        </div>
+      )}
 
       <div className="hk-field">
         <label className="hk-label">Observaciones / Plan de pagos</label>
