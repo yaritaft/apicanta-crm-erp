@@ -15,11 +15,11 @@ test("Downsell: el paso a paso es el que corrigió Lili, de 1 a 6, con el aviso 
   assert.doesNotMatch(t, /Comenzá en Wisboo – Hackear IA/);
   assert.match(t, /2\. Realizá tu roadmap para alinearte con el mercado\nUna vez definido tu roadmap, tenés dos caminos:/);
   assert.match(t, /dirigite a Hackear IA – Módulo 0 para aprender ambas tecnologías\. Una vez completado, volvé a Hackear IT/);
-  assert.match(t, /3\. Completá el Take Home Challenge del Módulo 8\n• Mirá todo el Módulo 8 y luego realizá el THC sin IA\./);
+  assert.match(t, /3\. Completá el Módulo 8 y el Take Home Challenge \(Hackear IT\)\n• Mirá todo el Módulo 8 y luego realizá el THC sin IA\./);
   assert.match(t, /drive «herramientas»[^\n]*grupo de novedades en Telegram[^\n]*el de Full Stack y el de Data Engineer/);
-  assert.match(t, /4\. Continuá del Módulo 2 al 5/);
-  assert.match(t, /5\. Del Módulo 6 al 12\n• Preparación para las entrevistas técnicas\./);
-  assert.match(t, /6\. Incorporá el contenido de IA[\s\S]*módulo de IA de Hackear IT y el contenido de Hackear IA/);
+  assert.match(t, /4\. Continuá del Módulo 2 al 5 \(Hackear IT\)\n/);
+  assert.match(t, /5\. Del Módulo 6 al 12 \(Hackear IT\)\n• Preparación para las entrevistas técnicas\./);
+  assert.match(t, /6\. Incorporá el contenido de IA \(corresponde a ambos programas\)[\s\S]*módulo de IA de Hackear IT y el contenido de Hackear IA/);
   assert.match(t, /No sirve estudiar IA ahora simplemente porque aparece en algunas búsquedas\./);
   /* Lo de Python no se repite en el punto 3 ni al final: sólo se dice en el punto 2. */
   assert.equal((t.match(/Python/g) ?? []).length, 1);
@@ -30,10 +30,12 @@ test("Programa completo: el punto 2 y el 3 también, sin repetir Python, y conse
   const t = completo();
   assert.match(t, /2\. Realizá tu roadmap para alinearte con el mercado\nUna vez definido tu roadmap, tenés dos caminos:/);
   assert.match(t, /dirigite a Hackear AI – Módulo 0/);
-  assert.match(t, /3\. Completá el Take Home Challenge del Módulo 8/);
+  assert.match(t, /3\. Completá el Módulo 8 y el Take Home Challenge \(Hackear IT\)/);
+  assert.match(t, /4\. Avanzá del Módulo 2 al 5 \(Hackear IT\)/);
+  assert.match(t, /5\. Del Módulo 6 al 12 \(Hackear IT\)/);
   assert.equal((t.match(/Python/g) ?? []).length, 1);
   assert.match(t, /Contacto de Aldana: \+54 9 11 1/);
-  assert.match(t, /6\. Incorporá el contenido de IA\n• Una vez que llegues a la etapa de entrevistas técnicas, incorporá el módulo de IA de Hackear IT y el contenido de Hackear AI/);
+  assert.match(t, /6\. Incorporá el contenido de IA \(corresponde a ambos programas\)\n• Una vez que llegues a la etapa de entrevistas técnicas, incorporá el módulo de IA de Hackear IT y el contenido de Hackear AI/);
   assert.match(t, /7\. Aprovechá los bonos disponibles/);
   assert.match(t, /No sirve estudiar IA ahora simplemente porque aparece en algunas búsquedas\./);
   assert.doesNotMatch(t, /no intentes estudiar todo al mismo tiempo/);

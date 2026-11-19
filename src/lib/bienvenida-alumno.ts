@@ -160,11 +160,11 @@ Una vez definido tu roadmap, tenés dos caminos:
 • Si decidís mantener tu stack actual, continuá normalmente con el paso a paso de Hackear IT.
 • Si decidís alinearte con Python y FastAPI, que es el stack que recomendamos fuertemente por su demanda actual en el mercado, dirigite a Hackear AI – Módulo 0 para aprender ambas tecnologías. Una vez completado, volvé a Hackear IT y continuá con el siguiente paso.
 
-3. Completá el Take Home Challenge del Módulo 8
+3. Completá el Módulo 8 y el Take Home Challenge (Hackear IT)
 • Mirá todo el Módulo 8 y luego realizá el THC sin IA.
 • El THC lo encontrás en el drive «herramientas», que está en la descripción del grupo de novedades en Telegram: vas a encontrar dos THC, el de Full Stack y el de Data Engineer.
 
-4. Avanzá del Módulo 2 al 5
+4. Avanzá del Módulo 2 al 5 (Hackear IT)
 • Prepará tu perfil para comenzar a conseguir entrevistas de HR.
 • Cuando tengas tu CV y LinkedIn editados, podés enviárselos a Aldana para recibir una auditoría personalizada.
 
@@ -172,10 +172,10 @@ Una vez definido tu roadmap, tenés dos caminos:
 
 (¡IMPORTANTE! Es obligatorio completar los pasos 1, 2 y 3, incluida la recomendación correspondiente del Módulo 2, antes de enviar tu CV y LinkedIn a Aldana.)
 
-5. Del Módulo 6 al 12
+5. Del Módulo 6 al 12 (Hackear IT)
 • Enfocate en la preparación para las entrevistas técnicas.
 
-6. Incorporá el contenido de IA
+6. Incorporá el contenido de IA (corresponde a ambos programas)
 • Una vez que llegues a la etapa de entrevistas técnicas, incorporá el módulo de IA de Hackear IT y el contenido de Hackear AI según lo que realmente esté solicitando el mercado y las posiciones a las que estés aplicando.
 
 7. Aprovechá los bonos disponibles
@@ -191,17 +191,17 @@ Una vez definido tu roadmap, tenés dos caminos:
 • Si decidís mantener tu stack actual, continuá normalmente con el paso a paso de Hackear IT.
 • Si decidís alinearte con Python y FastAPI, que es el stack que recomendamos fuertemente por su demanda actual en el mercado, dirigite a Hackear IA – Módulo 0 para aprender ambas tecnologías. Una vez completado, volvé a Hackear IT y continuá con el siguiente paso.
 
-3. Completá el Take Home Challenge del Módulo 8
+3. Completá el Módulo 8 y el Take Home Challenge (Hackear IT)
 • Mirá todo el Módulo 8 y luego realizá el THC sin IA.
 • El THC lo encontrás en el drive «herramientas», que está en la descripción del grupo de novedades en Telegram: vas a encontrar dos THC, el de Full Stack y el de Data Engineer.
 
-4. Continuá del Módulo 2 al 5
+4. Continuá del Módulo 2 al 5 (Hackear IT)
 • Para editar tu CV y LinkedIn y comenzar a conseguir entrevistas de HR.
 
-5. Del Módulo 6 al 12
+5. Del Módulo 6 al 12 (Hackear IT)
 • Preparación para las entrevistas técnicas.
 
-6. Incorporá el contenido de IA
+6. Incorporá el contenido de IA (corresponde a ambos programas)
 • Una vez que llegues a la etapa de entrevistas técnicas, incorporá el módulo de IA de Hackear IT y el contenido de Hackear IA según lo que realmente esté solicitando el mercado y las posiciones a las que estés aplicando.
 
 👉 No sirve estudiar IA ahora simplemente porque aparece en algunas búsquedas. Primero necesitás alinearte con el mercado, definir tu stack, comenzar con las entrevistas de HR y, cuando llegues a las entrevistas técnicas, identificar qué conocimientos de IA necesitás incorporar.`;
