@@ -244,3 +244,7 @@ button.ps-dato:hover, a.ps-dato:hover, button.ps-dato:hover b, a.ps-dato:hover b
 @media (max-width: 720px) {
   .ps-tes__buscar { flex: 1 1 100%; margin-left: 0; }
 }
+
+/* «Se les termina el contrato» por programa (Lili, 19/11): los botones por programa van pegados debajo de la tarea. */
+.ps-tarea__progs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px 52px; margin-top: -4px; }
+@media (max-width: 640px) { .ps-tarea__progs { padding-left: 16px; } }

@@ -27,7 +27,7 @@ import type { MiembroEquipo } from "@/lib/types";
 import { posiblesDuplicados } from "@/lib/duplicados";
 import { useSinAlumno } from "@/components/reportes/sin-alumno-nube";
 import { usePreferencia } from "@/lib/preferencias";
-import { listasCs } from "@/lib/clientes-cs";
+import { familiasParaFiltrar, listasCs } from "@/lib/clientes-cs";
 import { alumnosRepetidos } from "@/lib/alumnos-repetidos";
 import { personaDe } from "@/lib/persona";
 import { plural, saludoDe } from "./util";
@@ -85,7 +85,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
   const { acceso } = useAcceso();
   const gestos = useGestos();
   const abrirFicha = useAbrirFicha();
-  const [v, cambiar] = useParamsURL({ lista: "", etapa: "", base: "", fu: "", contacto: "" });
+  const [v, cambiar] = useParamsURL({ lista: "", etapa: "", base: "", fu: "", contacto: "", prog: "" });
   const sinAlumno = useSinAlumno();
   const [ahora, setAhora] = useState(() => Date.now());
   useEffect(() => { const t = window.setInterval(() => setAhora(Date.now()), 60000); return () => window.clearInterval(t); }, []);
@@ -131,8 +131,11 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
   };
   /* Un Follow Up fijado trae a TODOS los que lo tienen, estén o no en servicio: «Agendar para resell» casi siempre es de alguien
      que ya terminó, y con la base «en servicio» no aparecía (Lili, 24/10: «no se me actualiza el filtro»). */
-  const renglones = useMemo(() => renglonesCartera(lista || fijado || contactadoEl ? panel.cartera : base, lista, etapa, fijado, contactadoEl),
+  const renglonesTodos = useMemo(() => renglonesCartera(lista || fijado || contactadoEl ? panel.cartera : base, lista, etapa, fijado, contactadoEl),
     [panel, base, lista, etapa, fijado, contactadoEl]);
+  /* «Se les termina el contrato» por programa (Lili, 19/11): el viejo, el Downsell y el nuevo no se tratan igual. Sólo vale dentro de esa lista. */
+  const prog = lista?.id === "renovar" ? v.prog : "";
+  const renglones = useMemo(() => (prog ? renglonesTodos.filter((r) => familiasParaFiltrar(r.programa).includes(prog)) : renglonesTodos), [renglonesTodos, prog]);
   const irACartera = () => window.setTimeout(() => document.getElementById("ps-cartera")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
 
   /* Alumnos con dos fichas (el mismo teléfono, otro mail; Lili, 22/10). Se abre la ficha que tiene más historia: ahí está
@@ -256,9 +259,10 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
                 const t = TAREA[s.id];
                 const activa = lista?.id === s.id;
                 return (
+                  <React.Fragment key={s.id}>
                   <button
-                    key={s.id} type="button" className={`ps-tarea${activa ? " ps-tarea--on" : ""}`} aria-pressed={activa} title={s.regla}
-                    onClick={() => { cambiar({ lista: activa ? null : s.id, etapa: null, fu: null }, TABLA_LIMPIA); if (!activa) irACartera(); }}
+                    type="button" className={`ps-tarea${activa ? " ps-tarea--on" : ""}`} aria-pressed={activa} title={s.regla}
+                    onClick={() => { cambiar({ lista: activa ? null : s.id, etapa: null, fu: null, prog: null }, TABLA_LIMPIA); if (!activa) irACartera(); }}
                   >
                     <span className="ps-ico" style={{ "--tono": t.tono } as React.CSSProperties}>{t.icono}</span>
                     <span className="ps-tarea__txt">
@@ -269,6 +273,21 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
                     <b className="ps-tarea__n t-num">{s.total}</b>
                     <ChevronRight size={16} className="ps-tarea__ir" aria-hidden />
                   </button>
+                  {s.porPrograma && s.porPrograma.length > 0 && (
+                    <div className="ps-tarea__progs" role="group" aria-label={`${s.titulo}, por programa`}>
+                      {s.porPrograma.map((x) => {
+                        const on = activa && prog === x.programa;
+                        return (
+                          <button key={x.programa} type="button" className="ps-rs__chip ps-tes__chip" aria-pressed={on}
+                            title={`${x.programa}: ${x.n} ${x.n === 1 ? "alumno" : "alumnos"}${x.rojos ? `, ${x.rojos} ya terminó el contrato` : ""}. Tocá para ver sólo esos.`}
+                            onClick={() => { cambiar({ lista: s.id, etapa: null, fu: null, prog: on ? null : x.programa }, TABLA_LIMPIA); if (!on) irACartera(); }}>
+                            {x.programa} <b>{x.n}</b>{x.rojos > 0 && <span className="ps-rojo" aria-hidden> ●</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </div>
@@ -368,13 +387,13 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
               </div>
               {(lista || etapa || fijado) && (
                 <span className="ps-filtro">
-                  {lista ? lista.titulo : etapa ? ETAPAS_DEL_ALUMNO.find((x) => x.id === etapa)?.label : `Follow Up: ${fijado}`}
-                  <button type="button" aria-label="Quitar el filtro" onClick={() => cambiar({ lista: null, etapa: null, fu: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA)}><X size={13} /></button>
+                  {lista ? `${lista.titulo}${prog ? ` · ${prog}` : ""}` : etapa ? ETAPAS_DEL_ALUMNO.find((x) => x.id === etapa)?.label : `Follow Up: ${fijado}`}
+                  <button type="button" aria-label="Quitar el filtro" onClick={() => cambiar({ lista: null, etapa: null, fu: null, prog: null }, lista ? TABLA_LIMPIA : PRIMERA_HOJA)}><X size={13} /></button>
                 </span>
               )}
             </>
           )}
-          excel={{ nombre: lista ? lista.titulo : "Cartera", hoy, valor: valorExcel }}
+          excel={{ nombre: lista ? `${lista.titulo}${prog ? ` - ${prog}` : ""}` : "Cartera", hoy, valor: valorExcel }}
           vacio={lista
             ? { titulo: "Nadie en esta lista", texto: lista.vacio }
             : { titulo: etapa ? "Nadie en esta etapa" : "No hay alumnos", texto: todos ? "Probá con otra etapa." : "Probá con «Todos»: hay alumnos que ya no están en servicio.",

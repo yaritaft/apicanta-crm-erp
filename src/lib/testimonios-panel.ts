@@ -1,5 +1,5 @@
 import { sinTildes } from "./crm";
-import { testimonioNormal } from "./clientes-cs";
+import { testimonioNormal, testimonioNoSeGraba } from "./clientes-cs";
 import type { Alumno, Testimonio } from "./types";
 
 /* ==================================================================
@@ -9,15 +9,16 @@ import type { Alumno, Testimonio } from "./types";
    fuente que la tabla de Alumnos → Testimonios (lib/clientes-cs.ts), contada en pocos estados que se leen de un vistazo.
    ================================================================== */
 
-export type EstadoTestimonio = "con-link" | "sin-link" | "agendado" | "por-agendar" | "no-quiere";
+export type EstadoTestimonio = "con-link" | "sin-link" | "agendado" | "por-agendar" | "no-quiere" | "no-se-concreto";
 export type FiltroTestimonios = "todos" | EstadoTestimonio;
 
-export const ESTADOS_TESTIMONIO: { id: EstadoTestimonio; chip: string; pastilla: string; ayuda: string; tono: "ok" | "aviso" | "info" | "malo" }[] = [
+export const ESTADOS_TESTIMONIO: { id: EstadoTestimonio; chip: string; pastilla: string; ayuda: string; tono: "ok" | "aviso" | "info" | "malo" | "neutra" }[] = [
   { id: "con-link", chip: "Grabados con link", pastilla: "Grabado", tono: "ok", ayuda: "Ya se grabó y el video tiene su link." },
   { id: "sin-link", chip: "Falta el link", pastilla: "Falta el link", tono: "aviso", ayuda: "Ya se grabó (o el video está subido) y todavía no se cargó el link." },
   { id: "agendado", chip: "Agendados", pastilla: "Agendado", tono: "info", ayuda: "La llamada de grabación está agendada y todavía no llegó." },
   { id: "por-agendar", chip: "Por agendar", pastilla: "Por agendar", tono: "aviso", ayuda: "Falta agendar la llamada de grabación." },
   { id: "no-quiere", chip: "No quieren grabar", pastilla: "No quiere grabar", tono: "malo", ayuda: "Dijeron que no: no se les insiste." },
+  { id: "no-se-concreto", chip: "No se concretaron", pastilla: "No se concretó", tono: "neutra", ayuda: "La llamada de grabación no se hizo y no se va a hacer (no es que no quieran): no queda nada por agendar." },
 ];
 
 /** En qué está un testimonio. El link manda (si hay link, está grabado); después, que no quiere; después, la fecha de la grabación. */
@@ -25,7 +26,8 @@ export function estadoDelTestimonio(t: Pick<Testimonio, "link" | "followUp" | "e
   if ((t.link ?? "").trim()) return "con-link";
   const followUp = sinTildes(t.followUp ?? "").trim();
   const video = sinTildes(t.estadoVideo ?? "").trim();
-  if (followUp === "no quiere grabar" || video === "no quiso grabar") return "no-quiere";
+  const noSeGraba = testimonioNoSeGraba(t.followUp, t.estadoVideo);
+  if (noSeGraba) return noSeGraba.motivo;
   if (["pendiente de subir", "subido a drive", "subido a youtube"].includes(video)) return "sin-link";
   const fecha = (t.fechaGrabacion ?? "").slice(0, 10);
   if (fecha) return fecha <= hoy ? "sin-link" : "agendado";
@@ -60,7 +62,7 @@ export function filasDeTestimonios(
 
 /** Cuántos hay en cada estado y en total. */
 export function resumenDeTestimonios(filas: readonly FilaTestimonioPanel[]): { total: number; porEstado: Record<EstadoTestimonio, number> } {
-  const porEstado: Record<EstadoTestimonio, number> = { "con-link": 0, "sin-link": 0, agendado: 0, "por-agendar": 0, "no-quiere": 0 };
+  const porEstado: Record<EstadoTestimonio, number> = { "con-link": 0, "sin-link": 0, agendado: 0, "por-agendar": 0, "no-quiere": 0, "no-se-concreto": 0 };
   for (const f of filas) porEstado[f.estado] += 1;
   return { total: filas.length, porEstado };
 }

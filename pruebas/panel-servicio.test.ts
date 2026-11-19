@@ -400,8 +400,15 @@ test("cada lista de «Para hoy» abre la ficha en una solapa que existe, y cada 
   const hoja = readFileSync("src/components/ficha/HojaServicio.tsx", "utf8");
   const dibujadas = new Set([...hoja.matchAll(/solapa === "([a-z]+)"/g)].map((m) => m[1]));
   assert.deepEqual([...dibujadas].sort(), [...SOLAPAS_SERVICIO].sort(), "las solapas que dibuja la ficha son las que acepta ?hoja");
-  for (const [archivo, solapa] of [["src/components/cs/RevisionCvCs.tsx", "cv"], ["src/components/cs/TestimoniosCs.tsx", "testimonio"], ["src/components/cs/ResellsCs.tsx", "testimonio"], ["src/components/alumnos/Seguimiento.tsx", "seguimiento"]]) {
+  for (const [archivo, solapa] of [["src/components/cs/RevisionCvCs.tsx", "cv"], ["src/components/cs/TestimoniosCs.tsx", "testimonio"], ["src/components/alumnos/Seguimiento.tsx", "seguimiento"]]) {
     assert.match(readFileSync(archivo, "utf8"), new RegExp(`abrirFicha\\([^)]*hoja: "${solapa}"`), `${archivo} abre la ficha en «${solapa}»`);
+  }
+  /* Los resells (19/11) abren por lib/resell-ficha.ts, que prueba cada camino contra lo que la cuenta puede leer; la solapa que pide existe. */
+  const destino = readFileSync("src/lib/resell-ficha.ts", "utf8");
+  assert.match(destino, /vista: "servicio", hoja: "testimonio"/, "el alumno abre en Testimonio, donde están sus llamadas de resell");
+  for (const archivo of ["src/components/cs/ResellsCs.tsx", "src/components/mi-panel/ResellsDelMes.tsx"]) {
+    assert.match(readFileSync(archivo, "utf8"), /destinoDeResell\(/, `${archivo} abre la ficha por destinoDeResell`);
+    assert.doesNotMatch(readFileSync(archivo, "utf8"), /abrirFicha\(r\.sesionId/, `${archivo} ya no abre a ciegas el id de la llamada`);
   }
 });
 

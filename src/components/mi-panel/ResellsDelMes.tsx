@@ -13,6 +13,9 @@ import { formatoDia } from "@/lib/seguimiento";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { mesEnLetras, otroMes, resellsDelMes, resumenResells, textoParaPasar } from "@/lib/resells-agendados";
 import { estadosDeResell } from "@/lib/clientes-cs";
+import { alumnoDeResell, indiceDeAlumnos } from "@/lib/resell-alumno";
+import { destinoDeResell } from "@/lib/resell-ficha";
+import type { Resell } from "@/lib/types";
 
 /* ==================================================================
    Los resells que agendó Customer Success en el mes (Lili, 26/10: «necesito
@@ -47,11 +50,14 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
     return [...porMes].sort((a, b) => a[0].localeCompare(b[0]));
   }, [e.resells, mes]);
   const ultimoMes = masAdelante.length ? masAdelante[masAdelante.length - 1][0] : actual;
-  const alumnoPorMail = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const a of e.alumnos) { const k = a.email.trim().toLowerCase(); if (k && !m.has(k)) m.set(k, a.id); }
-    return m;
-  }, [e.alumnos]);
+  /* A quién abre cada llamada: el alumno (por el vínculo que guarda la base o por su mail) y, si no es alumno, la persona. Se prueba
+     contra lo que esta cuenta puede leer antes de navegar: abrir un id que no resuelve dejaba «No encontramos a esta persona» (19/11). */
+  const indice = useMemo(() => indiceDeAlumnos(e), [e.alumnos, e.contactos, e.leads]);
+  const abrirDe = (r: Resell) => {
+    const d = destinoDeResell(e, r, alumnoDeResell(indice, r));
+    if (!d) { toast(`No hay una ficha de ${r.nombre || "esta persona"} en la app: no es alumno y no hay nadie con ese mail.`, "err"); return; }
+    abrirFicha(d.id, d.vista, d.hoja ? { hoja: d.hoja } : undefined);
+  };
 
   const copiar = async () => {
     const ok = await copiarTexto(textoParaPasar(mes, items));
@@ -104,8 +110,7 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
       {todos && items.length > 0 && (
         <ul className="ps-rs__lista">
           {recientes.map(({ resell: r, dia, agendado }) => {
-            const alumnoId = r.email ? alumnoPorMail.get(r.email.trim().toLowerCase()) : undefined;
-            const abrir = alumnoId ? () => abrirFicha(alumnoId, "servicio", { hoja: "testimonio" }) : r.sesionId ? () => abrirFicha(r.sesionId!, "llamadas") : undefined;
+            const abrir = r.alumnoId || r.contactoId || r.sesionId || r.email ? () => abrirDe(r) : undefined;
             const estado = estadosDeResell(r.estado)[0];
             return (
               <li key={r.id} className="ps-rs__fila">

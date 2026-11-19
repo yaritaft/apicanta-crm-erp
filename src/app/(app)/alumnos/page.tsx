@@ -28,6 +28,8 @@ import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useParamsURL } from "@/lib/useParamsURL";
 import { ETAPAS_DEL_ALUMNO, panelDeServicio } from "@/lib/panel-servicio";
+import { familiasParaFiltrar, opcionesDePrograma } from "@/lib/clientes-cs";
+import { FiltroPrograma } from "@/components/alumnos/FiltroPrograma";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { rachasAHoy } from "@/lib/reportes";
 import { diaDeNegocio } from "@/lib/dia-negocio";
@@ -46,11 +48,12 @@ const VISTAS: Vista[] = ["lista", "pipeline", "clientes", "hoy", "testimonios", 
      abrir una desde el pipeline pasaba el fondo a la lista. Un link viejo con
      ?vista=pipeline o ?seccion=seguimiento se sigue entendiendo.
    - estado: activo, pausado, egresado o baja
+   - programa: el programa contratado (Hackear IT, Hackear AI, Downsell…; lib/clientes-cs.ts, familiaDePrograma)
    - q: nombre, correo, cohorte, plan o país
    - orden: la columna, con "-" adelante si va de mayor a menor. Sin orden,
      los que entraron último van arriba.
    - pag: la página, desde 1 */
-const VISTA_ALUMNOS = { seccion: "lista", vista: "", estado: "todos", orden: "", pag: "1", tablero: "follow", base: "servicio", etapa: "" };
+const VISTA_ALUMNOS = { seccion: "lista", vista: "", estado: "todos", programa: "", orden: "", pag: "1", tablero: "follow", base: "servicio", etapa: "" };
 const COLUMNAS_QUE_ORDENAN = ["nombre", "inicio", "plan", "follow", "contacto", "reporte"];
 const SIN_ORDEN = { clave: "", desc: false };
 
@@ -74,6 +77,8 @@ export default function Alumnos() {
   const [q, setQ] = useBusquedaURL("q", ["pag"]);
   const estado: "todos" | EstadoAlumno = ESTADOS_ALUMNO.includes(enURL.estado as EstadoAlumno) ? (enURL.estado as EstadoAlumno) : "todos";
   const setEstado = (v: "todos" | EstadoAlumno) => setEnURL({ estado: v, pag: null });
+  const programa = enURL.programa;
+  const setPrograma = (v: string) => setEnURL({ programa: v || null, pag: null, etapa: null });
   const orden = ordenDeURL(enURL.orden, COLUMNAS_QUE_ORDENAN, SIN_ORDEN);
   const [asistente, setAsistente] = useState(false);
   const [form, setForm] = useState<Alumno | null>(null);
@@ -94,21 +99,29 @@ export default function Alumnos() {
   const rachas = useMemo(() => rachasAHoy(e), [e]);
   const sinReportar = (a: Alumno) => (a.estado === "activo" ? rachas.get(a.id) ?? 0 : 0);
 
+  /* Los programas del alumno con su nombre de siempre: el de su ficha de Customer Success (que ya mira la cartera) o, sin él, su plan. */
+  const programasDe = (a: Alumno) => familiasParaFiltrar(carteraDe.get(a.id)?.programa || a.plan);
+  const opcionesPrograma = useMemo(
+    () => opcionesDePrograma(e.alumnos.filter((a) => estado === "todos" || a.estado === estado).map((a) => carteraDe.get(a.id)?.programa || a.plan)),
+    [e.alumnos, estado, carteraDe],
+  );
   const filtrados = useMemo(() => {
     const t = normal(q.trim());
     return e.alumnos
       .filter((a) => {
         if (estado !== "todos" && a.estado !== estado) return false;
+        if (programa && !programasDe(a).includes(programa)) return false;
         if (!t) return true;
         return [a.nombre, a.email, a.cohorte, a.plan, a.pais].some((x) => x && normal(x).includes(t));
       })
       /* Los que entraron último, arriba: con cada venta nace un alumno, y los
          recién llegados son los que hay que atender primero. */
       .sort((x, y) => +new Date(y.inicio) - +new Date(x.inicio));
-  }, [e.alumnos, q, estado]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [e.alumnos, q, estado, programa, carteraDe]);
 
-  const hayFiltros = q.trim() !== "" || estado !== "todos";
-  const limpiarFiltros = () => { setQ(""); setEnURL({ estado: null, pag: null }, { q: null }); };
+  const hayFiltros = q.trim() !== "" || estado !== "todos" || programa !== "";
+  const limpiarFiltros = () => { setQ(""); setEnURL({ estado: null, programa: null, pag: null }, { q: null }); };
 
   function guardar() {
     if (!form) return;
@@ -175,6 +188,7 @@ export default function Alumnos() {
         icono={<Search size={18} />} value={q} onChange={(ev) => setQ(ev.target.value)}
         placeholder="Buscá por nombre, cohorte o plan…" aria-label="Buscar alumnos"
       />
+      <FiltroPrograma valor={programa} onCambiar={setPrograma} opciones={opcionesPrograma} />
       <Chip activo={estado === "todos"} onClick={() => setEstado("todos")} count={e.alumnos.length}>Todos</Chip>
       {ESTADOS_ALUMNO.map((k) => {
         const n = e.alumnos.filter((a) => a.estado === k).length;
@@ -253,7 +267,7 @@ export default function Alumnos() {
 
       {vista === "pipeline" && enURL.tablero !== "mano" && (
         <TableroFollowUp
-          cartera={cartera} hoy={hoy} q={q} setQ={setQ}
+          cartera={cartera} hoy={hoy} q={q} setQ={setQ} programa={programa} setPrograma={setPrograma}
           base={enURL.base === "todos" ? "todos" : "servicio"} setBase={(v) => setEnURL({ base: v, etapa: null })}
           etapa={ETAPAS_DEL_ALUMNO.find((x) => x.id === enURL.etapa)?.id} setEtapa={(x) => setEnURL({ etapa: x })}
           onAbrir={(id) => abrirFicha(id, "servicio")}

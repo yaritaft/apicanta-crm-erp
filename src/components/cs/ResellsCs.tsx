@@ -24,6 +24,7 @@ import {
   alternarEstadoResell, coincideResell, COLUMNAS_SUMADAS_RESELLS, esDeTestimonio, estadosDeResell, filasResells, RESULTADOS_TESTIMONIO, resellAbierto, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, JUEGOS_RESELLS, type ClaveResell, type FilaResell,
 } from "@/lib/clientes-cs";
 import { leerMontoCs } from "@/lib/importar-cs";
+import { destinoDeResell } from "@/lib/resell-ficha";
 import { money } from "@/lib/format";
 import type { ColorCrm, OpcionCrm, Resell } from "@/lib/types";
 import { Pastilla } from "./pastillas";
@@ -193,13 +194,18 @@ export function ResellsCs() {
         </span>
       );
     }
-    if (clave === "nombre" && (f.alumno || r.sesionId)) {
+    if (clave === "nombre" && (f.alumno || r.alumnoId || r.contactoId || r.sesionId || r.email)) {
       /* El nombre abre su ficha: la del alumno en la solapa Testimonio (ahí están sus llamadas de resell) o, si no es alumno de la
-         app, la de su llamada. El nombre se corrige con el lápiz de la agenda. */
+         app, la de la persona. Se prueba contra lo que esta cuenta puede leer antes de navegar (lib/resell-ficha.ts): abrir un id
+         que no resuelve dejaba «No encontramos a esta persona» (Lili, 19/11). El nombre se corrige con el lápiz de la agenda. */
       const nombre = r.nombre || f.alumno?.nombre || "Sin nombre";
       return (
         <button type="button" className="crm-t__abrir truncate" title={`Abrir la ficha de ${nombre}`}
-          onClick={() => (f.alumno ? abrirFicha(f.alumno.id, "servicio", { hoja: "testimonio" }) : abrirFicha(r.sesionId!, "llamadas"))}>
+          onClick={() => {
+            const d = destinoDeResell(e, r, f.alumno);
+            if (!d) { toast(`No hay una ficha de ${nombre} en la app: no es alumno y no hay nadie con ese mail.`, "err"); return; }
+            abrirFicha(d.id, d.vista, d.hoja ? { hoja: d.hoja } : undefined);
+          }}>
           {nombre}
         </button>
       );

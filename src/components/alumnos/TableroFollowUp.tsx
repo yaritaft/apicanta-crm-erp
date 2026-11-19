@@ -7,6 +7,8 @@ import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { PartesDeUnTotal, Segmentado } from "@/components/finanzas/visual/visual";
 import { ETAPAS_DEL_ALUMNO, type EtapaAlumnoId, type FilaCartera } from "@/lib/panel-servicio";
 import { formatoDia } from "@/lib/seguimiento";
+import { familiasParaFiltrar, opcionesDePrograma } from "@/lib/clientes-cs";
+import { FiltroPrograma } from "./FiltroPrograma";
 import { num } from "@/lib/format";
 import "@/components/mi-panel/panel-servicio.css";
 
@@ -39,9 +41,11 @@ function Tarjeta({ f, hoy, onAbrir }: { f: FilaCartera; hoy: string; onAbrir: (i
   );
 }
 
-export function TableroFollowUp({ cartera, hoy, q, setQ, base, setBase, etapa, setEtapa, onAbrir, cambio, botones }: {
+export function TableroFollowUp({ cartera, hoy, q, setQ, programa, setPrograma, base, setBase, etapa, setEtapa, onAbrir, cambio, botones }: {
   cartera: FilaCartera[]; hoy: string;
   q: string; setQ: (t: string) => void;
+  /* El programa contratado (nombre de siempre, lib/clientes-cs.ts); vacío: todos. */
+  programa: string; setPrograma: (p: string) => void;
   /* «En servicio» deja afuera a los que ya cerraron (outboarding) o se les terminó el contrato. */
   base: "servicio" | "todos"; setBase: (b: "servicio" | "todos") => void;
   etapa?: EtapaAlumnoId; setEtapa: (x: EtapaAlumnoId | null) => void;
@@ -50,10 +54,12 @@ export function TableroFollowUp({ cartera, hoy, q, setQ, base, setBase, etapa, s
 }) {
   const [cuantos, setCuantos] = useState(POR_TANDA);
   const deLaBase = useMemo(() => (base === "servicio" ? cartera.filter((f) => f.enServicio) : cartera), [cartera, base]);
+  const opcionesPrograma = useMemo(() => opcionesDePrograma(deLaBase.map((f) => f.programa)), [deLaBase]);
   const filas = useMemo(() => {
     const t = sinTildes(q.trim());
-    return t ? deLaBase.filter((f) => [f.nombre, f.email, f.programa, f.followUp].some((x) => sinTildes(x).includes(t))) : deLaBase;
-  }, [deLaBase, q]);
+    const delPrograma = programa ? deLaBase.filter((f) => familiasParaFiltrar(f.programa).includes(programa)) : deLaBase;
+    return t ? delPrograma.filter((f) => [f.nombre, f.email, f.programa, f.followUp].some((x) => sinTildes(x).includes(t))) : delPrograma;
+  }, [deLaBase, q, programa]);
   const columnas = useMemo(() => ETAPAS_DEL_ALUMNO
     .map((x) => ({ ...x, filas: filas.filter((f) => f.etapa === x.id).sort(urgencia) }))
     .filter((c) => c.filas.length > 0), [filas]);
@@ -86,12 +92,13 @@ export function TableroFollowUp({ cartera, hoy, q, setQ, base, setBase, etapa, s
 
       <div className="toolbar" style={{ marginBottom: 0 }}>
         <Input icono={<Search size={18} />} value={q} onChange={(ev) => setQ(ev.target.value)} placeholder="Buscar alumno" aria-label="Buscar alumnos" />
+        <FiltroPrograma valor={programa} onCambiar={(p) => { setPrograma(p); setCuantos(POR_TANDA); }} opciones={opcionesPrograma} />
         <Segmentado etiqueta="Qué alumnos ver" valor={base} onCambiar={(v) => setBase(v as "servicio" | "todos")} opciones={[{ valor: "servicio", texto: "En servicio" }, { valor: "todos", texto: "Todos" }]} />
         <span className="toolbar__fin">{cambio}{botones}</span>
       </div>
 
       {filas.length === 0 ? (
-        <Card><Empty icono={<Search size={22} />} titulo="Ningún alumno coincide" texto="Probá con otro texto." accion={q ? <Button variante="secondary" onClick={() => setQ("")}>Limpiar la búsqueda</Button> : undefined} /></Card>
+        <Card><Empty icono={<Search size={22} />} titulo="Ningún alumno coincide" texto="Probá con otro texto." accion={q || programa ? <Button variante="secondary" onClick={() => { setQ(""); setPrograma(""); }}>Limpiar los filtros</Button> : undefined} /></Card>
       ) : elegida ? (
         <section aria-label={elegida.label} className="stack-3">
           <div className="tf-cabeza">

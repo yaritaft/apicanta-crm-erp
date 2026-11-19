@@ -102,7 +102,7 @@ export function EditarAlumno({ form, setForm, onGuardar }: {
   return (
     <ModalForm
       abierto onCerrar={() => setForm(null)} onGuardar={onGuardar} ancho
-      titulo="Editar alumno" sub="El progreso lo vas actualizando a mano a medida que avanza."
+      titulo="Editar alumno"
       guardarTexto="Guardar cambios" puedeGuardar={form.nombre.trim().length > 0}
     >
       <div className="form-grid">
@@ -129,9 +129,6 @@ export function EditarAlumno({ form, setForm, onGuardar }: {
           <Input type="date" value={isoDia(form.inicio)}
             /* Mediodía: la medianoche UTC en Argentina es el día anterior. */
             onChange={(ev) => { if (ev.target.value) setForm({ ...form, inicio: new Date(`${ev.target.value}T12:00:00`).toISOString() }); }} />
-        </Field>
-        <Field label="Progreso" span2 ayuda={`${form.progreso}% del programa completado.`}>
-          <Input type="range" min={0} max={100} step={5} value={form.progreso} onChange={(ev) => setForm({ ...form, progreso: Number(ev.target.value) })} />
         </Field>
         <Field label="Notas" span2><Textarea value={form.notas ?? ""} onChange={(ev) => setForm({ ...form, notas: ev.target.value })} rows={3} /></Field>
         <CamposExtra campos={e.campos} entidad="alumno" valores={form.extra} onChange={(k, v) => setForm({ ...form, extra: { ...form.extra, [k]: v } })} />

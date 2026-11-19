@@ -1,5 +1,5 @@
 import type { EstadoApp, ID } from "./types";
-import { DIAS_PARA_CERRAR_RESELL, DURACION_POR_DEFECTO, esDeTestimonio, estadosDeResell, faltaDeLaLlamada, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, resellAbierto, sumarMeses } from "./clientes-cs";
+import { DIAS_PARA_CERRAR_RESELL, DURACION_POR_DEFECTO, esDeTestimonio, estadosDeResell, faltaDeLaLlamada, familiasParaFiltrar, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, opcionesDePrograma, resellAbierto, sumarMeses, testimonioNoSeGraba } from "./clientes-cs";
 import { contactosDeIngreso, DIA_CONTACTO_SEMANAL, DIAS_DEL_INGRESO, diasEntre, formatoDia, sumarDias, terminoElServicio } from "./seguimiento";
 import { diasDe } from "./pausas";
 import { ventaPendienteDe } from "./alumnos";
@@ -77,6 +77,9 @@ export interface SeccionServicio {
   rojos: number;
   /* Todos los de la lista, lo más urgente arriba. */
   items: ItemServicio[];
+  /* Cuántos hay de cada programa (con su nombre de siempre) y cuántos de esos están en rojo. Sólo donde el programa cambia qué hay que hacer:
+     «Se les termina el contrato» (Lili, 19/11: los viejos tienen contemplación y garantía extendida; el Downsell y los nuevos, no). */
+  porPrograma?: { programa: string; n: number; rojos: number }[];
   /* Qué decir cuando no hay nadie. */
   vacio: string;
   /* A dónde se va a ver la lista entera. */
@@ -172,6 +175,13 @@ function seccion(
 ): SeccionServicio {
   const items = [...todos].sort(orden);
   return { ...base, total: items.length, rojos: items.filter((i) => i.tono === "rojo").length, items };
+}
+
+/** Cuántos de una lista hay de cada programa: uno que cursa dos cuenta en los dos, y el que no tiene ninguno, en «Sin programa». */
+export function partesPorPrograma(items: readonly Pick<ItemServicio, "programa" | "tono">[]): { programa: string; n: number; rojos: number }[] {
+  const rojos = new Map<string, number>();
+  for (const i of items) if (i.tono === "rojo") for (const f of familiasParaFiltrar(i.programa)) rojos.set(f, (rojos.get(f) ?? 0) + 1);
+  return opcionesDePrograma(items.map((i) => i.programa)).map((o) => ({ programa: o.programa, n: o.n, rojos: rojos.get(o.programa) ?? 0 }));
 }
 
 /** Lo más viejo (más días) primero, y a igual cantidad por nombre. */
@@ -318,8 +328,8 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   for (const f of filasTes) {
     const t = f.testimonio;
     const nombre = f.nombre || "Alumno sin ficha";
-    const noQuiere = sinTildes(t.followUp) === "no quiere grabar" || sinTildes(t.estadoVideo) === "no quiso grabar";
-    if (noQuiere) continue;
+    /* Dijo que no, o la llamada no se concretó: no queda nada por agendar ni por pedirle (Lili, 19/11). */
+    if (testimonioNoSeGraba(t.followUp, t.estadoVideo)) continue;
     const grabado = Boolean(t.fechaGrabacion) && String(t.fechaGrabacion) <= hoy;
     if (grabado && !t.link.trim()) {
       const d = diasEntre(String(t.fechaGrabacion), hoy);
@@ -382,7 +392,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
     seccion({ id: "contactar", titulo: "Seguimiento 20D", corto: "20D", regla: "Después del día 1 y del día 7, se los contacta cada 20 días desde el último contacto: su próximo seguimiento ya venció o toca hoy.", vacio: "Nadie para el seguimiento de hoy. La lista se llena a medida que vencen los 20 días de cada alumno.", verTodos: { texto: "Ver la lista completa", href: "/alumnos?seccion=hoy" } }, contactar, masViejoPrimero),
     seccion({ id: "vuelven", titulo: "Arrancan o retoman", corto: "Retoman", regla: "Termina su demora de inicio o su pausa: hablale para que arranque.", vacio: "Nadie termina una pausa ni una demora de inicio en estos días.", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, vuelven, masViejoPrimero),
     seccion({ id: "esperanVenta", titulo: "Esperan la venta del closer", corto: "Sin venta", regla: "Los diste de alta antes de que el closer cargara la venta: se unen solos cuando la carga. A los 3 días queda en rojo: avisale al closer.", vacio: "Todos los alumnos tienen su venta cargada.", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, esperanVenta, masViejoPrimero),
-    seccion({ id: "renovar", titulo: "Se les termina el contrato", corto: "Renovar", vacio: "Ningún contrato por vencer en los próximos 30 días.", regla: `Les quedan ${DIAS_PARA_RENOVAR} días o menos (o ya terminó y siguen activos): renovar o dar de baja.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, renovar, masCercanoPrimero),
+    seccion({ id: "renovar", titulo: "Se les termina el contrato", corto: "Renovar", vacio: "Ningún contrato por vencer en los próximos 30 días.", regla: `Les quedan ${DIAS_PARA_RENOVAR} días o menos (o ya terminó y siguen activos): renovar o dar de baja.`, porPrograma: partesPorPrograma(renovar), verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, renovar, masCercanoPrimero),
     seccion({ id: "resells", titulo: "Resells y testimonios sin cierre", corto: "Resells", vacio: "Todos los resells y testimonios ya tienen su resultado.", regla: `La llamada ya pasó y quien la tomó no cargó cómo salió (si grabó el testimonio y el link, si compró). Le aparece en su panel hasta que lo cargue; a los ${DIAS_PARA_CERRAR_RESELL} días queda en rojo.`, verTodos: { texto: "Ver la agenda de resells", href: "/alumnos?seccion=resells" } }, sinCierre, masViejoPrimero),
     seccion({ id: "testimonios", titulo: "Testimonios", corto: "Testimonios", vacio: "No hay testimonios pendientes.", regla: "Grabaron y falta el link del video, o falta agendar la llamada de grabación.", verTodos: { texto: "Ver testimonios", href: "/alumnos?seccion=testimonios" } }, [...sinLink, ...porAgendar], masViejoPrimero),
     seccion({ id: "reportes", titulo: "Dejaron de reportar", corto: "Reportes", vacio: "Todos al día con su reporte semanal.", regla: "Tres semanas o más sin mandar el reporte semanal.", verTodos: { texto: "Ver los formularios", href: "/reportes" } }, reportes, masViejoPrimero),

@@ -11,6 +11,7 @@ import {
 import { crearMotor, numeroComoValor, siNo, SI, NO, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
 import { finConPausas, inicioReal, pausaEnCurso, pausasDelCiclo, pausasNormales } from "./pausas";
 import { followUpDeReserva, reservaSinCompletar } from "./reservas";
+import { alumnoDeResell, indiceDeAlumnos } from "./resell-alumno";
 import type {
   Alumno, ConfigSeguimiento, Contacto, Cuota, EstadoApp, ID, ListasCs, PausaServicio, Resell, SeguimientoAlumno, SesionUnoAUno, Testimonio, Venta,
 } from "./types";
@@ -48,7 +49,8 @@ export const LISTAS_POR_DEFECTO: ListasCs = {
   ],
   estadosContrato: ["Enviado", "Falta firma", "Firmado y subido a Drive"],
   garantias: [],
-  followUpsTestimonio: ["Llamada agendada", "No agendada", "Pendiente de agendar", "No quiere grabar"],
+  /* «No se graba, porque no se concretó» (Lili, 19/11): la llamada de testimonio no se hizo y no se va a hacer; no es que no quiera. */
+  followUpsTestimonio: ["Llamada agendada", "No agendada", "Pendiente de agendar", "No quiere grabar", "No se graba, porque no se concretó"],
   estadosVideo: ["Pendiente de subir", "Subido a Drive", "No quiso grabar", "Subido a YouTube"],
   quienGraba: ["Yari", "Mariano"],
   /* «No corresponde, alumno activo» (Lili, 28/10): todavía tiene contrato vigente, así que no se le hace el pitch de venta. */
@@ -57,6 +59,16 @@ export const LISTAS_POR_DEFECTO: ListasCs = {
   estadosResell: ["2da Agenda", "Upgrade a Hackear IA", "No quiere renovar", "Outbording", "Seguimiento", "Garantía Extendida", "Alumno vigente", "No responde"],
   estadosCv: [...ESTADOS_CV],
 };
+
+/* Un testimonio que ya no se va a grabar: dijo que no, o la llamada de grabación no se concretó (Lili, 19/11). No queda nada para agendar,
+   ni para pedirle el link: sale de «Testimonios por agendar» y de «Falta el link». */
+export const FOLLOW_UP_NO_SE_CONCRETO = "No se graba, porque no se concretó";
+export function testimonioNoSeGraba(followUp: string | null | undefined, estadoVideo?: string | null): { motivo: "no-quiere" | "no-se-concreto" } | null {
+  const f = sinTildes(textoLimpio(followUp)).trim();
+  if (f === sinTildes(FOLLOW_UP_NO_SE_CONCRETO)) return { motivo: "no-se-concreto" };
+  if (f === "no quiere grabar" || sinTildes(textoLimpio(estadoVideo)).trim() === "no quiso grabar") return { motivo: "no-quiere" };
+  return null;
+}
 
 /* Las dos que no se ajustan: Firmado o Pendiente, y las sesiones con el mentor (0 a 3). */
 /* «No se realizaba contrato» (Lili, 22/10): a las reservas y al Downsell de antes del 22/09 no se les hacía; hoy no tiene sentido
@@ -201,6 +213,9 @@ export function resellNormal(r: Partial<Resell> & Pick<Resell, "id">): Resell {
     origen: r.origen === "calendly" || r.origen === "importado" ? r.origen : "manual",
     /* Sólo si lo trae: sin el dato no se manda, y guardar la agenda no lo borra en la base. */
     ...(typeof r.agendadoEn === "string" && r.agendadoEn ? { agendadoEn: r.agendadoEn } : {}),
+    /* El vínculo con la persona lo pone la base: se conserva tal cual viene y no se manda vacío. */
+    ...(typeof r.alumnoId === "string" && r.alumnoId ? { alumnoId: r.alumnoId } : {}),
+    ...(typeof r.contactoId === "string" && r.contactoId ? { contactoId: r.contactoId } : {}),
     creadoEn: r.creadoEn ?? new Date().toISOString(), actualizadoEn: r.actualizadoEn ?? new Date().toISOString(),
     actualizadoPor: textoLimpio(r.actualizadoPor),
   };
@@ -221,6 +236,54 @@ export function programasDeTexto(texto: string, lista: readonly string[] = LISTA
     ...elegir(/\bbiz\b|business/, "Hackear Biz"),
     ...elegir(/hackear\s*it|mentoria/, "Hackear IT"),
   ];
+}
+
+/* ---------- El programa contratado, con un solo nombre (Lili, 19/11) ----------
+   El programa es un texto libre de la ficha y llegó escrito de muchas formas: «HACKEAR IA» (220 alumnos), «Hackear AI» (40), «DOWNSELL»
+   y «Downsell», «Hackear IA MID»… Para FILTRAR y para dividir las listas del panel hace falta un solo nombre por programa, sin tocar lo
+   que cada alumno tiene cargado. Lili separa a los alumnos viejos (Hackear IT, con su contemplación y su garantía extendida) de los
+   nuevos (Hackear AI) y del Downsell, que no las tienen: no son el mismo programa aunque el formulario semanal sea el mismo. */
+
+/** El nombre de siempre de un programa: «HACKEAR IA» y «Hackear AI» son «Hackear AI»; «DOWNSELL», «Downsell». Lo que no se reconoce queda como se escribió. */
+export function familiaDePrograma(texto: string): string {
+  const original = textoLimpio(texto);
+  const t = sinTildes(original).replace(/\s+/g, " ");
+  if (!t) return "";
+  if (/downsell/.test(t)) return /plus/.test(t) ? "Downsell Plus+" : "Downsell";
+  if (/\bmid\b/.test(t)) return "Hackear IA MID";
+  if (/mastermind/.test(t)) return "Principal Mastermind";
+  if (/principal/.test(t)) return "Principals";
+  if (/\bbiz\b|business/.test(t)) return "Hackear Biz";
+  if (/\bia\b|\bai\b/.test(t)) return "Hackear AI";
+  if (/\bit\b|mentoria/.test(t)) return "Hackear IT";
+  return original;
+}
+
+/** Los programas de un alumno con su nombre de siempre, sin repetir y en el orden en que están cargados («Hackear Biz · HACKEAR IA» → Hackear Biz, Hackear AI). */
+export function familiasDePrograma(programas: string | readonly string[] | null | undefined): string[] {
+  const lista = typeof programas === "string" ? programas.split(" · ") : programas ?? [];
+  return [...new Set(lista.map(familiaDePrograma).filter(Boolean))];
+}
+
+/** Sin programa cargado: el grupo de los que no se pudo saber. */
+export const SIN_PROGRAMA = "Sin programa";
+
+/** Los programas de un alumno para filtrar: los suyos con su nombre de siempre o, si no tiene ninguno, «Sin programa». */
+export const familiasParaFiltrar = (programas: string | readonly string[] | null | undefined): string[] => {
+  const f = familiasDePrograma(programas);
+  return f.length ? f : [SIN_PROGRAMA];
+};
+
+/* El orden en que se ofrecen: primero los de siempre (como los nombra Lili), después lo que haya escrito alguien, y al final «Sin programa». */
+const ORDEN_DE_PROGRAMAS = ["Hackear IT", "Hackear AI", "Downsell", "Downsell Plus+", "Hackear IA MID", "Hackear Biz", "Principals", "Principal Mastermind"];
+
+/** Cuántos alumnos hay de cada programa (uno que cursa dos cuenta en los dos), para ofrecerlos en el filtro. Cada alumno trae sus programas. */
+export function opcionesDePrograma(porAlumno: readonly (string | readonly string[] | null | undefined)[]): { programa: string; n: number }[] {
+  const n = new Map<string, number>();
+  for (const programas of porAlumno) for (const f of familiasParaFiltrar(programas)) n.set(f, (n.get(f) ?? 0) + 1);
+  const peso = (p: string) => (p === SIN_PROGRAMA ? 1e6 : ORDEN_DE_PROGRAMAS.includes(p) ? ORDEN_DE_PROGRAMAS.indexOf(p) : 1000);
+  return [...n].map(([programa, cuantos]) => ({ programa, n: cuantos }))
+    .sort((a, b) => peso(a.programa) - peso(b.programa) || a.programa.localeCompare(b.programa, "es"));
 }
 
 /** Los programas y la duración de un alumno: los de su ficha o, si no están, los que sugiere su venta (el producto o el plan). */
@@ -957,14 +1020,11 @@ export function alternarEstadoResell(texto: string | null | undefined, estado: s
   return (hay.includes(estado) ? hay.filter((x) => x !== estado) : [...hay, estado]).join(", ");
 }
 
-export function filasResells(e: Pick<EstadoApp, "resells" | "alumnos"> & Partial<Pick<EstadoApp, "sesiones">>): FilaResell[] {
+export function filasResells(e: Pick<EstadoApp, "resells" | "alumnos"> & Partial<Pick<EstadoApp, "sesiones" | "contactos" | "leads">>): FilaResell[] {
   const grabacionDeSesion = new Map<string, string>();
   for (const x of e.sesiones ?? []) if (x.grabacion) grabacionDeSesion.set(x.id, x.grabacion);
-  const porMail = new Map<string, Alumno>();
-  for (const a of e.alumnos ?? []) {
-    const k = a.email.trim().toLowerCase();
-    if (k && !porMail.has(k)) porMail.set(k, a);
-  }
+  /* El alumno de cada llamada: el vínculo que guarda la base, el mail de su ficha o la persona con ese mail (lib/resell-alumno.ts). */
+  const indice = indiceDeAlumnos(e);
   return (e.resells ?? []).map((r0) => {
     const r = resellNormal(r0);
     return {
@@ -972,7 +1032,7 @@ export function filasResells(e: Pick<EstadoApp, "resells" | "alumnos"> & Partial
       estado: r.estado || (r.cancelada ? "Cancelada" : "Agendada"),
       /* La que cargaron a mano y, si no, la que trajo Fathom a la llamada. */
       grabacion: r.grabacion || (r.sesionId ? grabacionDeSesion.get(r.sesionId) ?? "" : ""),
-      alumno: r.email ? porMail.get(r.email.trim().toLowerCase()) : undefined,
+      alumno: alumnoDeResell(indice, r),
     };
   });
 }

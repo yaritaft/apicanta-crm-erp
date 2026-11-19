@@ -123,5 +123,6 @@ function cuandoDe(estado: EstadoTestimonio, fecha: string | null, hoy: string): 
   if (estado === "agendado") return fecha ? `agendado para el ${formatoDia(fecha, hoy)}` : "agendado, sin fecha";
   if (estado === "por-agendar") return "sin agendar";
   if (estado === "no-quiere") return "no quiso grabar";
+  if (estado === "no-se-concreto") return "no se concretó";
   return fecha ? `grabó el ${formatoDia(fecha, hoy)}` : "grabado";
 }

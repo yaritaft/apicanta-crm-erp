@@ -501,6 +501,10 @@ export interface Resell {
   /* Cuándo se reservó (la reserva original si después se reprogramó): lo pone la base (supabase/resells-agendado-en.sql).
      Vacío en los importados del Airtable. Con esto se cuentan los resells agendados del mes (lib/resells-agendados.ts). */
   agendadoEn?: string | null;
+  /* De quién es la llamada: lo guarda la base (supabase/resells-vinculo-alumno.sql) con todos los caminos, también los que esta cuenta
+     no puede leer. El alumno (si lo es) y la persona. La app los lee de acá y, sin ellos, los calcula (lib/resell-alumno.ts). */
+  alumnoId?: ID | null;
+  contactoId?: ID | null;
   creadoEn: string;
   actualizadoEn: string;
   actualizadoPor: string;

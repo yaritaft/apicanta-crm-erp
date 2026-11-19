@@ -122,7 +122,7 @@ test("la lista trae TODOS (los grabados y los que no), cuenta cada estado, filtr
   const filas = filasDeTestimonios(testimonios, alumnos, HOY);
   const r = resumenDeTestimonios(filas);
   assert.equal(r.total, 6, "los seis, también el ya grabado con su video");
-  assert.deepEqual(r.porEstado, { "con-link": 1, "sin-link": 1, agendado: 1, "por-agendar": 2, "no-quiere": 1 });
+  assert.deepEqual(r.porEstado, { "con-link": 1, "sin-link": 1, agendado: 1, "por-agendar": 2, "no-quiere": 1, "no-se-concreto": 0 });
 
   const todos = listaDeTestimonios(filas, "todos", "");
   assert.deepEqual(todos.map((f) => f.id).sort(), ["t1", "t2", "t3", "t4", "t5", "t6"], "sin repetir ni perder");
@@ -138,5 +138,5 @@ test("la lista trae TODOS (los grabados y los que no), cuenta cada estado, filtr
 test("sin testimonios (o con filas incompletas) no se rompe", () => {
   assert.deepEqual(filasDeTestimonios(undefined, [], HOY), []);
   assert.deepEqual(filasDeTestimonios([{ id: "", alumnoId: "x" }, { id: "y" }] as never, [], HOY), []);
-  assert.deepEqual(resumenDeTestimonios([]), { total: 0, porEstado: { "con-link": 0, "sin-link": 0, agendado: 0, "por-agendar": 0, "no-quiere": 0 } });
+  assert.deepEqual(resumenDeTestimonios([]), { total: 0, porEstado: { "con-link": 0, "sin-link": 0, agendado: 0, "por-agendar": 0, "no-quiere": 0, "no-se-concreto": 0 } });
 });

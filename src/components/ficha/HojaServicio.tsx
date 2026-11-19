@@ -9,9 +9,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck, Briefcase, Cake, CalendarCheck, CalendarClock, CalendarDays, CalendarPlus, Contact, CreditCard, FileSignature, Flag, GraduationCap,
   Hash, HeartHandshake, Home, IdCard, KeyRound, Layers, Link2, Mail, MapPin, MessageSquareText, Phone, PhoneCall, PhoneMissed, Plus,
-  Pencil, Repeat2, ShieldCheck, Signal, StickyNote, Timer, UserRound, Users, Video,
+  Pencil, Repeat2, ShieldCheck, Signal, StickyNote, Timer, Trash2, UserRound, Users, Video,
 } from "lucide-react";
 import { Badge, Button, Empty, Select } from "@/components/ui/ui";
+import { Confirmar } from "@/components/ui/Modal";
 import { CeldaEditable } from "@/components/crm-tabla/CeldaEditable";
 import { DatosExtra } from "@/components/ui/CamposExtra";
 import { EditarAlumno, VentaDelAlumno } from "@/components/alumnos/Servicio";
@@ -207,6 +208,8 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
   /* Testimonio y resell se cargan y corrigen acá mismo, con los formularios de sus pantallas (Alumnos → Testimonios / Resells). */
   const [formTestimonio, setFormTestimonio] = useState<{ t?: Testimonio } | null>(null);
   const [formResell, setFormResell] = useState<Resell | null>(null);
+  /* Un testimonio que no va a existir (Lili, 19/11): se puede borrar desde acá, además de marcarlo «No se graba, porque no se concretó». */
+  const [borrarTestimonio, setBorrarTestimonio] = useState<Testimonio | null>(null);
   const [formSesion, setFormSesion] = useState<{ s?: SesionUnoAUno; con?: string } | null>(null);
   const puedeTestimonio = puedeEditar(acceso, "testimonios");
   const puedeResell = puedeEditar(acceso, "resells");
@@ -474,16 +477,6 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
                 ) : (venta.ingresoComunidad ?? "—")}
               </Fila>
             )}
-            <Fila icono={<Signal size={15} />} rotulo="Progreso del programa">
-              <span className="hs-progreso">
-                {[0, 25, 50, 75, 100].map((v) => (
-                  <button key={v} type="button" className="hs-progreso__paso" aria-pressed={alumno.progreso === v} disabled={!puedeAlumno}
-                    onClick={() => acciones.actualizar<Alumno>("alumnos", alumno.id, { progreso: v }, alumno.nombre, `${alumno.nombre}: progreso al ${v}%.`)}>
-                    {v}%
-                  </button>
-                ))}
-              </span>
-            </Fila>
             {alumno.cuotaMensual > 0 && <Fila icono={<CreditCard size={15} />} rotulo="Cuota mensual"><span className="t-num">{money(alumno.cuotaMensual, alumno.moneda)}</span></Fila>}
             </div>
           </Plegable>
@@ -631,6 +624,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
             <BloqueServicio key={t.id} titulo={testimonios.length > 1 ? `Testimonio ${testimonios.length - i} de ${testimonios.length}` : "Testimonio"} extra={puedeTestimonio ? (
               <span className="hs-acciones">
                 <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => setFormTestimonio({ t })}>Editar</Button>
+                <Button sm variante="ghost" icono={<Trash2 size={13} />} onClick={() => setBorrarTestimonio(t)} aria-label="Eliminar este testimonio" title="Eliminar este testimonio">Eliminar</Button>
                 {i === 0 && <Button sm variante="ghost" icono={<Plus size={14} />} onClick={() => setFormTestimonio({})}>Otro</Button>}
               </span>
             ) : undefined}>
@@ -730,6 +724,12 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
 
       {formTestimonio && <FormTestimonioCs testimonio={formTestimonio.t} alumnoId={alumno.id} onCerrar={() => setFormTestimonio(null)} />}
       {formResell && <FormResell resell={formResell} onCerrar={() => setFormResell(null)} />}
+      <Confirmar
+        abierto={borrarTestimonio !== null} onCerrar={() => setBorrarTestimonio(null)}
+        titulo="¿Eliminar este testimonio?"
+        texto="Se borra el registro del testimonio de la ficha (no el video ni el posteo). Si en realidad la llamada no se concretó y querés dejar constancia, editalo y elegí «No se graba, porque no se concretó» en vez de borrarlo."
+        onConfirmar={() => { if (borrarTestimonio) { acciones.borrarTestimonio(borrarTestimonio.id); toast("Testimonio eliminado."); } }}
+      />
       {formSesion && <FormSesionUnoAUno alumnoId={alumno.id} nombre={alumno.nombre} sesion={formSesion.s} con={formSesion.con} onCerrar={() => setFormSesion(null)} />}
       {editarAlumno && (
         <EditarAlumno form={editarAlumno} setForm={setEditarAlumno} onGuardar={() => {
