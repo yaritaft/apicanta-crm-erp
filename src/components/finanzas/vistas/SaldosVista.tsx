@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Check, Landmark, RefreshCw } from "lucide-react";
 import { CabeceraVista } from "@/components/finanzas/vistas/CabeceraVista";
 import { CopiarLink } from "@/components/ui/Filtros";
+import { AlertaTope } from "@/components/finanzas/AlertaTope";
 import { Badge, Button, Card } from "@/components/ui/ui";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { Cascada, Plegable, Segmentado, type PasoCascada } from "@/components/finanzas/visual/visual";
@@ -69,6 +70,8 @@ export function SaldosVista({ e, lectura, rangoFijo }: {
 
   return (
     <>
+      {/* El tope de la Financiera (Aldana, 19/11): siempre a la vista acá; en rojo si se pasa. */}
+      <AlertaTope e={e} siempre conLink={false} />
       <section className="fz-hero" aria-label="Saldos por cuenta">
         <div>
           <span className="fz-hero__etiqueta">

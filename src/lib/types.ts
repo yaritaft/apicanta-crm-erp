@@ -1665,6 +1665,10 @@ export interface ConceptoPago {
      lanzamiento. Vacío: cuentan todas. Finanzas no sabe filtrar por estrategia: con esto la comisión es un costo de la
      liquidación (entra a Finanzas al cerrarla). */
   sinEmbudoIds?: ID[];
+  /* Las ventas de estas estrategias cuentan SIEMPRE, aunque su servicio no esté entre los de `productoIds` (Aldana, 19/11: el lanzamiento
+     interno vende Upgrade AI y Principals y Agustín las comisiona; el Upgrade AI «natural» no). Se mira la estrategia con la que quedó la venta:
+     por eso el asistente de venta tiene la opción «Lanzamiento interno». Sigue valiendo `sinEmbudoIds` y el resto de las reglas. */
+  siempreEmbudoIds?: ID[];
   /* profit: sacarlo sobre lo suyo y no sobre el profit de toda la empresa (como
      lo calculan las hojas de comisión). Ingresos = lo cobrado de las
      ventas que le tocan (los servicios elegidos), en los días en que vale la

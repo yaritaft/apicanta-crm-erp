@@ -37,6 +37,7 @@ import { useChatEnVivo } from "@/components/ficha/useChatEnVivo";
 import { FotoDePerfil } from "./FotoDePerfil";
 import { Campanita } from "@/components/avisos/Campanita";
 import { AvisoVersion } from "./AvisoVersion";
+import { useAvisoDeTope } from "@/components/avisos/useAvisoDeTope";
 import { PedirAccesoPantalla, PedirPermisoParaEditar } from "./PedirAcceso";
 import { pedirAcceso } from "@/lib/pedir-acceso";
 
@@ -102,6 +103,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
      editar Ventas y sólo atan: crear un webinar de la planilla sigue siendo el botón de la pantalla de Webinars.
      La cuenta tarda unos 300 ms con todos los datos: se hace una vez, un par de segundos después de que cambian las ventas o los
      webinars (no en cada cambio de un contacto o una llamada), y sin trabar lo que la persona esté haciendo. */
+  /* Financiera + dLocal arriba del tope de US$ 50.000: quien ve Finanzas, con los datos traídos, avisa en la campanita (Aldana, 19/11). */
+  useAvisoDeTope(estado, datosListos && nivelEn(acceso, "finanzas") >= 1);
   const puedeAtarVentas = datosListos && nivelEn(acceso, "ventas") >= 2 && !esCuentaDeCloser(acceso);
   useEffect(() => {
     if (!puedeAtarVentas) return;

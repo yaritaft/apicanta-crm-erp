@@ -56,6 +56,8 @@ interface Borrador {
   productoIds: string[];
   /* Sin las ventas de estas estrategias (ConceptoPago.sinEmbudoIds). */
   sinEmbudoIds: string[];
+  /* Las ventas de estas estrategias cuentan siempre (ConceptoPago.siempreEmbudoIds). Hoy no se edita acá: sólo se conserva al guardar. */
+  siempreEmbudoIds: string[];
   sinVentasSinComision: boolean;
   sinExcluidasMarketing: boolean;
   /* Profit propio (ConceptoPago.profitPropio), la regla de cuotas y de quién se descuenta la comisión. */
@@ -80,7 +82,7 @@ function inicial(m: MiembroEquipo, c: ConceptoPago | null | undefined, base: Mon
     const reparte = m.rol === "growth" || m.rol === "socio";
     return {
       tipo: null, nombre: "", nombreTocado: false, monto: "", moneda: base, tasa: "",
-      base: reparte ? "profit" : "cash-neto", cada: "", alcance: alcanceDeRol(m), productoIds: [], sinEmbudoIds: [],
+      base: reparte ? "profit" : "cash-neto", cada: "", alcance: alcanceDeRol(m), productoIds: [], sinEmbudoIds: [], siempreEmbudoIds: [],
       sinVentasSinComision: false, sinExcluidasMarketing: m.rol === "growth",
       profitPropio: false, soloVentasDesdeInicio: false, procesadoresDeTodas: false, descuentaComisionDe: [],
       utmSource: "", unidad: "", condicion: "", desde: "", hasta: "", notas: "",
@@ -91,7 +93,7 @@ function inicial(m: MiembroEquipo, c: ConceptoPago | null | undefined, base: Mon
     monto: c.monto !== undefined ? escribirMonto(c.monto) : "", moneda: c.moneda,
     tasa: c.tasa !== undefined ? escribirMonto(Math.round(c.tasa * 1e6) / 1e4) : "",
     base: c.base, cada: c.cada !== undefined ? escribirMonto(c.cada) : "",
-    alcance: c.alcance ?? "todas", productoIds: c.productoIds ?? [], sinEmbudoIds: c.sinEmbudoIds ?? [],
+    alcance: c.alcance ?? "todas", productoIds: c.productoIds ?? [], sinEmbudoIds: c.sinEmbudoIds ?? [], siempreEmbudoIds: c.siempreEmbudoIds ?? [],
     sinVentasSinComision: Boolean(c.sinVentasSinComision), sinExcluidasMarketing: Boolean(c.sinExcluidasMarketing),
     profitPropio: Boolean(c.profitPropio), soloVentasDesdeInicio: Boolean(c.soloVentasDesdeInicio),
     procesadoresDeTodas: Boolean(c.procesadoresDeTodas),
@@ -150,6 +152,8 @@ function armar(b: Borrador, id: string, base: Moneda): ConceptoPago {
       if (b.productoIds.length) c.productoIds = b.productoIds;
       if (b.descuentaComisionDe.length) c.descuentaComisionDe = b.descuentaComisionDe;
     }
+    /* Las estrategias que cuentan siempre: se conservan (con servicios elegidos, que es cuando hacen algo). */
+    if (b.siempreEmbudoIds.length && c.productoIds?.length) c.siempreEmbudoIds = b.siempreEmbudoIds;
     /* La regla de cuotas necesita la fecha de inicio: sin ella no hace nada, y no se guarda. */
     if (b.soloVentasDesdeInicio && b.desde && (info.deVentas || (b.base === "profit" && b.profitPropio))) c.soloVentasDesdeInicio = true;
     if (b.base === "cash-neto" && b.procesadoresDeTodas) c.procesadoresDeTodas = true;

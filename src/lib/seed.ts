@@ -93,6 +93,7 @@ export const EMBUDOS: Embudo[] = [
   { id: "emb_vsl_youtube",    nombre: "VSL YOUTUBE",       activo: true, orden: 12 },
   { id: "emb_funnel_angie",   nombre: "Funnel-Angie",      activo: true, orden: 13 },
   { id: "emb_vsl_wp",         nombre: "VSL-WP",            activo: true, orden: 14 },
+  { id: "emb_lanzamiento_interno", nombre: "Lanzamiento interno", activo: true, orden: 15 },
 ];
 
 /* Los "Vendedores" y "Setters" de la planilla de Angelo, con sus nombres.

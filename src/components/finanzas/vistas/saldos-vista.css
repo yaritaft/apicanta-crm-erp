@@ -61,3 +61,13 @@ dt.sd-concilia__parte { cursor: help; }
   .sd-cifras { gap: var(--space-3); }
   .sd-cifra__valor { font-size: 20px; line-height: 26px; }
 }
+
+/* El tope de la Financiera (Financiera ARS + USD + dLocal): una barra de cuánto del tope hay. Rojo y ámbar los pone la alarma (.alarma). */
+.sd-tope { display: flex; flex-direction: column; gap: 6px; padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100); }
+.sd-tope__fila { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; line-height: 20px; }
+.sd-tope__fila > svg { flex: none; color: var(--ink-subtle); }
+.sd-tope__titulo { font-weight: 600; color: var(--ink); }
+.sd-tope__valor { margin-left: auto; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.sd-tope__pista { height: 8px; border-radius: 4px; background: var(--viz-base); overflow: hidden; }
+.sd-tope__relleno { height: 100%; min-width: 3px; border-radius: 4px; background: var(--viz-3); }
+.sd-tope__sub { font-size: 12px; line-height: 17px; color: var(--ink-subtle); overflow-wrap: anywhere; }

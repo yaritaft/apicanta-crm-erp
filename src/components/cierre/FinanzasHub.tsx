@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Banknote } from "lucide-react";
 import { Button } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
+import { AlertaTope } from "@/components/finanzas/AlertaTope";
 import { useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { nivelDeRuta, veLaLiquidacion } from "@/lib/permisos";
@@ -84,6 +85,8 @@ export function FinanzasHub() {
 
   return (
     <div className="cm">
+      {/* Financiera + dLocal arriba del tope (Aldana, 19/11): se ve apenas se entra a Finanzas, sólo cuando hay algo que decir. */}
+      <AlertaTope e={e} />
       <div className="cm-barra">
         {vista === "mes" ? (
           <div className="cm-mes">

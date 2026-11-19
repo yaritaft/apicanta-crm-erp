@@ -24,7 +24,7 @@ import { descartarComprobante } from "@/lib/comprobantes";
 import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Sesion, Venta } from "@/lib/types";
 import { closerDeLlamada, paseDeLaVenta } from "@/lib/pasar-llamadas";
 import { PAISES, planDePago, webinarDeProyecto } from "@/lib/angelo";
-import { estrategiaDeLaVenta, FALTA_ESTRATEGIA } from "@/lib/estrategia-de-venta";
+import { EMBUDO_LANZAMIENTO_INTERNO, esServicioDelLanzamientoInterno, estrategiaDeLaVenta, FALTA_ESTRATEGIA } from "@/lib/estrategia-de-venta";
 import { origenDeUtm, textoUtm } from "@/lib/utms";
 import { setterDeAgendas } from "@/lib/setter-agendas";
 import { useUsuarioActual } from "@/lib/usuario";
@@ -77,7 +77,7 @@ interface LineaCuota {
   fija?: boolean;
 }
 
-type PasoId = "cliente" | "producto" | "precio" | "equipo" | "plan" | "cobros" | "contrato" | "resumen";
+type PasoId = "cliente" | "producto" | "lanzamiento" | "precio" | "equipo" | "plan" | "cobros" | "contrato" | "resumen";
 
 /* Los nombres de la planilla de Angelo: quien cargaba ahí reconoce cada
    paso por su columna. */
@@ -94,6 +94,10 @@ const PASOS: { id: PasoId; titulo: string }[] = [
 /* El contrato de PandaDoc (pedido del 20/10, como en Blue OS): va antes del resumen y aparece sólo si los
    contratos están prendidos para esta cuenta (Ajustes → Integraciones). */
 const PASO_CONTRATO: { id: PasoId; titulo: string } = { id: "contrato", titulo: "Contrato" };
+
+/* Sólo para los servicios que se venden en el lanzamiento interno (Upgrade AI, Principals): una pregunta que no se puede dejar sin contestar,
+   así nadie se olvida y Agustín no queda sin comisión por un clic (Aldana, 19/11). Va justo después del servicio. */
+const PASO_LANZAMIENTO: { id: PasoId; titulo: string } = { id: "lanzamiento", titulo: "Lanzamiento" };
 
 type DecisionContrato = "mandar" | "ya" | "despues" | "no-lleva";
 
@@ -123,6 +127,9 @@ interface Borrador {
   webinarId: string;
   fecha: string;
   excluidoMarketing: boolean;
+  /* Es del lanzamiento interno (lib/estrategia-de-venta.ts): estrategia «Lanzamiento interno», sin mirar la UTM, excluida de marketing, y Agustín la comisiona.
+     null: todavía no se contestó (sólo importa con los servicios del lanzamiento: el asistente no deja pasar sin decirlo). */
+  lanzamientoInterno: boolean | null;
   notas: string;
   reserva: number;
   /* Sólo deja la reserva (Manu, 21/10): el plan es una sola línea, el valor de la venta es la reserva (como las
@@ -237,11 +244,6 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
   const { esDueno } = useAcceso();
   const configContratos = e.ajustes.contratos;
   const conContrato = contratosPrendidos(configContratos, esDueno);
-  const pasos = useMemo(() => {
-    const base = completando ? PASOS.filter((x) => x.id !== "cliente" && x.id !== "equipo") : PASOS;
-    return conContrato ? [...base.slice(0, -1), PASO_CONTRATO, base[base.length - 1]] : base;
-  }, [conContrato, completando]);
-
   /* Quien carga la venta, si es del equipo: queda elegido como closer. */
   const yo = useUsuarioActual();
   const preelegido = useRef(false);
@@ -253,6 +255,17 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
   /* El contrato de prueba: con los contratos en «prueba», siempre; encendidos o sólo dueños, si un dueño lo pide. */
   const modoContrato: "produccion" | "prueba" = configContratos?.estado === "prueba" || (esDueno && b.contrato.prueba) ? "prueba" : "produccion";
   const mainRef = useRef<HTMLDivElement>(null);
+
+  /* Con un servicio del lanzamiento interno (Upgrade AI, Principals) hay un paso más, justo después del servicio. */
+  const preguntaLanzamiento = !completando && esServicioDelLanzamientoInterno(b.productoId);
+  const pasos = useMemo(() => {
+    let base = completando ? PASOS.filter((x) => x.id !== "cliente" && x.id !== "equipo") : PASOS;
+    if (preguntaLanzamiento) {
+      const k = base.findIndex((x) => x.id === "producto");
+      base = [...base.slice(0, k + 1), PASO_LANZAMIENTO, ...base.slice(k + 1)];
+    }
+    return conContrato ? [...base.slice(0, -1), PASO_CONTRATO, base[base.length - 1]] : base;
+  }, [conContrato, completando, preguntaLanzamiento]);
 
   const paso = pasos[i];
 
@@ -423,10 +436,12 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
     /* El origen sale de la UTM de quien compró; si no tiene una con regla,
        lo que traía el lead (su webinar). El proyecto WEB-día/mes/año ya
        dice de qué webinar vino. */
-    const o = origenDeUtm(e, contactoId, b.fecha);
-    const embudoId = estrategiaDeLaVenta(e, contactoId, b.fecha, b.embudoId);
-    const proyecto = o?.proyecto ?? (b.proyecto || undefined);
-    const webinarId = o?.webinarId ?? (b.webinarId || webinarDeProyecto(proyecto, e.webinars, b.fecha)?.id);
+    /* Una venta del lanzamiento interno no tiene origen de anuncios: no se mira la UTM con la que la persona llegó hace meses ni su webinar. */
+    const lanzamiento = b.lanzamientoInterno === true;
+    const o = lanzamiento ? undefined : origenDeUtm(e, contactoId, b.fecha);
+    const embudoId = estrategiaDeLaVenta(e, contactoId, b.fecha, b.embudoId, lanzamiento);
+    const proyecto = lanzamiento ? undefined : (o?.proyecto ?? (b.proyecto || undefined));
+    const webinarId = lanzamiento ? undefined : (o?.webinarId ?? (b.webinarId || webinarDeProyecto(proyecto, e.webinars, b.fecha)?.id));
     const venta: Venta = {
       id: ventaId,
       contactoId,
@@ -438,7 +453,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
       moneda: mon,
       closerId: b.closerId || undefined,
       directorId: sinComision ? undefined : (b.directorId || undefined),
-      excluidoMarketing: b.excluidoMarketing || sinComision,
+      excluidoMarketing: b.excluidoMarketing || sinComision || lanzamiento,
       estado: "activa",
       fecha: b.fecha,
       notas: b.notas,
@@ -580,6 +595,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
               <PasoProducto b={b} set={set} e={e} M={M} completando={completando} />
             </>
           )}
+          {paso.id === "lanzamiento" && <PasoLanzamiento b={b} set={set} e={e} />}
           {paso.id === "precio" && (
             <>
               <PasoPrecio b={b} set={set} e={e} M={M} pagado={completando ? pagadoDeReserva : 0} />
@@ -654,6 +670,7 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
     webinarId: "",
     fecha: mov?.fecha ?? hoy,
     excluidoMarketing: false,
+    lanzamientoInterno: null,
     notas: "",
     reserva: 0,
     soloReserva: false,
@@ -734,6 +751,8 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: {
       return b.contactoNombre.trim().length >= 2 ? "Elegí al cliente de la lista o crealo como nuevo" : "Buscá al cliente";
     case "producto":
       return b.productoId ? null : "Elegí el servicio adquirido";
+    case "lanzamiento":
+      return b.lanzamientoInterno === null ? "Decí si es del lanzamiento interno" : null;
     case "contrato": {
       if (b.contrato.decision !== "mandar") return null;
       if (!b.contrato.datos) return "Armando los datos del contrato…";
@@ -767,7 +786,7 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: {
       if (paso === "resumen" && ctx.repetida) return "Ya hay una venta idéntica: marcá que es otra compra, o salí sin registrar";
       /* Una venta sin estrategia no se cuenta en Marketing ni deja cerrar el mes: se elige acá, en el resumen. (Al completar
          una reserva el origen no se toca: es el de la venta que ya está.) */
-      if (paso === "resumen" && !ctx.completando && !estrategiaDeLaVenta(ctx.e, b.contactoId, b.fecha, b.embudoId)) return FALTA_ESTRATEGIA;
+      if (paso === "resumen" && !ctx.completando && !estrategiaDeLaVenta(ctx.e, b.contactoId, b.fecha, b.embudoId, b.lanzamientoInterno === true)) return FALTA_ESTRATEGIA;
       const nombre = (c: LineaCuota) => (c.esReserva ? "la reserva" : `la cuota ${c.numero}`);
       const mal = b.cuotas.find((c) => sumar(c.cobros) > c.monto + 0.01);
       if (mal) return `Los cobros de ${nombre(mal)} superan su monto`;
@@ -1063,6 +1082,34 @@ function PasoProducto({ b, set, e, M, completando }: {
             })}
           />
         ))}
+      </div>
+    </>
+  );
+}
+
+/* ---------- Lanzamiento interno (sólo con Upgrade AI y Principals) ----------
+   Aldana (19/11): el lunes o martes se vende el upgrade a Hackear AI y Principals a quienes ya son alumnos. Es una venta interna que Agustín sí
+   comisiona. En vez de depender de que el closer elija a mano «excluida de marketing» y la estrategia correcta, se pregunta acá, sin poder pasar
+   de largo. La respuesta pone la estrategia «Lanzamiento interno» (sin mirar la UTM) y la excluye de marketing. */
+function PasoLanzamiento({ b, set, e }: { b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp }) {
+  const servicio = e.productos.find((p) => p.id === b.productoId)?.nombre ?? "Este servicio";
+  return (
+    <>
+      <Pregunta
+        texto="¿Es del lanzamiento interno?"
+        sub={`${servicio} se vende en el lanzamiento interno. Si es de ahí, la venta queda con esa estrategia y Agustín la comisiona: no hace falta tocar nada de marketing.`}
+      />
+      <div className="opciones">
+        <Opcion
+          tecla="1" nombre="Sí, es del lanzamiento interno" activo={b.lanzamientoInterno === true}
+          sub="Estrategia «Lanzamiento interno», fuera de los anuncios (excluida de marketing) y con la comisión de Agustín."
+          onClick={() => set({ lanzamientoInterno: true })}
+        />
+        <Opcion
+          tecla="2" nombre="No, es una venta común" activo={b.lanzamientoInterno === false}
+          sub="Sigue como cualquier venta: la estrategia sale de la UTM de la persona o se elige al final."
+          onClick={() => set({ lanzamientoInterno: false })}
+        />
       </div>
     </>
   );
@@ -1694,11 +1741,12 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, a
   const director = e.equipo.find((x) => x.id === b.directorId);
   /* El origen, como va a quedar: el de la UTM de quien compró (el estándar
      o una regla de Ajustes) o, si no dice nada, lo que traía el lead. */
-  const o = origenDeUtm(e, b.contactoId, b.fecha);
-  const embudo = e.embudos.find((x) => x.id === (o?.embudoId ?? b.embudoId));
-  const proyecto = o?.proyecto ?? b.proyecto;
-  const webinar = e.webinars.find((x) => x.id === (o?.webinarId ?? b.webinarId))
-    ?? webinarDeProyecto(proyecto, e.webinars, b.fecha);
+  const lanzamiento = b.lanzamientoInterno === true;
+  const o = lanzamiento ? undefined : origenDeUtm(e, b.contactoId, b.fecha);
+  const embudo = e.embudos.find((x) => x.id === (lanzamiento ? EMBUDO_LANZAMIENTO_INTERNO : (o?.embudoId ?? b.embudoId)));
+  const proyecto = lanzamiento ? undefined : (o?.proyecto ?? b.proyecto);
+  const webinar = lanzamiento ? undefined : (e.webinars.find((x) => x.id === (o?.webinarId ?? b.webinarId))
+    ?? webinarDeProyecto(proyecto, e.webinars, b.fecha));
   const setter = e.equipo.find((x) => x.id === (b.setterId || setterMarcado || o?.setterId));
   const referidor = b.esReferido && b.referidorNombre.trim() ? b.referidorNombre.trim() : o?.referidorNombre;
   const conciliados = b.cuotas.flatMap((c) => c.cobros).filter((p) => p.movimientoId).length;
@@ -1729,9 +1777,9 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, a
         {!completando && <><dt>Origen</dt>
         <dd>
           {embudo || proyecto || webinar
-            ? [embudo?.nombre, proyecto, webinar?.titulo].filter(Boolean).join(" · ")
+            ? [embudo?.nombre ?? (lanzamiento ? "Lanzamiento interno" : undefined), proyecto, webinar?.titulo].filter(Boolean).join(" · ")
             : <span className="t-subtle">Sin origen todavía</span>}
-          {!o?.embudoId && (
+          {!lanzamiento && !o?.embudoId && (
             <div style={{ marginTop: 6, maxWidth: 320 }}>
               <Select value={b.embudoId} placeholder="Elegí la estrategia" aria-label="Estrategia de la venta" error={!b.embudoId}
                 onChange={(ev) => set({ embudoId: ev.target.value })}
@@ -1739,7 +1787,8 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, a
             </div>
           )}
           <span className="t-sm t-subtle" style={{ display: "block" }}>
-            {o ? `De la UTM ${textoUtm(o.utm)}.`
+            {lanzamiento ? "Del lanzamiento interno: no se mira la UTM con la que la persona llegó. Agustín comisiona esta venta."
+              : o ? `De la UTM ${textoUtm(o.utm)}.`
               : "Quien compró no llegó con una UTM del estándar ni con una que tenga regla: si se asigna en Ajustes → UTMs, se completa solo."}
           </span>
         </dd></>}
@@ -1800,11 +1849,23 @@ function PasoResumen({ b, set, e, M, sinComision, totalCobrado, setterMarcado, a
 
       {!completando && (
         <div className="row-3">
-          <Switch checked={b.excluidoMarketing || sinComision} etiqueta="Excluida de marketing"
-            onChange={(v) => set({ excluidoMarketing: v })} />
+          <Switch checked={lanzamiento} etiqueta="Lanzamiento interno"
+            onChange={(v) => set({ lanzamientoInterno: v })} />
+          <span className="t-body t-muted">
+            <strong>Lanzamiento interno</strong>
+            <span className="t-subtle"> · queda con esa estrategia, fuera de los anuncios, y Agustín la comisiona</span>
+          </span>
+        </div>
+      )}
+
+      {!completando && (
+        <div className="row-3">
+          <Switch checked={b.excluidoMarketing || sinComision || lanzamiento} etiqueta="Excluida de marketing"
+            onChange={(v) => { if (!lanzamiento) set({ excluidoMarketing: v }); }} />
           <span className="t-body t-muted">
             <strong>Excluida de marketing</strong>
             {sinComision && <span className="t-subtle"> (se marca sola con este closer)</span>}
+            {lanzamiento && <span className="t-subtle"> (se marca sola en el lanzamiento interno)</span>}
           </span>
         </div>
       )}

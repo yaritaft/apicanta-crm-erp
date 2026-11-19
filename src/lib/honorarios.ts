@@ -158,6 +158,10 @@ function filtros(c: ConceptoPago, e: Catalogos, hermanos?: ConceptoPago[]): stri
     const nombres = c.sinEmbudoIds.map((id) => e.embudos?.find((x) => x.id === id)?.nombre ?? "una estrategia borrada");
     out.push(`sin ${nombres.length === 1 ? "la estrategia" : "las estrategias"} ${nombres.join(" y ")}`);
   }
+  if (c.siempreEmbudoIds?.length && c.productoIds?.length) {
+    const nombres = c.siempreEmbudoIds.map((id) => e.embudos?.find((x) => x.id === id)?.nombre ?? "una estrategia borrada");
+    out.push(`y todas las de ${nombres.length === 1 ? "la estrategia" : "las estrategias"} ${nombres.join(" y ")}, sea cual sea el servicio`);
+  }
   if (c.sinVentasSinComision && (c.alcance ?? "todas") === "todas") out.push(`sin las que cerró ${quienesNoComisionan(e)}`);
   if (c.sinExcluidasMarketing) out.push("sin las excluidas de marketing");
   if (c.soloVentasDesdeInicio && c.desde) out.push("sólo ventas cerradas desde el inicio");
@@ -342,7 +346,7 @@ export function calculaFinanzas(m: Pick<MiembroEquipo, "rol">, c: ConceptoPago):
   /* Finanzas no sabe sacar el profit de lo suyo ni la regla de cuotas por fecha de venta: con
      alguna de las dos, el renglón es un costo de la liquidación (entra a Finanzas al cerrarla) y
      su tasa para Finanzas queda en 0, así no se cuenta dos veces. */
-  if (c.profitPropio || (c.soloVentasDesdeInicio && c.desde) || c.sinEmbudoIds?.length) return false;
+  if (c.profitPropio || (c.soloVentasDesdeInicio && c.desde) || c.sinEmbudoIds?.length || c.siempreEmbudoIds?.length) return false;
   if (c.base === "profit") return m.rol === "growth" || m.rol === "socio";
   if (c.base !== "cash-neto") return false;
   if (c.alcance === "closer") return m.rol === "closer" || m.rol === "ceo";
@@ -529,7 +533,7 @@ function veredicto(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | u
   if (p && (alcance === "closer" || alcance === "director") && !cobraEnFecha(m, p.fecha)) return no("Se cobró después de su salida");
   if (alcance === "setter" && v.setterId !== m.id) return { cuenta: false };
   if (alcance === "director" && v.directorId !== m.id) return { cuenta: false };
-  if (c.productoIds?.length && !(v.productoId && c.productoIds.includes(v.productoId))) {
+  if (c.productoIds?.length && !(v.productoId && c.productoIds.includes(v.productoId)) && !(v.embudoId && c.siempreEmbudoIds?.includes(v.embudoId))) {
     const servicio = cx.e.productos.find((x) => x.id === v.productoId)?.nombre;
     return no(servicio ? `Es de ${servicio}, que no está entre los servicios que cuentan` : "No es de ninguno de los servicios que cuentan");
   }
