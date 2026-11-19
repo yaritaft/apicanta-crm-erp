@@ -6,7 +6,8 @@ import { ArrowLeft, ArrowRight, ArrowRightLeft, CalendarDays, Check, Download, E
 import { Ayuda, Badge, Button, Card, Empty, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
 import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { Drawer, Dato } from "@/components/ui/Drawer";
-import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
+import { DateRangePicker, diaDeNegocio, rangoDePreset } from "@/components/ui/DateRangePicker";
+import { fueraDelPeriodo } from "@/lib/agenda-fuera-del-periodo";
 import { CopiarLink, Filtro, FiltroMulti, opcionesDe, SIN, type OpcionFiltro } from "@/components/ui/Filtros";
 import { Origen } from "@/components/leads/Origen";
 import { EstadoDeLlamada, EstadoEditable } from "@/components/estados/EstadoLlamada";
@@ -254,7 +255,7 @@ export default function Agenda() {
   /* Las llamadas que quedan, y cuántas hay de cada opción. Cada desplegable
      cuenta sobre lo que dejan pasar los DEMÁS filtros, el período y la
      búsqueda: el número dice cuántas vas a ver si lo elegís. */
-  const { visibles, cuentas } = useMemo(() => {
+  const { visibles, cuentas, fuera } = useMemo(() => {
     const t = normal(busca.trim());
     const base = t ? enPeriodo.filter((s) => normal(`${s.invitado} ${s.email ?? ""}`).includes(t)) : enPeriodo;
     const pasa = (s: Sesion, salvo?: Faceta) => FACETAS.every((k) => k === salvo || pasaFiltro(f[k], valor(k, s)));
@@ -264,8 +265,14 @@ export default function Agenda() {
       return [k, m];
     })) as Record<Faceta, Map<string, number>>;
     const visibles = base.filter((s) => pasa(s)).sort((a, b) => (alReves ? -1 : 1) * (+new Date(a.inicia) - +new Date(b.inicia)));
-    return { visibles, cuentas };
-  }, [enPeriodo, busca, f, alReves, valor]);
+    /* Las que coinciden con la búsqueda y los filtros pero el período deja afuera (ver lib/agenda-fuera-del-periodo.ts).
+       Sin nada que recorte no hay qué avisar: lo de afuera es, simplemente, otro período. */
+    const hayCorte = t !== "" || FACETAS.some((k) => f[k].length > 0);
+    const fuera = hayCorte
+      ? fueraDelPeriodo(e.sesiones, enPeriodo, (s) => Boolean(diaDe(s)), (s) => (!t || normal(`${s.invitado} ${s.email ?? ""}`).includes(t)) && pasa(s))
+      : 0;
+    return { visibles, cuentas, fuera };
+  }, [e.sesiones, enPeriodo, busca, f, alReves, valor]);
 
   const porDia = useMemo(() => {
     const m = new Map<string, Sesion[]>();
@@ -304,6 +311,12 @@ export default function Agenda() {
     const arriba = lista.current?.getBoundingClientRect().top;
     if (arriba !== undefined && arriba < 0) window.scrollTo({ top: window.scrollY + arriba - 96 });
   }
+
+  /* «Ver todas»: el período de todo lo que hay, con los mismos filtros. */
+  const verTodas = () => {
+    const r = rangoDePreset("max", limites.min, true, undefined, limites.max);
+    if (r) setRango(r, { pag: null });
+  };
 
   /* Cambiar un filtro vuelve a la primera página. */
   const filtrar = (faceta: Faceta, valores: string[]) => setVista({ [faceta]: aURL(valores), pag: null });
@@ -451,6 +464,14 @@ export default function Agenda() {
           )}
           {AGENDAR_A_MANO && <Button sm variante="primary" icono={<Plus size={15} />} onClick={() => setForm(VACIA(e.ajustes.tiposSesion[0] ?? "Sesión"))}>Agendar</Button>}
         </div>
+
+        {fuera > 0 && (
+          <div className="aviso-tipo" role="status">
+            <CalendarDays size={15} aria-hidden />
+            <span>Con estos filtros hay <strong>{fuera}</strong> {fuera === 1 ? "llamada más" : "llamadas más"} fuera del período que estás viendo.</span>
+            <button type="button" className="link" onClick={verTodas}>Ver todas</button>
+          </div>
+        )}
 
         {visibles.length === 0 ? (
           <Empty
