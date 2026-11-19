@@ -100,6 +100,8 @@ export async function GET(peticion: Request) {
   const mercury = resumenVacio();
   const conectadas: ProveedorPasarela[] = [];
   const errores: { proveedor: string; mensaje: string }[] = [];
+  /* Lo que no es un error pero conviene saber (Whop no trajo cobros nuevos): se muestra como información. */
+  const diagnosticos: { proveedor: string; mensaje: string }[] = [];
 
   /* Whop manda quién pagó y la comisión en el detalle de cada pago, un
      pedido por cobro: se pide sólo para los que en la base están incompletos. */
@@ -110,11 +112,12 @@ export async function GET(peticion: Request) {
     if (soloPases && !VEN_PASES.includes(proveedor)) return;
     conectadas.push(proveedor);
     const avisos: string[] = [];
+    const notas: string[] = [];
     /* Los cobros de Stripe no dicen nada de los pases: sólo sus retiros. */
     if (!soloPases || proveedor !== "stripe") {
       try {
         const cobros = await listar(proveedor, desde, hasta, {
-          avisos, puntas, mercury, reembolsos: soloPases ? undefined : reembolsos,
+          avisos, diagnosticos: notas, puntas, mercury, reembolsos: soloPases ? undefined : reembolsos,
           necesitaDetalle: proveedor === "whop" && completosWhop ? (m) => !completosWhop.has(m.referencia) : undefined,
         });
         if (!soloPases) movimientos.push(...cobros);
@@ -134,6 +137,7 @@ export async function GET(peticion: Request) {
       }
     }
     for (const mensaje of avisos) errores.push({ proveedor, mensaje });
+    for (const mensaje of notas) diagnosticos.push({ proveedor, mensaje });
   }));
 
   movimientos.sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
@@ -192,6 +196,7 @@ export async function GET(peticion: Request) {
   return NextResponse.json({
     conectadas,
     errores,
+    diagnosticos,
     banco,
     guardados,
     completados,

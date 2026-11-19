@@ -57,6 +57,9 @@ export interface MovimientoApi {
 export interface OpcionesListar {
   necesitaDetalle?: (m: MovimientoApi) => boolean;
   avisos?: string[];
+  /* Lo que conviene saber de lo que trajo la pasarela y no es un error (Whop sin cobros nuevos): viaja aparte para no confundirse con una
+     falla y para que una pasarela que simplemente no vendió no tumbe pruebas ni asuste. */
+  diagnosticos?: string[];
   /* Dónde anotar la plata que pasó entre cuentas propias (el depósito de
      una pasarela en el banco): no es un cobro, es la punta de un pase
      (lib/traspasos.ts). */
@@ -479,11 +482,39 @@ async function detalleWhop(id: string, clave: string): Promise<DetalleWhop> {
   };
 }
 
+/* Cuándo se pagó, según lo que mande Whop: segundos desde 1970 (la forma de siempre), milisegundos o una fecha escrita. */
+function fechaDePagoWhop(p: Obj): number | undefined {
+  const v = p.paid_at ?? p.created_at;
+  const n = num(v);
+  if (n !== undefined) return n < 1e12 ? n * 1000 : n;
+  const t = typeof v === "string" ? Date.parse(v) : NaN;
+  return Number.isFinite(t) ? t : undefined;
+}
+const diaCorto = (ms: number) => { const d = new Date(ms - 3 * 3600_000); return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`; };
+
+/** Qué trajo Whop, sólo en cifras (ni nombres ni correos): cuántos pagos, de qué fechas, en qué estados y en qué orden. Cuando la
+ *  sincronización no trae cobros nuevos (20/11/2026: dejó de traer desde el 14/11 sin dar ningún error), esto dice si Whop mandó
+ *  vacío, mandó viejo o mandó algo que acá se descarta. */
+export function resumenDeWhop(filas: Obj[], c: { paginas: number; totalPaginas?: number } = { paginas: 0 }): string {
+  if (filas.length === 0) return `Whop devolvió 0 pagos (páginas pedidas: ${c.paginas}${c.totalPaginas !== undefined ? ` de ${c.totalPaginas}` : ""}).`;
+  const fechas = filas.map(fechaDePagoWhop);
+  const validas = fechas.filter((x): x is number => x !== undefined);
+  const estados = new Map<string, number>();
+  for (const f of filas) { const k = `${txt(f.status) ?? "?"}/${txt(f.substatus) ?? "?"}`; estados.set(k, (estados.get(k) ?? 0) + 1); }
+  const primero = validas[0], ultimo = validas[validas.length - 1];
+  const orden = primero !== undefined && ultimo !== undefined && primero !== ultimo ? (primero > ultimo ? "de la más nueva a la más vieja" : "de la más vieja a la más nueva") : "sin orden claro";
+  const top = [...estados.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, n]) => `${k} ${n}`).join(", ");
+  return `Whop devolvió ${filas.length} pagos en ${c.paginas}${c.totalPaginas !== undefined ? ` de ${c.totalPaginas}` : ""} páginas (${orden}; `
+    + `${validas.length ? `del ${diaCorto(Math.min(...validas))} al ${diaCorto(Math.max(...validas))}` : "ninguno trae fecha"}${validas.length < filas.length ? `, ${filas.length - validas.length} sin fecha` : ""}; ${top}).`;
+}
+
 export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<MovimientoApi[]> {
   const clave = process.env.WHOP_API_KEY;
   if (!clave) return [];
 
   const filas: Obj[] = [];
+  let paginasPedidas = 0;
+  let totalPaginas: number | undefined;
   for (let pagina = 1; pagina <= 10; pagina++) {
     const r = await fetch(`https://api.whop.com/api/v5/company/payments?per=50&status=paid&page=${pagina}`, {
       headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
@@ -492,9 +523,11 @@ export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<
     if (!r.ok) throw rechazo("Whop", r, data);
     const estas = (data.data ?? []) as Obj[];
     filas.push(...estas);
+    paginasPedidas = pagina;
     /* Vienen de la más nueva a la más vieja: cuando la página ya es anterior
        a la ventana, no hace falta seguir. */
     const paginas = num((data.pagination as Obj | undefined)?.total_pages) ?? 1;
+    totalPaginas = num((data.pagination as Obj | undefined)?.total_pages);
     const masVieja = estas.length ? Number(estas[estas.length - 1].paid_at ?? estas[estas.length - 1].created_at ?? 0) * 1000 : 0;
     if (estas.length === 0 || pagina >= paginas || masVieja < desde.getTime()) break;
   }
@@ -550,7 +583,16 @@ export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<
   else if (sinComision.length) {
     console.warn(`[whop] sin comisión en ${sinComision.length} ${sinComision.length === 1 ? "cobro" : "cobros"} (por ejemplo: ${sinComision[0]}): se usa el porcentaje estimado de la cuenta. La lista trae los campos: ${Object.keys(filas[0] ?? {}).sort().join(", ") || "ninguno"}. Si pasa con todos, a la clave de la API le faltan permisos de lectura.`);
   }
-  return lista.filter((m) => !intentos.has(m.referencia));
+  const cobros = lista.filter((m) => !intentos.has(m.referencia));
+  /* Whop cobra todos los días: si no trae nada de las últimas 48 horas, se dice (en la respuesta y en el registro del servidor) en vez
+     de quedar callado. Pasó del 14 al 19/11/2026: la sincronización seguía «conectada», sin errores, y los cobros se cargaban a mano. */
+  const masNuevo = cobros.reduce((m, x) => Math.max(m, Date.parse(x.fecha)), 0);
+  if (!masNuevo || Date.now() - masNuevo > 48 * 3600_000) {
+    const aviso = `Whop no trajo cobros ${masNuevo ? `desde el ${diaCorto(masNuevo)}` : "en la ventana pedida"}. ${resumenDeWhop(filas, { paginas: paginasPedidas, totalPaginas })}`;
+    opciones.diagnosticos?.push(aviso);
+    console.warn(`[whop] ${aviso}`);
+  }
+  return cobros;
 }
 
 /* ---------- Mercado Pago ---------- */

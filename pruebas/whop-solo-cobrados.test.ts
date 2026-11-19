@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cobradoEnWhop, whop } from "@/lib/pasarelas-api";
+import { cobradoEnWhop, resumenDeWhop, whop } from "@/lib/pasarelas-api";
 
 /* ==================================================================
    Whop lista como «paid» también los intentos que nunca cobraron. El 16/10/2026,
@@ -71,4 +71,56 @@ test("whop(): sin estado en ningún lado (la forma de antes) el cobro sigue entr
     const r = await whop(new Date(Date.now() - 86400_000));
     assert.deepEqual(r.map((m) => m.referencia), ["pay_viejo"]);
   });
+});
+
+/* ---------- Whop dejó de traer cobros sin dar error (14 al 19/11/2026) ---------- */
+
+test("whop(): si no trae nada de las últimas 48 horas, avisa con cifras y no calla", async () => {
+  const viejo = Math.floor(Date.now() / 1000) - 5 * 86400;
+  await conWhop([item("pay_viejo", { paid_at: viejo, status: "paid", substatus: "succeeded" })], {}, async () => {
+    const avisos: string[] = [];
+    const diagnosticos: string[] = [];
+    const r = await whop(new Date(Date.now() - 30 * 86400_000), { avisos, diagnosticos });
+    assert.equal(r.length, 1, "el cobro viejo sigue entrando");
+    assert.deepEqual(avisos, [], "no es un error de la sincronización");
+    assert.equal(diagnosticos.length, 1);
+    assert.match(diagnosticos[0], /^Whop no trajo cobros desde el \d\d\/\d\d\. Whop devolvió 1 pagos en 1 de 1 páginas/);
+    assert.match(diagnosticos[0], /paid\/succeeded 1/);
+    assert.doesNotMatch(diagnosticos[0], /cami@mail\.com|Cami/, "sin nombres ni correos");
+  });
+});
+
+test("whop(): si Whop devuelve la lista vacía, el aviso lo dice", async () => {
+  await conWhop([], {}, async () => {
+    const diagnosticos: string[] = [];
+    const r = await whop(new Date(Date.now() - 30 * 86400_000), { diagnosticos });
+    assert.deepEqual(r, []);
+    assert.deepEqual(diagnosticos, ["Whop no trajo cobros en la ventana pedida. Whop devolvió 0 pagos (páginas pedidas: 1 de 1)."]);
+  });
+});
+
+test("whop(): con cobros de hoy no avisa nada", async () => {
+  await conWhop([item("pay_hoy", { status: "paid", substatus: "succeeded" })], {}, async () => {
+    const diagnosticos: string[] = [];
+    await whop(new Date(Date.now() - 86400_000), { diagnosticos });
+    assert.deepEqual(diagnosticos, []);
+  });
+});
+
+test("resumenDeWhop: cuenta estados, fechas y orden sin mostrar datos de nadie", () => {
+  const dia = (n: number) => Date.parse(`2026-11-${n}T15:00:00Z`) / 1000;
+  const texto = resumenDeWhop([
+    { id: "a", paid_at: dia(14), status: "paid", substatus: "succeeded", user: { email: "x@y.com" } },
+    { id: "b", paid_at: dia(10), status: "open", substatus: "failed" },
+    { id: "c", created_at: "2026-11-02T10:00:00Z", status: "paid", substatus: "succeeded" },
+    { id: "d", status: "paid" },
+  ], { paginas: 2, totalPaginas: 7 });
+  assert.match(texto, /^Whop devolvió 4 pagos en 2 de 7 páginas \(/);
+  assert.match(texto, /de la más nueva a la más vieja/);
+  assert.match(texto, /del 02\/11 al 14\/11, 1 sin fecha/);
+  assert.match(texto, /paid\/succeeded 2/);
+  assert.match(texto, /open\/failed 1/);
+  assert.doesNotMatch(texto, /x@y\.com/);
+  assert.match(resumenDeWhop([{ id: "a", paid_at: dia(14) }, { id: "b", paid_at: dia(10) }]), /más nueva a la más vieja/);
+  assert.match(resumenDeWhop([{ id: "a", paid_at: dia(10) }, { id: "b", paid_at: dia(14) }]), /más vieja a la más nueva/);
 });

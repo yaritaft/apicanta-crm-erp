@@ -171,6 +171,8 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
         movimientos?: Parameters<typeof acciones.importarMovimientos>[0];
         conectadas?: ProveedorPasarela[];
         errores?: { proveedor: string; mensaje: string }[];
+        /* Lo que no es un error pero conviene saber: una pasarela que no trajo cobros nuevos (Whop, 14 al 19/11). */
+        diagnosticos?: { proveedor: string; mensaje: string }[];
         mercury?: { enProceso: number; internos: number; anulados: string[] };
         /* Lo que las pasarelas dicen que devolvieron: se ata a la devolución cargada o queda para confirmar. */
         reembolsos?: ReembolsoCrudo[];
@@ -180,6 +182,11 @@ export function ConciliacionVista({ embebido = false, rangoFijo }: {
       if (!r.ok) throw new Error(data.error ?? "No se pudo sincronizar.");
       if (data.errores?.length) {
         toast(`${nombrePasarela(data.errores[0].proveedor as ProveedorPasarela)}: ${data.errores[0].mensaje}`, "err");
+      }
+      if (data.diagnosticos?.length) {
+        /* Largo y con cifras: dura más y se puede copiar para pasarlo tal cual. */
+        const texto = `${nombrePasarela(data.diagnosticos[0].proveedor as ProveedorPasarela)}: ${data.diagnosticos[0].mensaje}`;
+        toast(texto, "info", { texto: "Copiar", onClick: () => { void navigator.clipboard?.writeText(texto); } });
       }
       if (!data.conectadas?.length) {
         toast("Todavía no hay pasarelas conectadas: faltan las claves. Mientras tanto, importá el CSV.", "err");
