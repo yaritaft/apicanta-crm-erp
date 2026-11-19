@@ -108,6 +108,8 @@ export function TestimoniosDelPanel({ hoy, puedeRecordar = false }: { hoy: strin
             const est = ESTADOS_TESTIMONIO.find((x) => x.id === f.estado)!;
             const nombre = f.nombre || "Alumno borrado";
             const cuando = cuandoDe(f.estado, f.fecha, hoy);
+            /* Sólo los que tienen una grabación (hecha o agendada) tienen algo para mirar o completar: los que no se graban, no. */
+            const conDatos = f.estado === "con-link" || f.estado === "sin-link" || f.estado === "agendado";
             return (
               <li key={f.id} className="ps-rs__fila ps-tes__fila">
                 {f.nombre
@@ -121,16 +123,18 @@ export function TestimoniosDelPanel({ hoy, puedeRecordar = false }: { hoy: strin
                   )}
                   <Pastilla texto={est.pastilla} tono={est.tono} />
                 </span>
-                <span className="ps-tes__detalle">
-                  <span>Follow-up: <b>{f.followUp || "sin cargar"}</b></span>
-                  <span>Resell: <b>{f.resell || "sin cargar"}</b></span>
-                  <span>Situación: <b>{f.previa && f.actual ? "previa y actual ✓" : f.previa ? "falta la actual" : f.actual ? "falta la previa" : "sin cargar"}</b></span>
-                  {f.falta.length > 0 && <span className="ps-tes__falta">Falta {f.falta.join(", ")}.</span>}
-                  {f.falta.length > 0 && puedeRecordar && (
-                    <Button sm variante="ghost" icono={<Bell size={13} />} cargando={mandando === f.id} onClick={() => void recordar(f)}
-                      title="Le llega un aviso a quien grabó y a quien lo sigue, con lo que falta y los días que pasaron">Recordar</Button>
-                  )}
-                </span>
+                {conDatos && (
+                  <span className="ps-tes__detalle">
+                    {/* Lo cargado queda quieto, como texto; sólo lo que falta se pinta (ámbar) y se lee solo. */}
+                    <Dato falta={f.falta.includes("el follow-up")} rotulo="Follow-up" valor={f.followUp} vacio="Falta el follow-up" />
+                    <Dato falta={f.falta.includes("el resultado del resell")} rotulo="Resell" valor={f.resell} vacio="Falta el resultado del resell" />
+                    <Dato falta={f.falta.some((x) => x.startsWith("su situación"))} rotulo="Situación" valor={f.previa && f.actual ? "completa" : "sin cargar"} vacio={situacionQueFalta(f)} />
+                    {f.falta.length > 0 && puedeRecordar && (
+                      <Button sm variante="ghost" icono={<Bell size={13} />} cargando={mandando === f.id} onClick={() => void recordar(f)} className="ps-tes__recordar"
+                        title={`Le llega un aviso a quien grabó y a quien lo sigue. Falta ${f.falta.join(", ")}.`}>Recordar</Button>
+                    )}
+                  </span>
+                )}
               </li>
             );
           })}
@@ -146,6 +150,17 @@ export function TestimoniosDelPanel({ hoy, puedeRecordar = false }: { hoy: strin
       )}
     </section>
   );
+}
+
+/* Qué falta de la situación, en palabras. */
+function situacionQueFalta(f: { previa: boolean; actual: boolean }): string {
+  return f.previa ? "Falta la situación actual" : f.actual ? "Falta la situación previa" : "Falta la situación previa y actual";
+}
+
+/* Un dato del testimonio: quieto si está, en ámbar y con lo que falta si no. */
+function Dato({ falta, rotulo, valor, vacio }: { falta: boolean; rotulo: string; valor: string; vacio: string }) {
+  if (falta) return <Pastilla texto={vacio} tono="aviso" />;
+  return <span className="ps-tes__dato">{rotulo} <b>{valor || "—"}</b></span>;
 }
 
 /* Cuándo es cada uno, en palabras: la fecha de la grabación o lo que falta. */

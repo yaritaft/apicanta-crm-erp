@@ -246,11 +246,17 @@ button.ps-dato:hover, a.ps-dato:hover, button.ps-dato:hover b, a.ps-dato:hover b
 }
 
 /* «Se les termina el contrato» por programa (Lili, 19/11): los botones por programa van pegados debajo de la tarea. */
-.ps-tarea__progs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px 52px; margin-top: -4px; }
+.ps-tarea__progs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 12px 10px 52px; margin-top: -4px; }
 @media (max-width: 640px) { .ps-tarea__progs { padding-left: 16px; } }
 
-/* Lo que tiene cargado cada testimonio, a la vista (Lili, 19/11): una línea chica debajo del nombre, y lo que falta en color. */
-.ps-tes__fila { row-gap: 3px; }
-.ps-tes__detalle { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; font-size: 12px; color: var(--ink-subtle); }
-.ps-tes__detalle b { color: var(--ink-muted); font-weight: 550; }
-.ps-tes__falta { color: var(--warning); font-weight: 600; }
+/* Lo que tiene cargado cada testimonio, a la vista (Lili, 19/11): tres pastillas debajo del nombre; la que falta va en ámbar. */
+.ps-tes__fila { row-gap: 4px; padding: 11px 0; }
+.ps-tes__detalle { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; min-height: 26px; }
+.ps-tes__dato { font-size: 12px; color: var(--ink-subtle); }
+.ps-tes__dato b { color: var(--ink-muted); font-weight: 550; }
+.ps-tes__recordar { margin-left: auto; }
+@media (max-width: 720px) { .ps-tes__recordar { margin-left: 0; } }
+
+/* «Se les termina el contrato» por programa: una fila de botones bajo la tarea, con su rótulo. */
+.ps-tarea__rot { font-size: 12px; font-weight: 600; color: var(--ink-subtle); margin-right: 2px; }
+.ps-tarea__venc { color: var(--danger); font-weight: 600; font-size: 12px; padding-left: 8px; margin-left: 2px; border-left: 1px solid var(--mp-linea); }

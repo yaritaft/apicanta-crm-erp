@@ -275,13 +275,14 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
                   </button>
                   {s.porPrograma && s.porPrograma.length > 0 && (
                     <div className="ps-tarea__progs" role="group" aria-label={`${s.titulo}, por programa`}>
+                      <span className="ps-tarea__rot" aria-hidden>Por programa</span>
                       {s.porPrograma.map((x) => {
                         const on = activa && prog === x.programa;
                         return (
                           <button key={x.programa} type="button" className="ps-rs__chip ps-tes__chip" aria-pressed={on}
                             title={`${x.programa}: ${x.n} ${x.n === 1 ? "alumno" : "alumnos"}${x.rojos ? `, ${x.rojos} ya terminó el contrato` : ""}. Tocá para ver sólo esos.`}
                             onClick={() => { cambiar({ lista: s.id, etapa: null, fu: null, prog: on ? null : x.programa }, TABLA_LIMPIA); if (!on) irACartera(); }}>
-                            {x.programa} <b>{x.n}</b>{x.rojos > 0 && <span className="ps-rojo" aria-hidden> ●</span>}
+                            {x.programa} <b>{x.n}</b>{x.rojos > 0 && <span className="ps-tarea__venc">{x.rojos} {x.rojos === 1 ? "vencido" : "vencidos"}</span>}
                           </button>
                         );
                       })}

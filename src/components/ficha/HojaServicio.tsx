@@ -624,8 +624,9 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
             <BloqueServicio key={t.id} titulo={testimonios.length > 1 ? `Testimonio ${testimonios.length - i} de ${testimonios.length}` : "Testimonio"} extra={puedeTestimonio ? (
               <span className="hs-acciones">
                 <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => setFormTestimonio({ t })}>Editar</Button>
-                <Button sm variante="ghost" icono={<Trash2 size={13} />} onClick={() => setBorrarTestimonio(t)} aria-label="Eliminar este testimonio" title="Eliminar este testimonio">Eliminar</Button>
                 {i === 0 && <Button sm variante="ghost" icono={<Plus size={14} />} onClick={() => setFormTestimonio({})}>Otro</Button>}
+                {/* Lo que borra va al final y callado: se pone rojo recién al apuntarlo. */}
+                <Button sm variante="ghost" className="hs-eliminar" icono={<Trash2 size={13} />} onClick={() => setBorrarTestimonio(t)} aria-label="Eliminar este testimonio" title="Eliminar este testimonio">Eliminar</Button>
               </span>
             ) : undefined}>
               <Fila icono={<Flag size={15} />} rotulo="Follow-up del testimonio">{t.followUp || <span className="hs-guion">—</span>}</Fila>

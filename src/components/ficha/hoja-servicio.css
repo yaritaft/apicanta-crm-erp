@@ -114,3 +114,5 @@
 .hs-fila__acc { display: inline-flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .hs-bloque__cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .hs-acciones { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.hs-acciones .hs-eliminar { color: var(--ink-subtle); }
+.hs-acciones .hs-eliminar:hover:not(:disabled) { color: var(--danger); }
