@@ -105,10 +105,10 @@ test("el recordatorio y la fecha borrable están donde Lili los usa", () => {
   assert.match(panel, /recordarTestimonio\(f\.id\)/);
   assert.match(panel, /puedeRecordar/);
   assert.match(readFileSync("src/components/mi-panel/PanelServicio.tsx", "utf8"), /<TestimoniosDelPanel hoy=\{hoy\} puedeRecordar=\{puedeEscribir\}/, "sólo quien puede escribir en Alumnos y no mirando el panel de otro");
-  assert.match(readFileSync("src/lib/recordar-testimonio.ts", "utf8"), /rpc\("recordar_testimonio"/);
+  assert.match(readFileSync("src/lib/recordar-testimonio.ts", "utf8"), /mandar\("recordar_testimonio"/);
   assert.match(readFileSync("src/components/cs/TestimoniosCs.tsx", "utf8"), /Borrar la fecha/);
   /* El aviso llega a la campanita y lleva al panel (donde está lo pendiente), no a una ficha que el closer no puede abrir. */
-  assert.match(readFileSync("src/components/avisos/Campanita.tsx", "utf8"), /a\.tipo === "testimonio-pendiente"\) \{ router\.push\("\/mi-panel"\)/);
+  assert.match(readFileSync("src/components/avisos/Campanita.tsx", "utf8"), /a\.tipo === "testimonio-pendiente"[^)]*\) \{ router\.push\("\/mi-panel"\)/);
   assert.equal(hojaDelAviso("testimonio-pendiente"), undefined);
   assert.match(dondeEs({ persona: "", tipo: "testimonio-pendiente" }), /Testimonio sin completar/);
 });

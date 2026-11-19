@@ -17,7 +17,7 @@ import {
 } from "@/lib/clientes-cs";
 import { ResumenCs } from "./ResumenCs";
 import type { ColorCrm, OpcionCrm, Testimonio } from "@/lib/types";
-import { Pastilla } from "./pastillas";
+import { Pastilla, tonoDeResell } from "./pastillas";
 import { NADA, Recorte, TablaCs } from "./TablaCs";
 
 /* ==================================================================
@@ -85,7 +85,7 @@ export function TestimoniosCs() {
       case "fechaGrabacion": return t.fechaGrabacion ? <span className="t-num">{formatoDia(t.fechaGrabacion, hoy)}</span> : NADA;
       case "followUp": return <Pastilla texto={t.followUp} />;
       case "estadoVideo": return <Pastilla texto={t.estadoVideo} />;
-      case "resell": return <Pastilla texto={t.resell} />;
+      case "resell": return <Pastilla texto={t.resell} tono={tonoDeResell(t.resell)} />;
       case "conQuien": return t.conQuien ? <Pastilla texto={t.conQuien} tono="neutra" /> : NADA;
       case "stack": return f.stack ? <Pastilla texto={f.stack} tono="neutra" /> : NADA;
       case "link": return t.link

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ExternalLink, Pencil, Plus, RefreshCw, ShoppingBag, Trash2 } from "lucide-react";
+import { Bell, ExternalLink, Pencil, Plus, RefreshCw, ShoppingBag, Trash2 } from "lucide-react";
 import { Button, Field, IconButton, Input, Select, Textarea } from "@/components/ui/ui";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -25,9 +25,10 @@ import {
 } from "@/lib/clientes-cs";
 import { leerMontoCs } from "@/lib/importar-cs";
 import { destinoDeResell } from "@/lib/resell-ficha";
+import { recordarResell } from "@/lib/recordar-testimonio";
 import { money } from "@/lib/format";
 import type { ColorCrm, OpcionCrm, Resell } from "@/lib/types";
-import { Pastilla } from "./pastillas";
+import { Pastilla, tonoDeResell } from "./pastillas";
 import { NADA, Recorte, TablaCs } from "./TablaCs";
 import { ResumenCs } from "./ResumenCs";
 
@@ -64,6 +65,8 @@ export function ResellsCs() {
   const { acceso } = useAcceso();
   const { estado: sync } = useSync();
   const puede = puedeEditar(acceso, "resells");
+  /* Recordar lo manda quien lleva el servicio (edita Alumnos): el closer no se manda recordatorios a sí mismo ni a los demás. */
+  const puedeRecordar = puedeEditar(acceso, "testimonios");
   const abrirFicha = useAbrirFicha();
   const hoy = hoyDelNegocio();
   const listas = useMemo(() => listasCs(e.ajustes.seguimiento), [e.ajustes.seguimiento]);
@@ -141,7 +144,7 @@ export function ResellsCs() {
     switch (clave) {
       case "fechaHora": return <span className="t-num">{formatoDia(f.dia, hoy)} · {HORA.format(new Date(r.fechaHora))}</span>;
       case "agendado": return r.agendadoEn ? <span className="t-num">{formatoDia(diaDeNegocio(r.agendadoEn), hoy)}</span> : NADA;
-      case "estado": return <span className="cs-pastillas">{estadosDeResell(f.estado).map((x) => <Pastilla key={x} texto={x} />)}</span>;
+      case "estado": return <span className="cs-pastillas">{estadosDeResell(f.estado).map((x) => <Pastilla key={x} texto={x} tono={tonoDeResell(x)} />)}</span>;
       case "cash": return r.cashCollect === null ? NADA : <span className="t-num">{montoCs(r.cashCollect)}</span>;
       case "caso": return <Pastilla texto={r.casoDeExito ? "Sí" : "No"} tono={r.casoDeExito ? "ok" : "neutra"} />;
       case "grabacion": return f.grabacion
@@ -235,6 +238,16 @@ export function ResellsCs() {
     );
   };
 
+  /* «Recordar» (Lili, 19/11): un aviso en la campanita de quien tomó la llamada y de quien lo sigue (Santi, o Manu si fue Yari). */
+  const recordar = async (f: FilaResell) => {
+    const nombre = f.resell.nombre || "esa llamada";
+    try {
+      const r = await recordarResell(f.resell.id);
+      toast(r.yaHoy ? `Ya les recordaste hoy lo de ${nombre}. Mañana podés volver a avisar.`
+        : r.avisados.length ? `Listo: le avisé a ${r.avisados.join(" y ")} que falta cerrar la llamada de ${nombre}.` : "No encontré a quién avisarle: falta cargar quién la tomó (el closer).", r.avisados.length || r.yaHoy ? "ok" : "err");
+    } catch (x) { toast(x instanceof Error ? x.message : "No se pudo mandar el recordatorio.", "err"); }
+  };
+
   async function actualizar() {
     reiniciarCarga();
     await cargarDeLaNube();
@@ -249,14 +262,14 @@ export function ResellsCs() {
         resumen={(
           <ResumenCs
             etiqueta="Renovaron" valor={suyas.filter(renovo).length} sub={`de ${suyas.length} llamadas`}
-            ayuda="En qué quedó cada llamada de resell. «Por cerrar»: ya pasó y el closer todavía no cargó en qué quedó. Tocá una parte para filtrar la tabla."
+            ayuda="En qué quedó cada llamada de resell. «Incompletos»: ya pasó y el closer todavía no cargó en qué quedó. Tocá una parte para filtrar la tabla."
             motor={MOTOR_RESELLS} columna="estado" filas={suyas} alFiltrar={{ "por-cargar": null }}
             grupos={[
               { id: "renovo", nombre: "Renovaron", tono: "bien", es: renovo, valores: () => VALORES_RENOVO },
-              { id: "no", nombre: "No renovaron", es: noRenovo, valores: () => VALORES_NO_RENOVO },
-              { id: "cerrar", nombre: "Por cerrar", tono: "alerta", es: (f) => resellAbierto(f.resell, Date.now()), elegida: soloPorCargar,
+              { id: "no", nombre: "No renovaron", tono: "malo", es: noRenovo, valores: () => VALORES_NO_RENOVO },
+              { id: "cerrar", nombre: "Incompletos", tono: "alerta", ayuda: "La llamada ya pasó y falta cargar algo para cerrarla: en qué terminó el resell o, si era de testimonio, si grabó y el link.", es: (f) => resellAbierto(f.resell, Date.now()), elegida: soloPorCargar,
                 alElegir: () => escribirURL({ "por-cargar": soloPorCargar ? null : "1" }) },
-              { id: "otro", nombre: "Garantía extendida", es: (f) => estadosDeResell(f.resell.estado).includes("Garantía Extendida"), valores: () => ["Garantía Extendida"] },
+              { id: "otro", nombre: "Garantía extendida", tono: "alerta", es: (f) => estadosDeResell(f.resell.estado).includes("Garantía Extendida"), valores: () => ["Garantía Extendida"] },
             ]}
           />
         )}
@@ -264,6 +277,9 @@ export function ResellsCs() {
         celda={(col, f) => celda(col, f)}
         filaAcciones={puede ? (f) => (
           <>
+            {puedeRecordar && resellAbierto(f.resell, Date.now()) && (
+              <IconButton etiqueta="Recordarle a quien la tomó y a quien lo sigue" onClick={() => void recordar(f)}><Bell size={15} /></IconButton>
+            )}
             {leadDe(f.resell) && (
               <IconButton etiqueta="Cargar la venta (con su comprobante)" onClick={() => setVendiendo(f.resell)}><ShoppingBag size={15} /></IconButton>
             )}

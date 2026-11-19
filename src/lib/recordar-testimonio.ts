@@ -13,10 +13,15 @@ export interface ResultadoRecordatorio {
   yaHoy: boolean;
 }
 
-export async function recordarTestimonio(testimonioId: string): Promise<ResultadoRecordatorio> {
+async function mandar(funcion: "recordar_testimonio" | "recordar_resell", parametro: Record<string, string>): Promise<ResultadoRecordatorio> {
   if (!nube) throw new Error("Los recordatorios salen por la nube: acá, sin conexión, no se pueden mandar.");
-  const r = await nube.rpc("recordar_testimonio", { p_testimonio: testimonioId });
+  const r = await nube.rpc(funcion, parametro);
   if (r.error) throw new Error(r.error.message);
   const d = (r.data ?? {}) as Partial<ResultadoRecordatorio>;
   return { avisados: Array.isArray(d.avisados) ? d.avisados : [], yaHoy: Boolean(d.yaHoy) };
 }
+
+export const recordarTestimonio = (testimonioId: string) => mandar("recordar_testimonio", { p_testimonio: testimonioId });
+
+/** Lo mismo para una llamada de resell que ya pasó y no dice en qué quedó (supabase/resell-recordar.sql): le llega a quien la tomó y a quien lo sigue. */
+export const recordarResell = (resellId: string) => mandar("recordar_resell", { p_resell: resellId });

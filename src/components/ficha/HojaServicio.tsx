@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Badge, Button, Empty, Select } from "@/components/ui/ui";
 import { Confirmar } from "@/components/ui/Modal";
+import { tonoDeResell, type TonoPastilla } from "@/components/cs/pastillas";
 import { CeldaEditable } from "@/components/crm-tabla/CeldaEditable";
 import { DatosExtra } from "@/components/ui/CamposExtra";
 import { EditarAlumno, VentaDelAlumno } from "@/components/alumnos/Servicio";
@@ -180,6 +181,9 @@ function useSolapasQueSeDeslizan(elegida: string) {
 /* Con el chat en su columna (ficha ancha), no hay solapa «Chat». */
 /* El closer (26/10) ve el servicio de SUS alumnos, pero la base sólo le abre el seguimiento y los accesos (supabase/servicio-del-closer.sql):
    las solapas que leen otra cosa —las clases de Zoom, testimonios, CV y formularios— le dirían «nada» sin que sea verdad, así que no las ve. */
+/* Los estados de resell con los mismos colores que en la agenda (tonoDeResell): verde Upgrade, rojo lo que sale, amarillo el resto. */
+const VARIANTE_DE_TONO: Record<TonoPastilla, "success" | "danger" | "warning" | "neutral" | "info"> = { ok: "success", malo: "danger", aviso: "warning", info: "info", neutra: "neutral" };
+
 const SOLAPAS_DE_OTRA_AREA: readonly string[] = ["zoom", "testimonio", "cv", "reportes"];
 const SOLAPAS_DEL_CLOSER = SOLAPAS_SERVICIO.filter((s) => !SOLAPAS_DE_OTRA_AREA.includes(s));
 
@@ -420,7 +424,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
           <FilaServicio icono={<Repeat2 size={15} />} rotulo="Llamada de resell"
             detalle={ultimoResell ? `${formatoDia(ultimoResell.dia, hoy)}${ultimoResell.resell.closer ? ` · ${ultimoResell.resell.closer}` : ""}` : "Todavía no tuvo"}>
             {!ultimoResell ? <span className="hs-guion">—</span>
-              : estadosUltimo.length ? estadosUltimo.map((x) => <Badge key={x} variante={/no quiere|outbo/i.test(x) ? "danger" : /upgrade|garant/i.test(x) ? "success" : "brand"}>{x}</Badge>)
+              : estadosUltimo.length ? estadosUltimo.map((x) => <Badge key={x} variante={VARIANTE_DE_TONO[tonoDeResell(x)]}>{x}</Badge>)
               : <Badge variante="warning">{ultimoResell.resell.cancelada ? "Cancelada" : "Sin resultado: lo carga el closer"}</Badge>}
             {ultimoResell && puedeResell && (
               <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => setFormResell(ultimoResell.resell)}>Cargar resultado</Button>
@@ -657,7 +661,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
                     r.resell.notas,
                   ].filter(Boolean).join(" · ") || undefined}>
                   {r.resell.cancelada ? <Badge variante="neutral">Cancelada</Badge>
-                    : estados.length ? estados.map((x) => <Badge key={x} variante={/no quiere|outbo/i.test(x) ? "danger" : /upgrade|garant/i.test(x) ? "success" : "brand"}>{x}</Badge>)
+                    : estados.length ? estados.map((x) => <Badge key={x} variante={VARIANTE_DE_TONO[tonoDeResell(x)]}>{x}</Badge>)
                     : <Badge variante="warning">{r.dia < hoy ? "Sin resultado" : "Agendada"}</Badge>}
                   {r.grabacion && <a className="link t-sm" href={r.grabacion} target="_blank" rel="noopener noreferrer">Grabación</a>}
                   {puedeResell && <Button sm variante="ghost" icono={<Pencil size={13} />} onClick={() => setFormResell(r.resell)} aria-label={`Editar la llamada de resell del ${formatoDia(r.dia, hoy)}`}>Editar</Button>}

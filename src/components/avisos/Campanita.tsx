@@ -117,8 +117,8 @@ export function Campanita() {
     /* Un pedido de acceso se resuelve en Equipo: ahí se le cambia el tipo o lo que ve el tipo. */
     if (a.tipo === "acceso") { router.push("/equipo?seccion=accesos"); return; }
     /* El recordatorio del formulario semanal de los lunes (lib/reporte-recordatorio.ts): quién lo completó y a quién le llegó. */
-    /* Un testimonio que falta completar (recordatorio de Customer Success): lo pendiente está en su panel. */
-    if (a.tipo === "testimonio-pendiente") { router.push("/mi-panel"); return; }
+    /* Un testimonio o una llamada de resell que falta completar (recordatorio de Customer Success): lo pendiente está en su panel. */
+    if (a.tipo === "testimonio-pendiente" || a.tipo === "resell-pendiente") { router.push("/mi-panel"); return; }
     if (a.tipo === "reporte-semanal") { router.push("/reportes?seccion=alumnos"); return; }
     /* Las grabaciones de Fathom que no llegan: quien puede, ve la lista por closer en Ajustes; el closer, sus llamadas en la Agenda. */
     if (a.tipo === "fathom") { router.push(esDueno ? "/ajustes?seccion=integraciones" : "/agenda"); return; }

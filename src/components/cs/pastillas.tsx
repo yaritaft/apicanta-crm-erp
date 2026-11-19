@@ -21,6 +21,16 @@ export function tonoDe(valor: string): TonoPastilla {
   return "neutra";
 }
 
+/** El color de un estado de resell (Lili, 19/11: «se me marean los colores»). Una sola regla: Upgrade (y Renueva) en verde, lo que sale del
+    programa (Outbording, no quiere renovar o grabar) en rojo y todo lo demás —2da Agenda, Seguimiento, Alumno activo, Reservó, Garantía…— en amarillo. */
+export function tonoDeResell(valor: string): TonoPastilla {
+  const t = sinTildes(valor).trim();
+  if (!t) return "neutra";
+  if (/(outbo+a?rding|no quiere|no quiso|no renueva)/.test(t)) return "malo";
+  if (/(upgrade|^renueva$)/.test(t)) return "ok";
+  return "aviso";
+}
+
 export function Pastilla({ texto, tono, tenue, title }: { texto: string; tono?: TonoPastilla; tenue?: boolean; title?: string }) {
   if (!texto) return <span className="t-subtle">—</span>;
   const t = tono ?? tonoDe(texto);

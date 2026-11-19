@@ -6,7 +6,7 @@ import { Button, IconButton } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
 import { copiarTexto } from "@/components/ui/Telefono";
 import { useAbrirFicha } from "@/components/ficha/abrir";
-import { Pastilla } from "@/components/cs/pastillas";
+import { Pastilla, tonoDeResell } from "@/components/cs/pastillas";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { useEstado } from "@/lib/store";
 import { formatoDia } from "@/lib/seguimiento";
@@ -119,7 +119,7 @@ export function ResellsDelMes({ hoy, viendoOtro }: { hoy: string; viendoOtro: bo
                   : <span className="ps-rs__nombre truncate">{r.nombre || "Sin nombre"}</span>}
                 <span className="ps-rs__con truncate">con {r.closer.split(",")[0].trim().split(/\s+/)[0] || "—"}</span>
                 <span className="ps-rs__cuando ps-num">llamada {formatoDia(dia, hoy)}{agendado && agendado !== dia ? ` · agendado ${formatoDia(agendado, hoy)}` : ""}</span>
-                <span className="ps-rs__estado">{estado ? <Pastilla texto={estado} /> : <span className="t-subtle t-sm">{Date.parse(r.fechaHora) > Date.now() ? "Por hacerse" : "Sin resultado"}</span>}</span>
+                <span className="ps-rs__estado">{estado ? <Pastilla texto={estado} tono={tonoDeResell(estado)} /> : <span className="t-subtle t-sm">{Date.parse(r.fechaHora) > Date.now() ? "Por hacerse" : "Sin resultado"}</span>}</span>
               </li>
             );
           })}

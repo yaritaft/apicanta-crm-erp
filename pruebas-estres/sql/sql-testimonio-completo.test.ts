@@ -27,6 +27,10 @@ const ESQUEMA = `
     resell text default '', "estadoVideo" text default '', link text default '', tecnologias text default '',
     "situacionPrevia" text default '', "situacionActual" text default '', notas text default '', "creadoEn" timestamptz default now()
   );
+  create table public.resells (
+    id text primary key, "fechaHora" timestamptz not null, nombre text default '', closer text default '', estado text default '', "casoDeExito" boolean not null default false,
+    cancelada boolean not null default false, testimonio text default '', "linkTestimonio" text default '', "alumnoId" text, "contactoId" text
+  );
   create table public.avisos (id text primary key, para text not null, tipo text not null default 'mencion', titulo text not null, cuerpo text, de text,
     "deEmail" text, "contactoId" text, persona text, "comentarioId" text, "leidoEn" timestamptz, "creadoEn" timestamptz not null default now());
   /* Quién edita Alumnos: la cuenta de Lili (y no la de un closer). */
@@ -61,6 +65,7 @@ const banco = () => (compartido ??= (async () => {
       ('t_a', 'a1', 'Outbording'), ('t_b', 'a1', 'No renueva'), ('t_c', 'a1', 'No corresponde, alumno activo'), ('t_d', 'a1', 'Lo piensa'),
       ('t_e', 'a1', 'SI - HACKEAR AI'), ('t_f', 'a1', 'Renueva');`);
   await db.exec(leerSql("supabase/testimonio-completo.sql"));
+  await db.exec(leerSql("supabase/resell-recordar.sql")); // reemplaza recordar_testimonio con los mismos destinos
   return db;
 })());
 after(async () => { if (compartido) await (await compartido).close(); });
@@ -157,4 +162,63 @@ test("sin quién grabó: se le avisa al director, y a quien lo manda nunca", { s
   const id = await testimonio({ conQuien: "", fechaGrabacion: `@${ayer(8)}`, link: "https://x.com/v" });
   const r = await recordar(id);
   assert.deepEqual(r.avisados, ["Santiago"]);
+});
+
+/* ---------- Resells (supabase/resell-recordar.sql): «botón recordar: el closer y Santi» ---------- */
+
+const haceDias = (d: number) => `(now() - interval '${d} days')`;
+async function resell(campos: Record<string, string | null>): Promise<string> {
+  const db = await banco();
+  const id = `rs${++n}_x`;
+  const base: Record<string, string | null> = { id, fechaHora: `@${haceDias(9)}`, nombre: "Nicolás González", closer: "Mariano", estado: "", alumnoId: "a1", ...campos };
+  const cols = Object.keys(base).map((c) => `"${c}"`).join(", ");
+  const vals = Object.entries(base).map(([k, v]) => (v === null ? "null" : v.startsWith("@") ? v.slice(1) : `'${v.replace(/'/g, "''")}'`)).join(", ");
+  await db.exec(`insert into public.resells (${cols}) values (${vals})`);
+  return id;
+}
+const recordarResell = async (id: string) => (await (await banco()).query<{ r: { avisados: string[]; yaHoy: boolean } }>(`select public.recordar_resell('${id}') as r`)).rows[0].r;
+
+test("resell: Liliana le recuerda a Mariano y se lo avisa a Santiago, con la fecha, los días y lo que falta", { skip: saltear }, async () => {
+  await yo("liliana@apicanta.com");
+  const id = await resell({ estado: "2da Agenda, Seguimiento" });
+  const r = await recordarResell(id);
+  assert.deepEqual([...r.avisados].sort(), ["Mariano", "Santiago"]);
+  const a = (await (await banco()).query<{ para: string; titulo: string; cuerpo: string; tipo: string; contactoId: string }>(
+    `select para, titulo, cuerpo, tipo, "contactoId" from public.avisos where id like 'av_res_%' and persona = 'Nicolás González' order by para`)).rows;
+  const mariano = a.find((x) => x.para === "mariano@apicanta.com")!;
+  assert.equal(mariano.titulo, "Liliana te recuerda que falta cargar cómo salió la llamada de resell de Nicolás González");
+  assert.match(mariano.cuerpo, /^La llamada fue el \d{1,2}\/\d{1,2}\. Urgente de completar: ya pasaron 9 días\. Falta: en qué terminó el resell \(está en «2da Agenda, Seguimiento»\)\.$/);
+  assert.equal(mariano.tipo, "resell-pendiente");
+  assert.equal(mariano.contactoId, "a1");
+  const santi = a.find((x) => x.para === "santiago@apicanta.com")!;
+  assert.equal(santi.titulo, "Liliana le recuerda a Mariano que falta cargar la llamada de resell de Nicolás González");
+  assert.match(santi.cuerpo, /Ayudá con el seguimiento/);
+});
+
+test("resell tomado por Yari: Yari y Manu; con testimonio, también pide si grabó y el link", { skip: saltear }, async () => {
+  await yo("liliana@apicanta.com");
+  const id = await resell({ closer: "Yari Taft", nombre: "Ana Paz", casoDeExito: "true", testimonio: "Grabó" });
+  const r = await recordarResell(id);
+  assert.deepEqual([...r.avisados].sort(), ["Manuel", "Yari"]);
+  const c = (await (await banco()).query<{ para: string; cuerpo: string }>(`select para, cuerpo from public.avisos where id like 'av_res_%' and persona = 'Ana Paz'`)).rows;
+  assert.ok(c.every((x) => /Falta: el link de la grabación, si compró \(el resell\)\./.test(x.cuerpo)));
+  assert.ok(!c.some((x) => x.para === "santiago@apicanta.com"));
+});
+
+test("resell: uno por día, sólo quien edita Alumnos, y nada para recordar si está resuelta, cancelada, futura o se reagenda", { skip: saltear }, async () => {
+  await yo("liliana@apicanta.com");
+  const id = await resell({});
+  assert.equal((await recordarResell(id)).yaHoy, false);
+  assert.deepEqual(await recordarResell(id), { avisados: [], yaHoy: true });
+  await yo("mariano@apicanta.com");
+  await assert.rejects(() => recordarResell(id), /Sólo quien edita Alumnos/);
+  await yo("liliana@apicanta.com");
+  for (const estado of ["Upgrade a Hackear IA", "No quiere renovar, Outbording", "Alumno vigente", "Garantía Extendida", "Renueva"]) {
+    const resuelta = await resell({ estado });
+    await assert.rejects(() => recordarResell(resuelta), /ya está completa/, estado);
+  }
+  await assert.rejects(async () => recordarResell(await resell({ cancelada: "true" })), /se canceló/);
+  await assert.rejects(async () => recordarResell(await resell({ fechaHora: "@now() + interval '2 days'" })), /todavía no pasó/);
+  await assert.rejects(async () => recordarResell(await resell({ testimonio: "Se reagenda" })), /Se reagenda/);
+  await assert.rejects(() => recordarResell("no_existe"), /No encuentro esa llamada/);
 });

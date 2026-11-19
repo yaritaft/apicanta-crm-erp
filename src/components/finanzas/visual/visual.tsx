@@ -19,7 +19,7 @@ export function Cifra({ texto }: { texto: string }) {
 
 const COLORES = ["var(--viz-2)", "var(--viz-3)", "var(--viz-4)", "var(--viz-5)", "var(--viz-1)"];
 
-export interface Parte { id: string; nombre: string; valor: number; texto: string; ayuda?: string; tono?: "alerta" | "bien" | "apagado" }
+export interface Parte { id: string; nombre: string; valor: number; texto: string; ayuda?: string; tono?: "alerta" | "bien" | "malo" | "apagado" }
 
 /** Una barra con las partes de un total, en el mismo orden que su leyenda. */
 export function PartesDeUnTotal({ partes, etiqueta, onElegir, activo }: {
@@ -30,7 +30,7 @@ export function PartesDeUnTotal({ partes, etiqueta, onElegir, activo }: {
   const total = partes.reduce((a, p) => a + Math.max(p.valor, 0), 0) || 1;
   /* La rampa la gastan sólo las partes sin tono propio: así no se repite un violeta mientras queden. */
   const sinTono = partes.filter((p) => !p.tono);
-  const color = (p: Parte) => (p.tono === "alerta" ? "var(--warning)" : p.tono === "bien" ? "var(--success)" : p.tono === "apagado" ? "color-mix(in srgb, var(--ink-subtle) 45%, transparent)" : COLORES[sinTono.indexOf(p) % COLORES.length]);
+  const color = (p: Parte) => (p.tono === "alerta" ? "var(--warning)" : p.tono === "bien" ? "var(--success)" : p.tono === "malo" ? "var(--danger)" : p.tono === "apagado" ? "color-mix(in srgb, var(--ink-subtle) 45%, transparent)" : COLORES[sinTono.indexOf(p) % COLORES.length]);
   const atenuado = (p: Parte) => (activo && activo !== p.id ? { opacity: 0.35 } : undefined);
   return (
     <div className="fz-partes" role="group" aria-label={etiqueta}>
