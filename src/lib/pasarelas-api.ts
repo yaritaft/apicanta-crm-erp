@@ -483,13 +483,15 @@ async function detalleWhop(id: string, clave: string): Promise<DetalleWhop> {
 }
 
 /* Cuándo se pagó, según lo que mande Whop: segundos desde 1970 (la forma de siempre), milisegundos o una fecha escrita. */
-function fechaDePagoWhop(p: Obj): number | undefined {
-  const v = p.paid_at ?? p.created_at;
+function enMilisegundos(v: unknown): number | undefined {
   const n = num(v);
   if (n !== undefined) return n < 1e12 ? n * 1000 : n;
   const t = typeof v === "string" ? Date.parse(v) : NaN;
   return Number.isFinite(t) ? t : undefined;
 }
+const fechaDePagoWhop = (p: Obj): number | undefined => enMilisegundos(p.paid_at ?? p.created_at);
+/* Por qué fecha vienen ordenados: la de creación del pago (la de pago puede faltar en los que no se cobraron). */
+const fechaDeOrdenWhop = (p: Obj): number | undefined => enMilisegundos(p.created_at ?? p.paid_at);
 const diaCorto = (ms: number) => { const d = new Date(ms - 3 * 3600_000); return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`; };
 
 /** Qué trajo Whop, sólo en cifras (ni nombres ni correos): cuántos pagos, de qué fechas, en qué estados y en qué orden. Cuando la
@@ -508,29 +510,59 @@ export function resumenDeWhop(filas: Obj[], c: { paginas: number; totalPaginas?:
     + `${validas.length ? `del ${diaCorto(Math.min(...validas))} al ${diaCorto(Math.max(...validas))}` : "ninguno trae fecha"}${validas.length < filas.length ? `, ${filas.length - validas.length} sin fecha` : ""}; ${top}).`;
 }
 
+/** Los pagos de Whop con ese estado desde `desdeMs`, sin suponer en qué orden los manda.
+ *
+ *  Whop los manda de la MÁS VIEJA a la más nueva (9 páginas de 50, la primera del 22/07 al 16/09) y hasta el 14/11/2026 se creyó lo contrario:
+ *  la lectura cortaba en la primera página que ya era anterior a la ventana. Andaba de casualidad mientras el pago número 50 de la historia
+ *  cayera dentro de los 60 días; el 15/11 dejó de caer, se cortó en la primera página y no entró ningún cobro más (los cargó el equipo a mano).
+ *  Ahora se mira cómo vino la primera página y se recorre desde el lado de lo nuevo, hasta una página ya anterior a la ventana. Sirve igual si
+ *  Whop cambia de orden otra vez. Tope de 20 páginas por pasada. */
+async function pagosDeWhop(clave: string, estado: string, desdeMs: number, rotulo: string, maxPaginas = 20): Promise<{ filas: Obj[]; paginasPedidas: number; totalPaginas?: number }> {
+  const filas: Obj[] = [];
+  let paginasPedidas = 0;
+  let totalPaginas: number | undefined;
+  const pedir = async (pagina: number): Promise<Obj[]> => {
+    const r = await fetch(`https://api.whop.com/api/v5/company/payments?per=50&status=${estado}&page=${pagina}`, {
+      headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
+    });
+    const data = await json(r);
+    if (!r.ok) throw rechazo(rotulo, r, data);
+    paginasPedidas++;
+    const paginas = num((data.pagination as Obj | undefined)?.total_pages);
+    if (paginas !== undefined) totalPaginas = paginas;
+    return (data.data ?? []) as Obj[];
+  };
+  const fechas = (xs: Obj[]) => xs.map(fechaDeOrdenWhop).filter((x): x is number => x !== undefined);
+  /* Una página cuenta mientras tenga algo de la ventana: si ni el más viejo es anterior a ella, hay que seguir. */
+  const sigueEnLaVentana = (xs: Obj[]) => { const f = fechas(xs); return f.length === 0 || Math.min(...f) >= desdeMs; };
+
+  const primera = await pedir(1);
+  filas.push(...primera);
+  const f1 = fechas(primera);
+  const vienenDeLaMasVieja = f1.length > 1 && f1[0] < f1[f1.length - 1];
+  const total = totalPaginas ?? 1;
+  if (vienenDeLaMasVieja) {
+    /* Lo nuevo está en las últimas páginas: de la última hacia atrás. */
+    for (let pagina = total; pagina >= 2 && paginasPedidas < maxPaginas; pagina--) {
+      const estas = await pedir(pagina);
+      filas.push(...estas);
+      if (estas.length === 0 || !sigueEnLaVentana(estas)) break;
+    }
+  } else if (sigueEnLaVentana(primera)) {
+    for (let pagina = 2; pagina <= total && paginasPedidas < maxPaginas; pagina++) {
+      const estas = await pedir(pagina);
+      filas.push(...estas);
+      if (estas.length === 0 || !sigueEnLaVentana(estas)) break;
+    }
+  }
+  return { filas, paginasPedidas, totalPaginas };
+}
+
 export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<MovimientoApi[]> {
   const clave = process.env.WHOP_API_KEY;
   if (!clave) return [];
 
-  const filas: Obj[] = [];
-  let paginasPedidas = 0;
-  let totalPaginas: number | undefined;
-  for (let pagina = 1; pagina <= 10; pagina++) {
-    const r = await fetch(`https://api.whop.com/api/v5/company/payments?per=50&status=paid&page=${pagina}`, {
-      headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
-    });
-    const data = await json(r);
-    if (!r.ok) throw rechazo("Whop", r, data);
-    const estas = (data.data ?? []) as Obj[];
-    filas.push(...estas);
-    paginasPedidas = pagina;
-    /* Vienen de la más nueva a la más vieja: cuando la página ya es anterior
-       a la ventana, no hace falta seguir. */
-    const paginas = num((data.pagination as Obj | undefined)?.total_pages) ?? 1;
-    totalPaginas = num((data.pagination as Obj | undefined)?.total_pages);
-    const masVieja = estas.length ? Number(estas[estas.length - 1].paid_at ?? estas[estas.length - 1].created_at ?? 0) * 1000 : 0;
-    if (estas.length === 0 || pagina >= paginas || masVieja < desde.getTime()) break;
-  }
+  const { filas, paginasPedidas, totalPaginas } = await pagosDeWhop(clave, "paid", desde.getTime() - 7 * 86400_000, "Whop");
 
   const vistos = new Set<string>();
   const lista: MovimientoApi[] = filas
@@ -856,29 +888,13 @@ export async function reembolsosDeWhop(desde: Date): Promise<ReembolsoCrudo[]> {
   const porId = new Map<string, ReembolsoCrudo>();
   /* Primero lo que Whop marca «refunded» y después la lista de pagos cobrados (donde viven los reembolsos con subestado): un
      reembolso se devuelve una vez aunque salga en las dos. En la lista de cobrados la mayoría no es un reembolso, así que se
-     recorre por la fecha del cobro (hasta 90 días antes de la ventana: se puede devolver semanas después). */
+     recorre por la fecha del cobro (hasta 90 días antes de la ventana: se puede devolver semanas después), sin suponer el orden. */
   for (const estado of ["refunded", "paid"] as const) {
-    for (let pagina = 1; pagina <= (estado === "paid" ? 10 : 5); pagina++) {
-      const r = await fetch(`https://api.whop.com/api/v5/company/payments?per=50&status=${estado}&page=${pagina}`, {
-        headers: { Authorization: `Bearer ${clave}` }, cache: "no-store",
-      });
-      const data = await json(r);
-      if (!r.ok) throw rechazo("Whop (reembolsos)", r, data);
-      const estas = (data.data ?? []) as Obj[];
-      let hayNuevos = false;
-      for (const p of estas) {
-        if (!esReembolsoDeWhop(p)) continue;
-        const x = reembolsoDeWhop(p);
-        if (x && Date.parse(x.fecha) >= desde.getTime() - 30 * 86400000) {
-          hayNuevos = true;
-          if (!porId.has(x.referencia)) porId.set(x.referencia, x);
-        }
-      }
-      const paginas = num((data.pagination as Obj | undefined)?.total_pages) ?? 1;
-      if (estas.length === 0 || pagina >= paginas) break;
-      if (estado === "refunded") { if (!hayNuevos) break; continue; }
-      const masVieja = Number(estas[estas.length - 1].paid_at ?? estas[estas.length - 1].created_at ?? 0) * 1000;
-      if (masVieja && masVieja < desde.getTime() - 90 * 86400000) break;
+    const { filas } = await pagosDeWhop(clave, estado, desde.getTime() - 90 * 86400000, "Whop (reembolsos)");
+    for (const p of filas) {
+      if (!esReembolsoDeWhop(p)) continue;
+      const x = reembolsoDeWhop(p);
+      if (x && Date.parse(x.fecha) >= desde.getTime() - 30 * 86400000 && !porId.has(x.referencia)) porId.set(x.referencia, x);
     }
   }
   return [...porId.values()];
