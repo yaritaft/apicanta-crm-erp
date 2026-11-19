@@ -53,8 +53,11 @@ export const LISTAS_POR_DEFECTO: ListasCs = {
   followUpsTestimonio: ["Llamada agendada", "No agendada", "Pendiente de agendar", "No quiere grabar", "No se graba, porque no se concretó"],
   estadosVideo: ["Pendiente de subir", "Subido a Drive", "No quiso grabar", "Subido a YouTube"],
   quienGraba: ["Yari", "Mariano"],
-  /* «No corresponde, alumno activo» (Lili, 28/10): todavía tiene contrato vigente, así que no se le hace el pitch de venta. */
-  resellsTestimonio: ["Pendiente", "Renueva", "No renueva", "Lo piensa", "No corresponde, alumno activo"],
+  /* Cómo salió el pitch de renovación después del testimonio (Lili, 19/11): «Alumno activo» (no corresponde reventa: logró el objetivo con el
+     contrato vigente), «Seguimiento» (no sabe si renueva y se le dan 24 hs para pensar), «No renueva / Outbording» (terminó el contrato; si es
+     un alumno automatizado se le da de baja solo) y «Reservó» (dejó una reserva). «Renueva» se queda: es lo que pasa cuando compra. Vacío:
+     todavía no se cargó (es lo que lo deja pendiente). */
+  resellsTestimonio: ["Alumno activo", "Seguimiento", "No renueva / Outbording", "Reservó", "Renueva"],
   /* Los de «Estado» de la tabla «Agendas Resells» del Airtable (export del 09/10) más «No responde» (Mariano, 21/10): se eligen varios a la vez («No quiere renovar» + «Outbording»). */
   estadosResell: ["2da Agenda", "Upgrade a Hackear IA", "No quiere renovar", "Outbording", "Seguimiento", "Garantía Extendida", "Alumno vigente", "No responde"],
   estadosCv: [...ESTADOS_CV],
@@ -69,6 +72,9 @@ export function testimonioNoSeGraba(followUp: string | null | undefined, estadoV
   if (f === "no quiere grabar" || sinTildes(textoLimpio(estadoVideo)).trim() === "no quiso grabar") return { motivo: "no-quiere" };
   return null;
 }
+
+/* Qué guarda el testimonio cuando el closer cierra la llamada (y la base, al cargar el estado del resell: supabase/testimonio-completo.sql). */
+export const RESELL_DE_TESTIMONIO = { activo: "Alumno activo", seguimiento: "Seguimiento", noRenueva: "No renueva / Outbording", reservo: "Reservó", renueva: "Renueva" } as const;
 
 /* Las dos que no se ajustan: Firmado o Pendiente, y las sesiones con el mentor (0 a 3). */
 /* «No se realizaba contrato» (Lili, 22/10): a las reservas y al Downsell de antes del 22/09 no se les hacía; hoy no tiene sentido
@@ -958,6 +964,8 @@ export const DIAS_PARA_CERRAR_RESELL = 7;
    Desde octubre (antes no se pedía) no se cierra hasta que se carga si grabó y, si grabó, el link. */
 export const RESULTADOS_TESTIMONIO = ["Grabó", "Se reagenda", "No quiso grabar"] as const;
 export const TESTIMONIO_DESDE = "2026-10-01";
+/** Desde cuándo se reclama completar un testimonio grabado (faltaDelTestimonio, y recordar_testimonio en la base). */
+export const TESTIMONIO_A_COMPLETAR_DESDE = "2026-09-01";
 
 type LlamadaParaCerrar = Pick<Resell, "fechaHora" | "estado"> & Partial<Pick<Resell, "casoDeExito" | "testimonio" | "linkTestimonio" | "cancelada">>;
 
@@ -991,6 +999,26 @@ export function retiroDelTestimonioAgendado(
   if (!t) return null;
   const sinNada = [t.resell, t.tecnologias, t.situacionPrevia, t.situacionActual, t.notas].every((x) => !String(x ?? "").trim());
   return { tipo: t.id.startsWith("tes_rs_") && sinNada ? "borrar" : "volver", id: t.id };
+}
+
+/** Lo que le falta a un testimonio para estar completo, en palabras (vacío: está completo, o todavía no toca, o no se va a grabar). Toca desde el día
+    de la grabación, desde septiembre (lo de antes viene del Airtable y no se reclama; Lili, 19/11: el de Mauricio Santos es del 23/9). Es lo que lo deja como tarea pendiente en el panel de Lili y lo que
+    dice el recordatorio (supabase/testimonio-completo.sql, recordar_testimonio, usa la misma lista). */
+export function faltaDelTestimonio(
+  t: Pick<Testimonio, "followUp" | "fechaGrabacion" | "estadoVideo" | "link" | "resell" | "situacionPrevia" | "situacionActual">, hoy: string,
+): string[] {
+  if (testimonioNoSeGraba(t.followUp, t.estadoVideo)) return [];
+  const dia = String(t.fechaGrabacion ?? "").slice(0, 10);
+  if (!dia || dia > hoy || dia < TESTIMONIO_A_COMPLETAR_DESDE) return [];
+  const hay = (x: unknown) => textoLimpio(x) !== "";
+  const falta: string[] = [];
+  if (!hay(t.link)) falta.push("el link de la grabación");
+  if (!hay(t.resell)) falta.push("el resultado del resell");
+  if (!hay(t.situacionPrevia) && !hay(t.situacionActual)) falta.push("su situación previa y actual");
+  else if (!hay(t.situacionPrevia)) falta.push("su situación previa");
+  else if (!hay(t.situacionActual)) falta.push("su situación actual");
+  if (!hay(t.followUp)) falta.push("el follow-up");
+  return falta;
 }
 
 /** Lo que falta cargar de una llamada para cerrarla, en palabras (vacío: no falta nada). */

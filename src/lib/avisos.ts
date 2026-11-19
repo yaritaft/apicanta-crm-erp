@@ -66,6 +66,7 @@ export function hojaDelAviso(tipo: string): "contrato" | "accesos" | "testimonio
 export const dondeEs = (a: Pick<Aviso, "persona"> & Partial<Pick<Aviso, "tipo">>): string =>
   a.persona ? `En la ficha de ${a.persona}` : a.tipo === "pandadoc" ? "Contratos de PandaDoc" : a.tipo === "acceso" ? "Pedido de acceso · se resuelve en Equipo"
     : a.tipo === TIPO_AVISO_ORIGEN ? "Conciliar el origen · se resuelve en tu panel"
+    : a.tipo === "testimonio-pendiente" ? "Testimonio sin completar · se resuelve en tu panel"
     : a.tipo === "reporte-semanal" ? "Formularios de alumnos" : a.tipo === "fathom" ? "Grabaciones de Fathom" : a.tipo === "calendly" ? "Formulario de agenda (Calendly)" : "En el chat de una ficha";
 
 /** Un aviso nuevo en la lista: arriba, sin repetir (llega por Realtime y también al volver a leer). */

@@ -1,5 +1,5 @@
 import type { EstadoApp, ID } from "./types";
-import { DIAS_PARA_CERRAR_RESELL, DURACION_POR_DEFECTO, esDeTestimonio, estadosDeResell, faltaDeLaLlamada, familiasParaFiltrar, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, opcionesDePrograma, resellAbierto, sumarMeses, testimonioNoSeGraba } from "./clientes-cs";
+import { DIAS_PARA_CERRAR_RESELL, DURACION_POR_DEFECTO, esDeTestimonio, estadosDeResell, faltaDeLaLlamada, faltaDelTestimonio, familiasParaFiltrar, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, opcionesDePrograma, resellAbierto, sumarMeses, testimonioNoSeGraba } from "./clientes-cs";
 import { contactosDeIngreso, DIA_CONTACTO_SEMANAL, DIAS_DEL_INGRESO, diasEntre, formatoDia, sumarDias, terminoElServicio } from "./seguimiento";
 import { diasDe } from "./pausas";
 import { ventaPendienteDe } from "./alumnos";
@@ -331,11 +331,15 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
     /* Dijo que no, o la llamada no se concretó: no queda nada por agendar ni por pedirle (Lili, 19/11). */
     if (testimonioNoSeGraba(t.followUp, t.estadoVideo)) continue;
     const grabado = Boolean(t.fechaGrabacion) && String(t.fechaGrabacion) <= hoy;
-    if (grabado && !t.link.trim()) {
+    /* Grabado y sin completar (Lili, 19/11: «hasta que no esté completo, que quede como una tarea pendiente»): el link, el resultado del resell,
+       su situación previa y actual y el follow-up. Lo de antes de octubre sólo se reclama por el link, como siempre. */
+    const falta = faltaDelTestimonio(t, hoy);
+    const queFalta = falta.length ? falta.map((x) => (x === "el link de la grabación" ? "el link del video" : x)) : grabado && !t.link.trim() ? ["el link del video"] : [];
+    if (grabado && queFalta.length) {
       const d = diasEntre(String(t.fechaGrabacion), hoy);
       sinLink.push({
         clave: `${t.id}:link`, alumnoId: f.cliente?.id, nombre, dias: d, cuando: cuandoEs(d), ...(f.cliente ? contactoDe(f.cliente) : {}),
-        detalle: `Grabó el ${formatoDia(String(t.fechaGrabacion), hoy)}${t.conQuien ? ` con ${t.conQuien}` : ""} · falta el link del video${t.estadoVideo ? ` (${t.estadoVideo.toLowerCase()})` : ""}`,
+        detalle: `Grabó el ${formatoDia(String(t.fechaGrabacion), hoy)}${t.conQuien ? ` con ${t.conQuien}` : ""} · falta ${queFalta.join(", ")}${t.estadoVideo && queFalta[0] === "el link del video" ? ` (${t.estadoVideo.toLowerCase()})` : ""}`,
         tono: d >= DIAS_PARA_CERRAR_RESELL ? "rojo" : "ambar",
       });
     } else if (!t.fechaGrabacion && ["no agendada", "pendiente de agendar", ""].includes(sinTildes(t.followUp))) {
@@ -394,7 +398,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
     seccion({ id: "esperanVenta", titulo: "Esperan la venta del closer", corto: "Sin venta", regla: "Los diste de alta antes de que el closer cargara la venta: se unen solos cuando la carga. A los 3 días queda en rojo: avisale al closer.", vacio: "Todos los alumnos tienen su venta cargada.", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, esperanVenta, masViejoPrimero),
     seccion({ id: "renovar", titulo: "Se les termina el contrato", corto: "Renovar", vacio: "Ningún contrato por vencer en los próximos 30 días.", regla: `Les quedan ${DIAS_PARA_RENOVAR} días o menos (o ya terminó y siguen activos): renovar o dar de baja.`, porPrograma: partesPorPrograma(renovar), verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, renovar, masCercanoPrimero),
     seccion({ id: "resells", titulo: "Resells y testimonios sin cierre", corto: "Resells", vacio: "Todos los resells y testimonios ya tienen su resultado.", regla: `La llamada ya pasó y quien la tomó no cargó cómo salió (si grabó el testimonio y el link, si compró). Le aparece en su panel hasta que lo cargue; a los ${DIAS_PARA_CERRAR_RESELL} días queda en rojo.`, verTodos: { texto: "Ver la agenda de resells", href: "/alumnos?seccion=resells" } }, sinCierre, masViejoPrimero),
-    seccion({ id: "testimonios", titulo: "Testimonios", corto: "Testimonios", vacio: "No hay testimonios pendientes.", regla: "Grabaron y falta el link del video, o falta agendar la llamada de grabación.", verTodos: { texto: "Ver testimonios", href: "/alumnos?seccion=testimonios" } }, [...sinLink, ...porAgendar], masViejoPrimero),
+    seccion({ id: "testimonios", titulo: "Testimonios", corto: "Testimonios", vacio: "No hay testimonios pendientes.", regla: "Grabaron y les falta algo (el link del video, el resultado del resell, su situación previa y actual o el follow-up), o falta agendar la llamada de grabación. Quedan acá hasta que estén completos.", verTodos: { texto: "Ver testimonios", href: "/alumnos?seccion=testimonios" } }, [...sinLink, ...porAgendar], masViejoPrimero),
     seccion({ id: "reportes", titulo: "Dejaron de reportar", corto: "Reportes", vacio: "Todos al día con su reporte semanal.", regla: "Tres semanas o más sin mandar el reporte semanal.", verTodos: { texto: "Ver los formularios", href: "/reportes" } }, reportes, masViejoPrimero),
     seccion({ id: "contratos", titulo: "Contrato sin firmar", corto: "Contratos", vacio: "Todos los contratos están firmados.", regla: `Les mandamos el contrato y no lo firmaron (a los ${DIAS_PARA_FIRMAR} días, en rojo), o empezaron hace ${DIAS_PARA_FIRMAR} días o más sin firmarlo.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, contratos, masViejoPrimero),
   ];

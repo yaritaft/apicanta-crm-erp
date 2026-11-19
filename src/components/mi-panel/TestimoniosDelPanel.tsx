@@ -2,15 +2,17 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Search } from "lucide-react";
+import { Bell, ExternalLink, Search } from "lucide-react";
 import { Button, Input } from "@/components/ui/ui";
 import { useAbrirFicha } from "@/components/ficha/abrir";
 import { Pastilla } from "@/components/cs/pastillas";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
+import { useToast } from "@/components/ui/Toast";
 import { useEstado } from "@/lib/store";
+import { recordarTestimonio } from "@/lib/recordar-testimonio";
 import { formatoDia } from "@/lib/seguimiento";
 import {
-  ESTADOS_TESTIMONIO, filasDeTestimonios, listaDeTestimonios, resumenDeTestimonios, type EstadoTestimonio, type FiltroTestimonios,
+  cuantosIncompletos, ESTADOS_TESTIMONIO, filasDeTestimonios, listaDeTestimonios, resumenDeTestimonios, type EstadoTestimonio, type FiltroTestimonios,
 } from "@/lib/testimonios-panel";
 
 /* ==================================================================
@@ -21,8 +23,10 @@ import {
 
 const POR_TANDA = 12;
 
-export function TestimoniosDelPanel({ hoy }: { hoy: string }) {
+export function TestimoniosDelPanel({ hoy, puedeRecordar = false }: { hoy: string; puedeRecordar?: boolean }) {
   const e = useEstado();
+  const toast = useToast();
+  const [mandando, setMandando] = useState<string | null>(null);
   const abrirFicha = useAbrirFicha();
   const [filtro, setFiltro] = useState<FiltroTestimonios>("todos");
   const [q, setQ] = useState("");
@@ -34,6 +38,18 @@ export function TestimoniosDelPanel({ hoy }: { hoy: string }) {
   const visibles = lista.slice(0, cuantos);
   const elegir = (f: FiltroTestimonios) => { setFiltro((x) => (x === f ? "todos" : f)); setCuantos(POR_TANDA); };
   const grabados = resumen.porEstado["con-link"] + resumen.porEstado["sin-link"];
+  const incompletos = useMemo(() => cuantosIncompletos(filas), [filas]);
+
+  /* El recordatorio le llega a quien grabó y a quien lo sigue (lib/recordar-testimonio.ts). */
+  const recordar = async (f: (typeof filas)[number]) => {
+    setMandando(f.id);
+    try {
+      const r = await recordarTestimonio(f.id);
+      toast(r.yaHoy ? `Ya les recordaste hoy lo de ${f.nombre}. Mañana podés volver a avisar.`
+        : r.avisados.length ? `Listo: le avisé a ${r.avisados.join(" y ")} que falta completar lo de ${f.nombre}.` : "No encontré a quién avisarle: falta cargar con quién grabó.", r.avisados.length || r.yaHoy ? "ok" : "err");
+    } catch (x) { toast(x instanceof Error ? x.message : "No se pudo mandar el recordatorio.", "err"); }
+    finally { setMandando(null); }
+  };
 
   return (
     <section className="mp-card ps-card ps-rs ps-tes" aria-label="Todos los testimonios">
@@ -43,7 +59,7 @@ export function TestimoniosDelPanel({ hoy }: { hoy: string }) {
             Testimonios{" "}
             <InfoMetrica
               titulo="Todos los testimonios"
-              ayuda="Cada testimonio de la base, se haya grabado o no: con el link del video, a los que les falta el link, los agendados, los que faltan agendar y los que no quisieron. Tocá un estado para filtrar y un nombre para abrir su ficha. Lo que pide acción está también en «Para hoy»."
+              ayuda="Cada testimonio de la base, se haya grabado o no: con el link del video, a los que les falta el link o algo más («Incompletos»: son tu tarea pendiente), los agendados, los que faltan agendar y los que no quisieron. Tocá un estado para filtrar y un nombre para abrir su ficha. Lo que pide acción está también en «Para hoy»."
             />
           </h2>
         </div>
@@ -64,6 +80,10 @@ export function TestimoniosDelPanel({ hoy }: { hoy: string }) {
       <div className="ps-tes__filtros" role="group" aria-label="Filtrar por estado">
         <button type="button" className="ps-rs__chip ps-tes__chip" aria-pressed={filtro === "todos"} onClick={() => { setFiltro("todos"); setCuantos(POR_TANDA); }}>
           Todos <b>{resumen.total}</b>
+        </button>
+        <button type="button" className="ps-rs__chip ps-tes__chip" aria-pressed={filtro === "incompletos"} onClick={() => elegir("incompletos")}
+          title="Grabados a los que les falta el link, el resultado del resell, la situación previa y actual o el follow-up: son tu tarea pendiente.">
+          Incompletos <b>{incompletos}</b>
         </button>
         {ESTADOS_TESTIMONIO.map((x) => (
           <button key={x.id} type="button" className="ps-rs__chip ps-tes__chip" aria-pressed={filtro === x.id} title={x.ayuda} onClick={() => elegir(x.id)}>
@@ -100,6 +120,16 @@ export function TestimoniosDelPanel({ hoy }: { hoy: string }) {
                     <a href={f.link} target="_blank" rel="noreferrer noopener" className="ps-tes__abrir" title="Abrir el video">Video<ExternalLink size={12} aria-hidden /></a>
                   )}
                   <Pastilla texto={est.pastilla} tono={est.tono} />
+                </span>
+                <span className="ps-tes__detalle">
+                  <span>Follow-up: <b>{f.followUp || "sin cargar"}</b></span>
+                  <span>Resell: <b>{f.resell || "sin cargar"}</b></span>
+                  <span>Situación: <b>{f.previa && f.actual ? "previa y actual ✓" : f.previa ? "falta la actual" : f.actual ? "falta la previa" : "sin cargar"}</b></span>
+                  {f.falta.length > 0 && <span className="ps-tes__falta">Falta {f.falta.join(", ")}.</span>}
+                  {f.falta.length > 0 && puedeRecordar && (
+                    <Button sm variante="ghost" icono={<Bell size={13} />} cargando={mandando === f.id} onClick={() => void recordar(f)}
+                      title="Le llega un aviso a quien grabó y a quien lo sigue, con lo que falta y los días que pasaron">Recordar</Button>
+                  )}
                 </span>
               </li>
             );

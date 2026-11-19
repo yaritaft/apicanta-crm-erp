@@ -8,7 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { fechaLarga, money } from "@/lib/format";
-import { esDeTestimonio, testimonioDeLaLlamada, testimonioNormal, type FilaResell } from "@/lib/clientes-cs";
+import { esDeTestimonio, RESELL_DE_TESTIMONIO, testimonioDeLaLlamada, testimonioNormal, type FilaResell } from "@/lib/clientes-cs";
 import { leerMontoCs } from "@/lib/importar-cs";
 import type { Resell, Testimonio } from "@/lib/types";
 
@@ -90,7 +90,9 @@ export function CerrarLlamada({ fila, onCerrar, onListo }: { fila: FilaResell; o
     const t0 = fila.alumno && resultadoT ? testimonioDeLaLlamada(e.testimonios ?? [], fila.alumno.id, diaDeNegocio(r.fechaHora)) : undefined;
     if (t0) {
       const base = testimonioNormal(t0);
-      const resellT = resultado === "si" ? "Renueva" : resultado === "seguimiento" ? "Lo piensa" : resultado ? "No renueva" : base.resell;
+      /* «Sigue como alumno activo» se guardaba como «No renueva» (Lili, 19/11: tres testimonios de la semana son alumnos activos). */
+      const resellT = resultado === "si" ? RESELL_DE_TESTIMONIO.renueva : resultado === "seguimiento" ? RESELL_DE_TESTIMONIO.seguimiento
+        : resultado === "activo" ? RESELL_DE_TESTIMONIO.activo : resultado === "outboarding" ? RESELL_DE_TESTIMONIO.noRenueva : base.resell;
       const cambios: Partial<Testimonio> = testimonio === "Grabó"
         ? { followUp: "Llamada agendada", fechaGrabacion: diaDeNegocio(r.fechaHora), conQuien: r.closer.split(" ")[0] || base.conQuien, link: link.trim() || base.link,
           estadoVideo: !base.estadoVideo || base.estadoVideo === "No quiso grabar" ? "Pendiente de subir" : base.estadoVideo, resell: resellT }

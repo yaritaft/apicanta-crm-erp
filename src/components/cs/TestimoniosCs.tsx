@@ -218,7 +218,11 @@ export function FormTestimonioCs({ testimonio, alumnoId, onCerrar }: { testimoni
         <Field label="Follow-up" ayuda="Si ya se agendó la llamada de grabación.">
           <Select value={b.followUp} aria-label="Follow-up" placeholder="Sin definir" opciones={conActual(listas.followUpsTestimonio, b.followUp)} onChange={(ev) => set("followUp", ev.target.value)} />
         </Field>
-        <Field label="Fecha de grabación"><Input type="date" value={b.fecha} onChange={(ev) => set("fecha", ev.target.value)} /></Field>
+        <Field label="Fecha de grabación" ayuda={b.fecha ? undefined : "Sin fecha: si no se presentó, se canceló o se reagenda."}>
+          <Input type="date" value={b.fecha} onChange={(ev) => set("fecha", ev.target.value)} />
+          {/* Borrar la fecha (Lili, 19/11): no se presentó, se canceló o se reagendó. El Follow-up lo elige ella. */}
+          {b.fecha && <button type="button" className="link t-sm" onClick={() => set("fecha", "")}>Borrar la fecha</button>}
+        </Field>
         <Field label="Con quién grabó">
           <Select value={b.conQuien} aria-label="Con quién grabó" placeholder="Sin definir" opciones={conActual(listas.quienGraba, b.conQuien)} onChange={(ev) => set("conQuien", ev.target.value)} />
         </Field>

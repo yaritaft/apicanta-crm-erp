@@ -1,5 +1,5 @@
 import { sinTildes } from "./crm";
-import { testimonioNormal, testimonioNoSeGraba } from "./clientes-cs";
+import { faltaDelTestimonio, testimonioNormal, testimonioNoSeGraba } from "./clientes-cs";
 import type { Alumno, Testimonio } from "./types";
 
 /* ==================================================================
@@ -10,7 +10,8 @@ import type { Alumno, Testimonio } from "./types";
    ================================================================== */
 
 export type EstadoTestimonio = "con-link" | "sin-link" | "agendado" | "por-agendar" | "no-quiere" | "no-se-concreto";
-export type FiltroTestimonios = "todos" | EstadoTestimonio;
+/* «incompletos»: grabados a los que les falta algo (faltaDelTestimonio): son la tarea pendiente de Lili. */
+export type FiltroTestimonios = "todos" | "incompletos" | EstadoTestimonio;
 
 export const ESTADOS_TESTIMONIO: { id: EstadoTestimonio; chip: string; pastilla: string; ayuda: string; tono: "ok" | "aviso" | "info" | "malo" | "neutra" }[] = [
   { id: "con-link", chip: "Grabados con link", pastilla: "Grabado", tono: "ok", ayuda: "Ya se grabó y el video tiene su link." },
@@ -43,6 +44,13 @@ export interface FilaTestimonioPanel {
   fecha: string | null;
   conQuien: string;
   link: string;
+  followUp: string;
+  /* El resultado del resell después del testimonio, tal cual está cargado («» si falta). */
+  resell: string;
+  previa: boolean;
+  actual: boolean;
+  /* Lo que le falta para estar completo, en palabras (vacío: completo o todavía no toca). */
+  falta: string[];
   creadoEn: string;
 }
 
@@ -55,7 +63,8 @@ export function filasDeTestimonios(
     const t = testimonioNormal(t0 as Pick<Testimonio, "id" | "alumnoId"> & Partial<Testimonio>);
     return {
       id: t.id, alumnoId: t.alumnoId, nombre: (nombres.get(t.alumnoId) ?? "").trim(), estado: estadoDelTestimonio(t, hoy),
-      fecha: t.fechaGrabacion, conQuien: t.conQuien, link: t.link, creadoEn: t.creadoEn,
+      fecha: t.fechaGrabacion, conQuien: t.conQuien, link: t.link, followUp: t.followUp, resell: t.resell,
+      previa: Boolean(t.situacionPrevia.trim()), actual: Boolean(t.situacionActual.trim()), falta: faltaDelTestimonio(t, hoy), creadoEn: t.creadoEn,
     };
   });
 }
@@ -67,10 +76,13 @@ export function resumenDeTestimonios(filas: readonly FilaTestimonioPanel[]): { t
   return { total: filas.length, porEstado };
 }
 
+/** Cuántos están incompletos (la tarea pendiente de Customer Success). */
+export const cuantosIncompletos = (filas: readonly FilaTestimonioPanel[]): number => filas.filter((f) => f.falta.length > 0).length;
+
 /** Lo que se ve en la lista: el filtro elegido y lo que se busca (por alumno). Arriba lo más reciente o lo que viene; sin fecha, al final. */
 export function listaDeTestimonios(filas: readonly FilaTestimonioPanel[], filtro: FiltroTestimonios, buscar: string): FilaTestimonioPanel[] {
   const q = sinTildes(buscar).trim();
   return filas
-    .filter((f) => (filtro === "todos" || f.estado === filtro) && (!q || sinTildes(f.nombre).includes(q)))
+    .filter((f) => (filtro === "todos" || (filtro === "incompletos" ? f.falta.length > 0 : f.estado === filtro)) && (!q || sinTildes(f.nombre).includes(q)))
     .sort((a, b) => (b.fecha ?? "").localeCompare(a.fecha ?? "") || b.creadoEn.localeCompare(a.creadoEn) || a.nombre.localeCompare(b.nombre, "es"));
 }

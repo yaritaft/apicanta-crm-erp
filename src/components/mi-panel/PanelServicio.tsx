@@ -68,7 +68,7 @@ const TAREA: Record<SeccionServicio["id"], { icono: React.ReactNode; tono: strin
   esperanVenta: { icono: <Hourglass size={16} />, tono: "var(--warning)", pide: "el closer no cargó la venta" },
   renovar: { icono: <CalendarClock size={16} />, tono: "var(--warning)", pide: "renovar o dar de baja" },
   resells: { icono: <Repeat2 size={16} />, tono: "var(--brand)", pide: "el closer no dijo en qué quedó" },
-  testimonios: { icono: <Video size={16} />, tono: "var(--success)", pide: "falta el link o agendar" },
+  testimonios: { icono: <Video size={16} />, tono: "var(--success)", pide: "falta completarlo o agendarlo" },
   reportes: { icono: <FileWarning size={16} />, tono: "var(--warning)", pide: "tres semanas sin reportar" },
   contratos: { icono: <FileSignature size={16} />, tono: "var(--info)", pide: "falta la firma" },
 };
@@ -318,7 +318,7 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
       <ResellsDelMes hoy={hoy} viendoOtro={viendoOtro} />
 
       {/* Todos los testimonios, grabados o no (Lili, 10/11). */}
-      <TestimoniosDelPanel hoy={hoy} />
+      <TestimoniosDelPanel hoy={hoy} puedeRecordar={puedeEscribir} />
 
       <section className="mp-card ps-cartera" id="ps-cartera" aria-label="Cartera">
         <div className="ps-cartera__head">
