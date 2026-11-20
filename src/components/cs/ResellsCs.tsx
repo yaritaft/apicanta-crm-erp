@@ -21,8 +21,9 @@ import { puedeEditar } from "@/lib/permisos";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import {
-  alternarEstadoResell, coincideResell, COLUMNAS_SUMADAS_RESELLS, esDeTestimonio, estadosDeResell, filasResells, RESULTADOS_TESTIMONIO, resellAbierto, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, resellNormal, JUEGOS_RESELLS, type ClaveResell, type FilaResell,
+  alternarEstadoResell, coincideResell, COLUMNAS_SUMADAS_RESELLS, esDeTestimonio, estadosDeResell, faltaDeLaFila, filasResells, RESULTADOS_TESTIMONIO, resellAbierto, resellNoSePresento, resellResuelto, listasCs, MOTOR_RESELLS, ORDEN_RESELLS, queFaltaDeLaLlamada, resellNormal, JUEGOS_RESELLS, type ClaveResell, type FilaResell,
 } from "@/lib/clientes-cs";
+import { CerrarLlamada } from "@/components/mi-panel/CerrarLlamada";
 import { leerMontoCs } from "@/lib/importar-cs";
 import { destinoDeResell } from "@/lib/resell-ficha";
 import { recordarResell } from "@/lib/recordar-testimonio";
@@ -74,6 +75,8 @@ export function ResellsCs() {
   const params = useSearchParams();
   const escribirURL = useEscribirURL();
   const [vendiendo, setVendiendo] = useState<Resell | null>(null);
+  /* La llamada que se está cerrando con el asistente (el mismo de Mi panel): se abre desde la columna «Falta» o desde el aviso al guardar. */
+  const [cerrando, setCerrando] = useState<FilaResell | null>(null);
   /* ?por-cargar=1: sólo las abiertas: ya pasaron y todavía no tienen un resultado que las cierre (sin estado, o sólo «Seguimiento»
      o «2da Agenda»). La misma regla que el panel de Lili y Mi panel del closer (resellAbierto, lib/clientes-cs.ts). */
   const soloPorCargar = params.get("por-cargar") === "1";
@@ -110,7 +113,21 @@ export function ResellsCs() {
     const titulo = MOTOR_RESELLS.columna[clave].titulo;
     switch (clave) {
       /* Se eligen varios: cada clic suma o saca uno. */
-      case "estado": { const nuevo = alternarEstadoResell(r.estado, v); return guardar(r, { estado: nuevo }, titulo, nuevo); }
+      case "estado": {
+        const nuevo = alternarEstadoResell(r.estado, v);
+        /* El resultado ya está, pero a la llamada le sigue faltando algo (si grabó el testimonio, el link): se dice en el momento y se
+           ofrece completarlo, en vez de que quede «incompleta» sin explicación (Mariano, 20/11). */
+        const despues = { ...r, estado: nuevo };
+        const recienResuelto = !resellResuelto(r.estado) && resellResuelto(nuevo);
+        const resto = recienResuelto && Date.parse(r.fechaHora) <= Date.now() && !r.cancelada ? queFaltaDeLaLlamada(despues) : [];
+        if (resto.length) {
+          acciones.guardarResell(despues);
+          toast(`Estado de ${r.nombre || "la agenda"}: ${nuevo}. Para cerrarla falta ${resto.map((x) => x.largo).join(" y ")}.`, "info",
+            { texto: "Completar", onClick: () => setCerrando({ ...f, resell: despues, estado: nuevo }) });
+          return;
+        }
+        return guardar(r, { estado: nuevo }, titulo, nuevo);
+      }
       case "cash": {
         if (!v) return guardar(r, { cashCollect: null }, titulo, "");
         const n = leerMontoCs(v);
@@ -145,6 +162,10 @@ export function ResellsCs() {
       case "fechaHora": return <span className="t-num">{formatoDia(f.dia, hoy)} · {HORA.format(new Date(r.fechaHora))}</span>;
       case "agendado": return r.agendadoEn ? <span className="t-num">{formatoDia(diaDeNegocio(r.agendadoEn), hoy)}</span> : NADA;
       case "estado": return <span className="cs-pastillas">{estadosDeResell(f.estado).map((x) => <Pastilla key={x} texto={x} tono={tonoDeResell(x)} />)}</span>;
+      case "falta": {
+        const falta = faltaDeLaFila(f);
+        return falta.length ? <span className="cs-pastillas">{falta.map((x) => <Pastilla key={x.clave} texto={x.corto} tono="aviso" title={`Falta ${x.largo}`} />)}</span> : NADA;
+      }
       case "cash": return r.cashCollect === null ? NADA : <span className="t-num">{montoCs(r.cashCollect)}</span>;
       case "caso": return <Pastilla texto={r.casoDeExito ? "Sí" : "No"} tono={r.casoDeExito ? "ok" : "neutra"} />;
       case "grabacion": return f.grabacion
@@ -152,7 +173,7 @@ export function ResellsCs() {
         : NADA;
       case "notas": return <Recorte texto={r.notas} />;
       case "testimonio": return r.testimonio ? <Pastilla texto={r.testimonio} tono={r.testimonio === "Grabó" ? "ok" : "neutra"} />
-        : esDeTestimonio(r) ? <Pastilla texto="Sin cargar" /> : NADA;
+        : esDeTestimonio(r) && !resellNoSePresento(r.estado) ? <Pastilla texto="Sin cargar" /> : NADA;
       case "linkTestimonio": case "linkPitch": {
         const l = clave === "linkTestimonio" ? r.linkTestimonio : r.linkPitch;
         return l ? <a className="link" href={l} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}><ExternalLink size={13} /> Verlo</a> : NADA;
@@ -213,6 +234,16 @@ export function ResellsCs() {
         </button>
       );
     }
+    if (clave === "falta") {
+      const falta = faltaDeLaFila(f);
+      if (!falta.length || !puede) return <span className="crm-t__fija">{contenido(clave, f)}</span>;
+      return (
+        <button type="button" className="cs-falta" onClick={(ev) => { ev.stopPropagation(); setCerrando(f); }}
+          title={`Falta ${falta.map((x) => x.largo).join(" y ")}. Tocá para completarlo.`} aria-label={`Completar la llamada de ${r.nombre || "esta agenda"}: falta ${falta.map((x) => x.largo).join(" y ")}`}>
+          {contenido(clave, f)}
+        </button>
+      );
+    }
     const editor = EDITOR[clave];
     const deCalendly = r.origen === "calendly" && DE_CALENDLY.includes(clave);
     if (!editor || !puede || deCalendly) {
@@ -262,7 +293,7 @@ export function ResellsCs() {
         resumen={(
           <ResumenCs
             etiqueta="Renovaron" valor={suyas.filter(renovo).length} sub={`de ${suyas.length} llamadas`}
-            ayuda="En qué quedó cada llamada de resell. «Incompletos»: ya pasó y el closer todavía no cargó en qué quedó. Tocá una parte para filtrar la tabla."
+            ayuda="En qué quedó cada llamada de resell. «Incompletos»: ya pasó y falta cargar algo para cerrarla; la columna «Falta» dice qué. Tocá una parte para filtrar la tabla."
             motor={MOTOR_RESELLS} columna="estado" filas={suyas} alFiltrar={{ "por-cargar": null }}
             grupos={[
               { id: "renovo", nombre: "Renovaron", tono: "bien", es: renovo, valores: () => VALORES_RENOVO },
@@ -312,6 +343,7 @@ export function ResellsCs() {
         }}
       />
       {form && <FormResell resell={form.r} onCerrar={() => setForm(null)} />}
+      {cerrando && <CerrarLlamada fila={cerrando} onCerrar={() => setCerrando(null)} onListo={() => setCerrando(null)} />}
       {vendiendo && (() => {
         const lead = leadDe(vendiendo);
         return lead ? (

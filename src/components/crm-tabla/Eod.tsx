@@ -18,7 +18,7 @@ import { miembroDeCloser, opcionesDe } from "@/lib/crm";
 import { esReagendar, estadoVisible, preguntaDe, type PreguntaEod } from "@/lib/estados";
 import { leadDeSesion } from "@/lib/etapas-auto";
 import { esLlamadaDeResell } from "@/lib/resells";
-import { filasResells, resellAbierto } from "@/lib/clientes-cs";
+import { filasResells, queFaltaDeLaLlamada, resellAbierto } from "@/lib/clientes-cs";
 import { filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import {
   atajosDeCierre, cambiosDelEod, closersConLlamadas, esDelCloser, faltaEnRespuesta, llamadasDelDia, llamadasParaCargar, repasoDelDia, objecionSugerida, objecionesDe, type GrupoDeLlamada,
@@ -142,7 +142,9 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
     return filasResells(e)
       .filter((f) => esDelCloser({ anfitrion: f.resell.closer }, closer, e.equipo) && resellAbierto(f.resell, ahora))
       .sort((a, b) => a.resell.fechaHora.localeCompare(b.resell.fechaHora))
-      .map((f) => ({ id: f.id, nombre: f.resell.nombre || f.alumno?.nombre || "Sin nombre", cuando: textoFecha(f.dia), estado: f.resell.estado }));
+      .map((f) => ({ id: f.id, nombre: f.resell.nombre || f.alumno?.nombre || "Sin nombre", cuando: textoFecha(f.dia), estado: f.resell.estado,
+        /* Qué le falta, no el estado (Mariano, 20/11: «No quiere renovar» y seguía abierta porque faltaba el testimonio). */
+        falta: queFaltaDeLaLlamada(f.resell).map((x) => x.corto.charAt(0).toLowerCase() + x.corto.slice(1)) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [e, closer, soloSesionId]);
   /* La lista queda fija mientras se carga: una llamada que se carga no se
@@ -303,7 +305,7 @@ function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pend
   /* Todas las llamadas del día, cada una con dónde está. */
   repaso: { id: string; nombre: string; hora: string; grupo: GrupoDeLlamada; texto: string }[];
   /* Sus resells abiertos: se cierran en la solapa Resell. */
-  resells: { id: string; nombre: string; cuando: string; estado: string }[];
+  resells: { id: string; nombre: string; cuando: string; estado: string; falta: string[] }[];
   strikes: ComponentProps<typeof CuentaDeStrikes>["strikes"]; regla: ComponentProps<typeof CuentaDeStrikes>["regla"];
 }) {
   const ayer = new Date(Date.parse(`${hoy}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
@@ -394,19 +396,19 @@ function Inicio({ closers, closer, fijo, onCloser, dia, hoy, onDia, delDia, pend
         </div>
       )}
       {closer && resells.length > 0 && (
-        <div className="crm-eod__cuales" aria-label="Resells sin cerrar">
+        <div className="crm-eod__cuales crm-eod__resells" aria-label="Resells sin cerrar">
           <span className="t-label">Resells sin cerrar ({num(resells.length)})</span>
           <ul>
             {resells.slice(0, 8).map((r) => (
               <li key={r.id}>
                 <span className="t-strong truncate">{r.nombre}</span>
                 <span className="t-sm t-subtle t-num">{r.cuando}</span>
-                {r.estado ? <Badge variante="neutral">{r.estado}</Badge> : <Badge variante="accent">Sin resultado</Badge>}
+                <span title={r.estado ? `Estado: ${r.estado}` : "Sin estado"}><Badge variante="accent">{`Falta: ${r.falta.join(" y ")}`}</Badge></span>
               </li>
             ))}
           </ul>
           <span className="t-sm t-subtle">
-            {resells.length > 8 ? `Y ${num(resells.length - 8)} más. ` : ""}Se cierran en la solapa Resell: hasta que digas en qué quedó cada uno, Customer Success lo ve abierto.{" "}
+            {resells.length > 8 ? `Y ${num(resells.length - 8)} más. ` : ""}Se cierran en la solapa Resell: hasta que cargues lo que falta, Customer Success lo ve abierto.{" "}
             <Link href="/mis-llamadas?grupo=resell&por-cargar=1" className="link">Cerrarlos</Link>
           </span>
         </div>

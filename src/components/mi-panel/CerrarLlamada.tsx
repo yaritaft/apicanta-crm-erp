@@ -8,7 +8,8 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { fechaLarga, money } from "@/lib/format";
-import { esDeTestimonio, RESELL_DE_TESTIMONIO, testimonioDeLaLlamada, testimonioNormal, type FilaResell } from "@/lib/clientes-cs";
+import { alternarEstadoResell, esDeTestimonio, ESTADO_NO_SE_PRESENTO, estadosDeResell, RESELL_DE_TESTIMONIO, resellNoSePresento, testimonioDeLaLlamada, testimonioNormal, type FilaResell } from "@/lib/clientes-cs";
+import { sinTildes } from "@/lib/crm";
 import { leerMontoCs } from "@/lib/importar-cs";
 import type { Resell, Testimonio } from "@/lib/types";
 
@@ -20,7 +21,7 @@ import type { Resell, Testimonio } from "@/lib/types";
    persiguiendo a nadie para saberlo.
    ================================================================== */
 
-type Resultado = "si" | "activo" | "outboarding" | "seguimiento";
+type Resultado = "si" | "activo" | "outboarding" | "seguimiento" | "no-se-presento";
 type PasoId = "testimonio" | "link" | "resell" | "compro" | "pitch";
 const TITULOS: Record<PasoId, string> = { testimonio: "Testimonio", link: "Grabación", resell: "Resell", compro: "Qué compró", pitch: "Pitch" };
 
@@ -29,13 +30,26 @@ const RESULTADOS: { valor: Resultado; nombre: string; sub: string }[] = [
   { valor: "activo", nombre: "No: sigue como alumno activo", sub: "Todavía tiene el programa vigente" },
   { valor: "outboarding", nombre: "No: pasa a outboarding", sub: "No quiere renovar" },
   { valor: "seguimiento", nombre: "Todavía no: queda en seguimiento", sub: "La llamada sigue abierta hasta que se defina" },
+  /* Lili, 20/11. */
+  { valor: "no-se-presento", nombre: "No se presentó", sub: "La llamada no se hizo: queda cerrada" },
 ];
 const PROGRAMAS = ["Upgrade a Hackear IA", "Renueva"];
 
 const montoCs = (n: number) => money(n, "USD", Math.abs(n % 1) > 0.004 ? 2 : 0);
 
 const estadoDe = (r: Resultado, programa: string): string =>
-  r === "si" ? programa : r === "activo" ? "Alumno vigente" : r === "outboarding" ? "No quiere renovar, Outbording" : "Seguimiento";
+  r === "si" ? programa : r === "activo" ? "Alumno vigente" : r === "outboarding" ? "No quiere renovar, Outbording" : r === "no-se-presento" ? ESTADO_NO_SE_PRESENTO : "Seguimiento";
+
+/* El resultado que ya tiene cargado la fila (Mariano, 20/11: había puesto «No quiere renovar» y «Outbording» en la tabla y sólo faltaba el
+   testimonio): viene elegido, así el asistente pregunta sólo lo que falta. «Seguimiento» no se elige solo: es justo lo que hay que definir. */
+function resultadoDeEstado(estado: string): Resultado | null {
+  if (resellNoSePresento(estado)) return "no-se-presento";
+  const xs = estadosDeResell(estado).map((x) => sinTildes(x).trim());
+  if (xs.some((x) => x === "upgrade a hackear ia" || x === "renueva")) return "si";
+  if (xs.includes("alumno vigente")) return "activo";
+  if (xs.some((x) => ["no quiere renovar", "outbording", "outboarding", "no renueva"].includes(x))) return "outboarding";
+  return null;
+}
 
 export function CerrarLlamada({ fila, onCerrar, onListo }: { fila: FilaResell; onCerrar: () => void; onListo: () => void }) {
   const e = useEstado();
@@ -43,22 +57,26 @@ export function CerrarLlamada({ fila, onCerrar, onListo }: { fila: FilaResell; o
   const r = fila.resell;
   const deTestimonio = esDeTestimonio(r) || r.casoDeExito;
   /* «No era de testimonio»: un «Próximos pasos» que fue sólo para el resell. Deja de ser caso de éxito. */
-  const [testimonio, setTestimonio] = useState<Resell["testimonio"] | "no-era">(r.testimonio || "");
+  /* «No se presentó»: no hubo llamada, así que tampoco testimonio (la base lo devuelve a «Pendiente de agendar»). */
+  const [testimonio, setTestimonio] = useState<Resell["testimonio"] | "no-era" | "no-se-presento">(r.testimonio || "");
   const [link, setLink] = useState(r.linkTestimonio ?? "");
-  const [resultado, setResultado] = useState<Resultado | null>(null);
-  const [programa, setPrograma] = useState(PROGRAMAS[0]);
+  const yaCargado = resultadoDeEstado(r.estado);
+  const [resultado, setResultado] = useState<Resultado | null>(yaCargado);
+  const [programa, setPrograma] = useState(estadosDeResell(r.estado).includes("Renueva") ? "Renueva" : PROGRAMAS[0]);
   const [cash, setCash] = useState(r.cashCollect === null ? "" : String(r.cashCollect));
   const [pitch, setPitch] = useState(r.linkPitch ?? "");
   const [i, setI] = useState(0);
   const nombre = fila.alumno?.nombre || r.nombre || "el alumno";
   const primero = nombre.split(" ")[0];
 
+  const sinLlamada = testimonio === "no-se-presento";
+  const corta = testimonio === "Se reagenda" || sinLlamada;
   const ids: PasoId[] = [
     ...(deTestimonio ? (["testimonio"] as const) : []),
     ...(testimonio === "Grabó" ? (["link"] as const) : []),
-    ...(testimonio === "Se reagenda" ? [] : (["resell"] as const)),
-    ...(testimonio !== "Se reagenda" && resultado === "si" ? (["compro"] as const) : []),
-    ...(testimonio === "Se reagenda" ? [] : (["pitch"] as const)),
+    ...(corta ? [] : (["resell"] as const)),
+    ...(!corta && resultado === "si" ? (["compro"] as const) : []),
+    ...(corta || resultado === "no-se-presento" ? [] : (["pitch"] as const)),
   ];
   const pasos = ids.map((id) => ({ id, titulo: TITULOS[id] }));
   const actual = Math.min(i, pasos.length - 1);
@@ -77,8 +95,13 @@ export function CerrarLlamada({ fila, onCerrar, onListo }: { fila: FilaResell; o
     if (falta) return;
     const reagenda = testimonio === "Se reagenda";
     const noEra = testimonio === "no-era";
-    const resultadoT = noEra ? "" : testimonio;
-    const estado = reagenda || !resultado ? r.estado : estadoDe(resultado, programa);
+    const resultadoT = noEra || sinLlamada ? "" : testimonio;
+    const noVino = sinLlamada || resultado === "no-se-presento";
+    /* Lo que ya decía la fila se respeta tal cual si no se cambió (no se pisa «2da Agenda» ni el programa). */
+    const estado = noVino ? (resellNoSePresento(r.estado) ? r.estado : alternarEstadoResell(r.estado, ESTADO_NO_SE_PRESENTO))
+      : reagenda || !resultado ? r.estado
+        : resultado === yaCargado && (resultado !== "si" || estadosDeResell(r.estado).includes(programa)) ? r.estado
+          : estadoDe(resultado, programa);
     const cashCollect = resultado === "si" && cash.trim() ? leerMontoCs(cash) : r.cashCollect;
     acciones.guardarResell({
       ...r, estado, cashCollect, testimonio: resultadoT, casoDeExito: !noEra && (r.casoDeExito || Boolean(resultadoT)),
@@ -100,7 +123,8 @@ export function CerrarLlamada({ fila, onCerrar, onListo }: { fila: FilaResell; o
           : { followUp: "No quiere grabar", estadoVideo: "No quiso grabar", resell: resellT };
       acciones.guardarTestimonio({ ...base, ...cambios });
     }
-    toast(reagenda ? `Listo: la llamada de ${primero} queda como reagendada (la nueva agenda entra sola).`
+    toast(noVino ? `Listo: la llamada de ${primero} quedó cerrada como «No se presentó».${deTestimonio ? " Su testimonio vuelve a «Pendiente de agendar»." : ""}`
+      : reagenda ? `Listo: la llamada de ${primero} queda como reagendada (la nueva agenda entra sola).`
       : resultado === "seguimiento" ? `Guardado. La llamada de ${primero} sigue en tu panel hasta que se defina.`
         : `Listo: la llamada de ${primero} quedó cerrada${resultado === "si" && cashCollect ? ` (${montoCs(cashCollect)})` : ""}.`);
     onListo();
@@ -115,9 +139,9 @@ export function CerrarLlamada({ fila, onCerrar, onListo }: { fila: FilaResell; o
         <>
           <Pregunta texto={`¿Grabaron el testimonio de ${primero}?`} sub={`Llamada del ${fechaLarga(r.fechaHora)}${r.closer ? ` con ${r.closer}` : ""}.`} />
           <div className="opciones opciones--lista">
-            {(["Grabó", "Se reagenda", "No quiso grabar", "no-era"] as const).map((t, k) => (
-              <Opcion key={t} tecla={String(k + 1)} nombre={t === "Grabó" ? "Sí, grabamos" : t === "Se reagenda" ? "Se reagenda" : t === "no-era" ? "No era para testimonio" : "No quiso grabar"}
-                sub={t === "Grabó" ? "Después pegás el link de la grabación" : t === "Se reagenda" ? "La nueva agenda entra sola por Calendly" : t === "no-era" ? "Fue sólo para el resell" : undefined}
+            {(["Grabó", "Se reagenda", "No quiso grabar", "no-se-presento", "no-era"] as const).map((t, k) => (
+              <Opcion key={t} tecla={String(k + 1)} nombre={t === "Grabó" ? "Sí, grabamos" : t === "Se reagenda" ? "Se reagenda" : t === "no-era" ? "No era para testimonio" : t === "no-se-presento" ? "No se presentó" : "No quiso grabar"}
+                sub={t === "Grabó" ? "Después pegás el link de la grabación" : t === "Se reagenda" ? "La nueva agenda entra sola por Calendly" : t === "no-era" ? "Fue sólo para el resell" : t === "no-se-presento" ? "La llamada no se hizo: el testimonio vuelve a «Pendiente de agendar»" : undefined}
                 activo={testimonio === t} onClick={() => { setTestimonio(t); window.setTimeout(() => setI(actual + 1), 220); }} />
             ))}
           </div>

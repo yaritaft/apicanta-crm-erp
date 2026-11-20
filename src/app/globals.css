@@ -3834,6 +3834,11 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
 .crm-eod__cuales ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .crm-eod__cuales li { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; font-size: 14px; }
 .crm-eod__cuales li .truncate { flex: 1 1 auto; min-width: 0; }
+/* Resells sin cerrar: la pastilla de lo que falta puede ser larga («Falta: si grabó el testimonio»); si no entra, baja de renglón en vez de
+   cortar el nombre y la fecha. */
+.crm-eod__resells li { flex-wrap: wrap; row-gap: 2px; }
+.crm-eod__resells li .truncate { flex: 1 1 140px; }
+.crm-eod__resells li .t-num { flex: none; white-space: nowrap; }
 .crm-eod__repaso { max-width: 520px; }
 .crm-eod__repaso li { justify-content: space-between; }
 .crm-eod__repaso li .t-num { margin-left: auto; }

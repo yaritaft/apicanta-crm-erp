@@ -19,6 +19,11 @@
 .cs-pastilla--info { background: color-mix(in srgb, var(--info) 16%, transparent); color: var(--info); }
 .cs-pastilla--neutra { background: var(--surface-200); color: var(--ink-muted); }
 
+/* «Falta» en la solapa Resell (Mariano, 20/11): lo que le falta a la llamada para cerrarse, en la fila. Tocarlo abre el asistente para cerrarla. */
+.cs-falta { display: inline-flex; flex-wrap: wrap; gap: 4px; max-width: 100%; border: 0; background: none; padding: 0; font: inherit; cursor: pointer; text-align: left; }
+.cs-falta:hover .cs-pastilla, .cs-falta:focus-visible .cs-pastilla { box-shadow: inset 0 0 0 1px currentColor; }
+.cs-falta:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: var(--radius-full); }
+
 /* Una celda que se prende y se apaga con un clic (accesos, CV, LinkedIn). */
 .cs-si-no { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 0; font: inherit; cursor: pointer; color: var(--ink); }
 .cs-si-no:disabled { cursor: default; }

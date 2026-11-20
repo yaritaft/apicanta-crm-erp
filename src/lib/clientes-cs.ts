@@ -58,8 +58,9 @@ export const LISTAS_POR_DEFECTO: ListasCs = {
      un alumno automatizado se le da de baja solo) y «Reservó» (dejó una reserva). «Renueva» se queda: es lo que pasa cuando compra. Vacío:
      todavía no se cargó (es lo que lo deja pendiente). */
   resellsTestimonio: ["Alumno activo", "Seguimiento", "No renueva / Outbording", "Reservó", "Renueva"],
-  /* Los de «Estado» de la tabla «Agendas Resells» del Airtable (export del 09/10) más «No responde» (Mariano, 21/10): se eligen varios a la vez («No quiere renovar» + «Outbording»). */
-  estadosResell: ["2da Agenda", "Upgrade a Hackear IA", "No quiere renovar", "Outbording", "Seguimiento", "Garantía Extendida", "Alumno vigente", "No responde"],
+  /* Los de «Estado» de la tabla «Agendas Resells» del Airtable (export del 09/10) más «No responde» (Mariano, 21/10) y «No se presentó» (Lili, 20/11):
+     se eligen varios a la vez («No quiere renovar» + «Outbording»). */
+  estadosResell: ["2da Agenda", "Upgrade a Hackear IA", "No quiere renovar", "Outbording", "Seguimiento", "Garantía Extendida", "Alumno vigente", "No responde", "No se presentó"],
   estadosCv: [...ESTADOS_CV],
 };
 
@@ -948,12 +949,22 @@ export interface FilaResell {
 export const estadosDeResell = (texto: string | null | undefined): string[] =>
   [...new Set(String(texto ?? "").split(",").map((x) => x.trim()).filter(Boolean))];
 
-/* Los estados con los que un resell queda resuelto: renueva (con o sin upgrade), no renueva, pasa a outboarding o sigue vigente.
-   «2da Agenda» y «Seguimiento» lo dejan abierto: todavía falta una llamada o una respuesta. */
-const RESELL_RESUELTO = ["upgrade a hackear ia", "no quiere renovar", "outbording", "outboarding", "garantia extendida", "alumno vigente", "renueva", "no renueva"];
+/* Los estados con los que un resell queda resuelto: renueva (con o sin upgrade), no renueva, pasa a outboarding, sigue vigente o no se
+   presentó (la llamada no se hizo: no hay nada más que cargar; si vuelve a agendar, entra otra). «2da Agenda», «Seguimiento» y «No responde»
+   lo dejan abierto: todavía falta una llamada o una respuesta.
+   La base usa LA MISMA lista (supabase/resell-cierre-unico.sql, estados_que_cierran_resell) y una prueba verifica que sean iguales
+   (pruebas-estres/sql/sql-resell-cierre.test.ts): antes estaba copiada a mano en cada función. */
+export const RESELL_RESUELTO = ["upgrade a hackear ia", "no quiere renovar", "outbording", "outboarding", "garantia extendida", "alumno vigente", "renueva", "no renueva", "no se presento"] as const;
 const sinTildesResell = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
-export const resellResuelto = (estado: string | null | undefined): boolean => estadosDeResell(estado).some((x) => RESELL_RESUELTO.includes(sinTildesResell(x)));
+export const resellResuelto = (estado: string | null | undefined): boolean =>
+  estadosDeResell(estado).some((x) => (RESELL_RESUELTO as readonly string[]).includes(sinTildesResell(x)));
+
+/** «No se presentó» (Lili, 20/11): la llamada no se hizo. La cierra entera, también la parte del testimonio (no se pudo grabar): si era de
+    testimonio, la base devuelve su testimonio a «Pendiente de agendar» (supabase/resell-cierre-unico.sql). */
+export const ESTADO_NO_SE_PRESENTO = "No se presentó";
+export const resellNoSePresento = (estado: string | null | undefined): boolean =>
+  estadosDeResell(estado).some((x) => sinTildesResell(x) === "no se presento");
 
 /** Una semana: pasada la llamada de resell, el closer tiene que decir en qué quedó (Lili, 19/10). */
 export const DIAS_PARA_CERRAR_RESELL = 7;
@@ -969,8 +980,9 @@ export const TESTIMONIO_A_COMPLETAR_DESDE = "2026-09-01";
 
 type LlamadaParaCerrar = Pick<Resell, "fechaHora" | "estado"> & Partial<Pick<Resell, "casoDeExito" | "testimonio" | "linkTestimonio" | "cancelada">>;
 
+/* Por el día de Argentina, como la base (una llamada del 30/09 a las 22 h no es de octubre aunque en UTC ya sea 01/10). */
 export const esDeTestimonio = (r: Pick<Resell, "fechaHora"> & Partial<Pick<Resell, "casoDeExito">>): boolean =>
-  Boolean(r.casoDeExito) && r.fechaHora.slice(0, 10) >= TESTIMONIO_DESDE;
+  Boolean(r.casoDeExito) && (diaDeNegocio(r.fechaHora) || r.fechaHora.slice(0, 10)) >= TESTIMONIO_DESDE;
 
 /** El testimonio que corresponde a una llamada: el que se grabó (o se iba a grabar) ese día y, si no hay, el más nuevo. Igual que
     resell_testimonio_a_ficha (supabase/sesiones-1a1-y-avisos-de-resell.sql): Jean Camacho tenía dos testimonios creados en el mismo
@@ -1021,21 +1033,32 @@ export function faltaDelTestimonio(
   return falta;
 }
 
-/** Lo que falta cargar de una llamada para cerrarla, en palabras (vacío: no falta nada). */
-export function faltaDeLaLlamada(r: LlamadaParaCerrar): string[] {
-  if (r.testimonio === "Se reagenda") return [];
-  const falta: string[] = [];
+/** Cada cosa que falta para cerrar una llamada: `corto` es lo que se ve en la fila (la columna «Falta» de la solapa Resell y el cierre del
+    día), `largo` la frase (Mi panel, el panel de Lili y el recordatorio). Mariano (20/11) puso «No quiere renovar» + «Outbording» y la llamada
+    le seguía «por cerrar» sin saber por qué: era de testimonio y faltaba decir si grabó, algo que su vista no mostraba. Desde ahora, cada lista
+    que muestra una llamada abierta dice qué le falta. */
+export type FaltaDeLlamada = { clave: "testimonio" | "link" | "resultado"; corto: string; largo: string };
+export function queFaltaDeLaLlamada(r: LlamadaParaCerrar): FaltaDeLlamada[] {
+  if (r.testimonio === "Se reagenda" || resellNoSePresento(r.estado)) return [];
+  const falta: FaltaDeLlamada[] = [];
   if (esDeTestimonio(r)) {
-    if (!r.testimonio) falta.push("si grabó el testimonio");
-    else if (r.testimonio === "Grabó" && !r.linkTestimonio?.trim()) falta.push("el link de la grabación");
+    if (!r.testimonio) falta.push({ clave: "testimonio", corto: "Si grabó el testimonio", largo: "si grabó el testimonio" });
+    else if (r.testimonio === "Grabó" && !r.linkTestimonio?.trim()) falta.push({ clave: "link", corto: "Link del testimonio", largo: "el link de la grabación" });
   }
-  if (!resellResuelto(r.estado)) falta.push(estadosDeResell(r.estado).length ? `en qué terminó el resell (está en «${r.estado}»)` : "si compró (el resell)");
+  if (!resellResuelto(r.estado)) {
+    falta.push(estadosDeResell(r.estado).length
+      ? { clave: "resultado", corto: "En qué terminó", largo: `en qué terminó el resell (está en «${r.estado}»)` }
+      : { clave: "resultado", corto: "Cómo salió", largo: "si compró (el resell)" });
+  }
   return falta;
 }
 
+/** Lo que falta cargar de una llamada para cerrarla, en palabras (vacío: no falta nada). Igual que falta_de_la_llamada en la base. */
+export const faltaDeLaLlamada = (r: LlamadaParaCerrar): string[] => queFaltaDeLaLlamada(r).map((x) => x.largo);
+
 /** Un resell ABIERTO: la llamada ya pasó, no se canceló y le falta algo para cerrarla: el resultado del resell (sin estado, o
-    sólo «Seguimiento» o «2da Agenda») y, si es de testimonio, si grabó y el link (faltaDeLaLlamada). «Se reagenda» la cierra: la
-    nueva agenda entra sola. Es la misma regla para el panel de Lili, el «por cerrar» de la solapa Resell, Mi panel de quien la
+    sólo «Seguimiento» o «2da Agenda») y, si es de testimonio, si grabó y el link (faltaDeLaLlamada). «Se reagenda» y «No se presentó»
+    la cierran: la nueva agenda entra sola. Es la misma regla para el panel de Lili, el «por cerrar» de la solapa Resell, Mi panel de quien la
     tomó (y de Manu y el director) y el cierre del día: antes el closer contaba sólo los que no tenían NINGÚN estado y Lili los que
     no estaban resueltos, y un resell en «Seguimiento» le figuraba cargado a él y abierto a ella (24/10). */
 export const resellAbierto = (r: LlamadaParaCerrar, ahoraMs: number): boolean =>
@@ -1065,8 +1088,12 @@ export function filasResells(e: Pick<EstadoApp, "resells" | "alumnos"> & Partial
   });
 }
 
-export type ClaveResell = "fechaHora" | "agendado" | "nombre" | "email" | "telefono" | "closer" | "estado" | "cash" | "caso" | "grabacion" | "notas"
+export type ClaveResell = "fechaHora" | "agendado" | "nombre" | "email" | "telefono" | "closer" | "estado" | "falta" | "cash" | "caso" | "grabacion" | "notas"
   | "testimonio" | "linkTestimonio" | "linkPitch";
+
+/** Lo que le falta a la llamada de una fila, si ya pasó y no se canceló (la columna «Falta»). */
+export const faltaDeLaFila = (f: Pick<FilaResell, "resell">, ahoraMs: number = Date.now()): FaltaDeLlamada[] =>
+  !f.resell.cancelada && Date.parse(f.resell.fechaHora) <= ahoraMs ? queFaltaDeLaLlamada(f.resell) : [];
 
 export const COLUMNAS_RESELLS: ColumnaCs<FilaResell, ClaveResell>[] = [
   { clave: "fechaHora", titulo: "Fecha y hora de agenda", corto: "Fecha", grupo: "Agenda", valores: (f) => uno(f.dia), orden: (f) => f.resell.fechaHora, fecha: true, ancho: 170 },
@@ -1078,6 +1105,15 @@ export const COLUMNAS_RESELLS: ColumnaCs<FilaResell, ClaveResell>[] = [
   { clave: "telefono", titulo: "Teléfono", grupo: "Agenda", valores: (f) => uno(f.resell.telefono), ancho: 150 },
   { clave: "closer", titulo: "Closer", grupo: "Agenda", valores: (f) => uno(f.resell.closer), ancho: 140 },
   { clave: "estado", titulo: "Estado", grupo: "Resultado", valores: (f) => estadosDeResell(f.estado), ancho: 220 },
+  /* Qué le falta para cerrarse (Mariano, 20/11): la misma regla que «Incompletos» (resellAbierto), a la vista en cada fila. */
+  { clave: "falta", titulo: "Falta para cerrarla", corto: "Falta", grupo: "Resultado",
+    ayuda: "Lo que hay que cargar para que la llamada deje de estar incompleta. Tocalo para completarlo.",
+    valores: (f) => {
+      if (f.resell.cancelada) return ["Cancelada"];
+      if (Date.parse(f.resell.fechaHora) > Date.now()) return ["Todavía no pasó"];
+      const falta = faltaDeLaFila(f);
+      return falta.length ? falta.map((x) => x.corto) : ["Nada"];
+    }, ancho: 190 },
   { clave: "cash", titulo: "Cash Collect", grupo: "Resultado", valores: (f) => numeroComoValor(f.resell.cashCollect), orden: (f) => f.resell.cashCollect ?? "", numerica: true, ancho: 120 },
   { clave: "caso", titulo: "Caso de éxito", grupo: "Resultado", valores: (f) => siNo(f.resell.casoDeExito), ancho: 110 },
   { clave: "grabacion", titulo: "Grabación", grupo: "Resultado", valores: (f) => [f.grabacion ? "Con grabación" : "Sin grabación"], texto: (f) => f.grabacion, ancho: 150 },
@@ -1094,12 +1130,13 @@ export const COLUMNAS_SUMADAS_RESELLS: { id: string; despuesDe: string; claves: 
   { id: "grabacion-2110", despuesDe: "caso", claves: ["grabacion"] },
   { id: "testimonio-2410", despuesDe: "grabacion", claves: ["testimonio", "linkTestimonio", "linkPitch"] },
   { id: "agendado-2610", despuesDe: "fechaHora", claves: ["agendado"] },
+  { id: "falta-2011", despuesDe: "estado", claves: ["falta"] },
 ];
 
 export const VISIBLES_RESELLS: ClaveResell[] = COLUMNAS_RESELLS.map((c) => c.clave);
 export const JUEGOS_RESELLS: { id: string; nombre: string; claves: readonly ClaveResell[] }[] = [
-  { id: "agenda", nombre: "Agenda", claves: ["fechaHora", "nombre", "closer", "estado", "cash", "telefono"] },
-  { id: "testimonio", nombre: "Testimonio", claves: ["fechaHora", "nombre", "caso", "testimonio", "linkTestimonio", "linkPitch", "grabacion"] },
+  { id: "agenda", nombre: "Agenda", claves: ["fechaHora", "nombre", "closer", "estado", "falta", "cash", "telefono"] },
+  { id: "testimonio", nombre: "Testimonio", claves: ["fechaHora", "nombre", "caso", "testimonio", "linkTestimonio", "linkPitch", "falta", "grabacion"] },
   { id: "todas", nombre: "Todas", claves: VISIBLES_RESELLS },
 ];
 

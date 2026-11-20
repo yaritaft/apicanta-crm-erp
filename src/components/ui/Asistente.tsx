@@ -109,10 +109,13 @@ export function Asistente({
     return () => { document.body.style.overflow = prev; };
   }, [embebido]);
 
-  /* Foco en el primer control de cada paso. */
+  /* Foco en el primer control de cada paso; si una opción ya viene elegida, en ésa (si no, el borde del foco queda en la primera y parece
+     que la elegida es otra). */
   useEffect(() => {
     const t = window.setTimeout(() => {
-      mainRef.current?.querySelector<HTMLElement>("input, textarea, select, .sel, .fecha, .opcion, [data-foco-inicial]")?.focus();
+      const main = mainRef.current;
+      (main?.querySelector<HTMLElement>(".opcion[aria-pressed='true']")
+        ?? main?.querySelector<HTMLElement>("input, textarea, select, .sel, .fecha, .opcion, [data-foco-inicial]"))?.focus();
     }, 80);
     return () => window.clearTimeout(t);
   }, [actual]);
