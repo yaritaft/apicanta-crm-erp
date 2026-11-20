@@ -97,6 +97,25 @@ export async function anotarEntradaPorLink(
   await db.from("telegram_personas").update(cambios).eq("id", p.id);
 }
 
+/** Les pone nombre y @usuario a las cuentas que sólo tienen el id (las que se recuperaron de los accesos con link personal): se lo pregunta a Telegram
+    en uno de sus grupos. Hasta `limite` por pasada. Devuelve cuántas completó. */
+export async function completarNombresDeCuentas(db: SupabaseClient, tg: LlamarTelegram, limite = 25): Promise<number> {
+  const r = await db.from("telegram_personas").select("id, grupos").eq("nombre", "").limit(limite);
+  let completadas = 0;
+  for (const p of (r.data ?? []) as { id: string; grupos: Record<string, string> | null }[]) {
+    for (const chat of Object.keys(p.grupos ?? {}).slice(0, 2)) {
+      const m = await tg("getChatMember", { chat_id: chat, user_id: Number(p.id) }).catch(() => null);
+      const u = (m?.result as { user?: UsuarioTelegram } | undefined)?.user;
+      if (!u) continue;
+      /* Sin nombre ni @usuario (una cuenta borrada): se anota igual, para no volver a preguntar en cada pasada. */
+      await db.from("telegram_personas").update({ nombre: nombreEnTelegram(u) || (u.username ? "" : "(sin nombre)"), usuario: u.username ?? null }).eq("id", p.id);
+      completadas++;
+      break;
+    }
+  }
+  return completadas;
+}
+
 /* ---------- Atar y desatar ---------- */
 
 /** Los grupos donde está el bot y que puede mirar. */

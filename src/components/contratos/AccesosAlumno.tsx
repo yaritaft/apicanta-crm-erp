@@ -93,6 +93,18 @@ function resumen(xs: Acceso[], plataforma: Plataforma): { texto: string; variant
   return { texto: plataforma === "zoom" ? "Inscripto" : "Con acceso", variante: "success" };
 }
 
+/* Lo que el outboarding automático saca de verdad: lo que la app tiene registrado. Un alumno de antes, reconocido sólo en Telegram, no tiene
+   su Wisboo ni su Zoom en la app: eso se saca a mano. */
+const NOMBRE_DE_PLATAFORMA: Record<Plataforma, string> = { wisboo: "Wisboo", telegram: "Telegram", zoom: "Zoom" };
+function queSeSacaSolo(vigentes: Acceso[]): string {
+  const nombres = (["wisboo", "telegram", "zoom"] as const).filter((p) => vigentes.some((x) => x.plataforma === p)).map((p) => NOMBRE_DE_PLATAFORMA[p]);
+  return nombres.length < 2 ? nombres.join("") : `${nombres.slice(0, -1).join(", ")} y ${nombres[nombres.length - 1]}`;
+}
+function loDeAntes(vigentes: Acceso[]): string {
+  const faltan = (["wisboo", "zoom"] as const).filter((p) => !vigentes.some((x) => x.plataforma === p)).map((p) => NOMBRE_DE_PLATAFORMA[p]);
+  return faltan.length ? `Lo de ${faltan.join(" y ")} que tenga de antes se saca a mano. ` : "";
+}
+
 async function pedir(cuerpo: Record<string, unknown>) {
   const r = await fetch("/api/accesos-alumnos", {
     method: "POST", cache: "no-store", headers: { ...(await cabeceras()), "Content-Type": "application/json" }, body: JSON.stringify(cuerpo),
@@ -220,7 +232,7 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
             <FilaServicio icono={<CalendarX2 size={15} />} rotulo="Se le sacan los accesos solos"
               detalle={lista.length === 0 ? "La app no le dio accesos: lo que tenga de antes (Wisboo, grupos, Zoom) se le saca a mano."
                 : vigentes.length === 0 ? "Ya se le sacaron los accesos que le dio la app."
-                  : `Wisboo, Telegram y Zoom${outboarding.fin ? `: su programa termina el ${formatoDia(outboarding.fin)}` : ""}. Si renueva, cambiale el Follow Up antes y no pasa nada.`}>
+                  : `${queSeSacaSolo(vigentes)}${outboarding.fin ? `: su programa termina el ${formatoDia(outboarding.fin)}` : ""}. ${loDeAntes(vigentes)}Si renueva, cambiale el Follow Up antes y no pasa nada.`}>
               {lista.length === 0 ? <Badge variante="neutral">A mano</Badge>
                 : vigentes.length === 0 ? <Badge variante="success">Hecho</Badge>
                   : <Badge variante="warning">{outboarding.dia > hoyDelNegocio() ? `El ${formatoDia(outboarding.dia)}` : `Hoy a las ${proximaPasada()}`}</Badge>}

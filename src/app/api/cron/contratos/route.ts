@@ -9,6 +9,7 @@ import { leerWebhookTelegram, RUTA_WEBHOOK_TELEGRAM } from "@/lib/accesos-alumno
 import { pasarOutboardings } from "@/lib/outboarding-servidor";
 import { pasarCortes } from "@/lib/accesos-vencimientos-servidor";
 import { avisarFinesDeBaja } from "@/lib/baja-a-downsell-servidor";
+import { completarNombresDeCuentas } from "@/lib/telegram-identidades-servidor";
 
 /* ==================================================================
    La red de seguridad del aviso de PandaDoc: cada hora se le pregunta el
@@ -38,6 +39,8 @@ export async function GET(req: Request) {
   const aviso = await asegurarAvisoDeProduccion(db);
   const bot = await asegurarBotDeTelegram(db);
   const grupos = await revisarGruposDeTelegram(db).catch((e) => `no se pudo: ${e instanceof Error ? e.message : String(e)}`);
+  /* Quién es quién en Telegram: las cuentas que sólo tienen el id reciben su nombre y @usuario. */
+  const cuentas = hayTelegram() ? await completarNombresDeCuentas(db, telegram).catch((e) => `no se pudo: ${e instanceof Error ? e.message : String(e)}`) : "sin bot";
   const desde = new Date(Date.now() - 90 * 24 * 3600 * 1000).toISOString();
   const r = await db.from("contratos").select("*")
     .gte("creadoEn", desde).not("documentoId", "is", null)
@@ -66,7 +69,7 @@ export async function GET(req: Request) {
   const cortes = await pasarCortes(db).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
   /* Quien pasó a Downsell por falta de pago con accesos que no dio la app: el día que termina, Customer Success saca el contenido a mano. */
   const finesDeBaja = await avisarFinesDeBaja(db).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
-  return NextResponse.json({ ok: true, aviso, bot, grupos, revisados: lista.length, cambiaron, fallaron, outboarding, cortes, finesDeBaja, ...(sueltos.error ? { sueltos: sueltos.error.message } : {}) });
+  return NextResponse.json({ ok: true, aviso, bot, grupos, cuentas, revisados: lista.length, cambiaron, fallaron, outboarding, cortes, finesDeBaja, ...(sueltos.error ? { sueltos: sueltos.error.message } : {}) });
 }
 
 /* El aviso de PandaDoc de producción se conecta solo la primera vez (Juan Cruz, 20/10: «dejalo listo»): la clave

@@ -6,7 +6,7 @@ import {
   nombreEnTelegram, parecidoDeNombres, sugerirAlumnos, sugerirCuentas, telefonosDeFila, type PersonaTelegram, type TelefonosDeAlumno,
 } from "@/lib/telegram-identidades";
 import {
-  anunciarEnLosGrupos, atarPersona, atenderPrivado, desatarPersona, olvidarTelefonos, olvidarVistas, programaDelGrupo, resumenDeIdentificacion,
+  anunciarEnLosGrupos, atarPersona, completarNombresDeCuentas, atenderPrivado, desatarPersona, olvidarTelefonos, olvidarVistas, programaDelGrupo, resumenDeIdentificacion,
   telefonosDeAlumnos, verPersona, type LlamarTelegram,
 } from "@/lib/telegram-identidades-servidor";
 import { quitarAccesos } from "@/lib/accesos-servidor";
@@ -549,4 +549,30 @@ test("el outboarding automático saca a un alumno de antes ya reconocido y avisa
   assert.match(de("Vera Vieja"), /Wisboo y Zoom no figuran en la app: si los tiene de antes, sacáselos a mano/);
   assert.match(de("Nico Nuevo"), /se le sacaron 3 accesos \(Wisboo, Telegram y Zoom\)\./);
   assert.doesNotMatch(de("Nico Nuevo"), /no figuran/);
+});
+
+test("las cuentas que sólo tienen el id reciben su nombre y @usuario de Telegram, una vez", async () => {
+  const { db, tablas } = base({
+    telegram_personas: [
+      { id: "10", nombre: "", usuario: null, grupos: { [GENERAL]: "x" } },
+      { id: "11", nombre: "Ya tiene", usuario: "ya", grupos: { [GENERAL]: "x" } },
+      { id: "12", nombre: "", usuario: null, grupos: { [GENERAL]: "x", [NOVEDADES]: "x" } },
+      { id: "13", nombre: "", usuario: null, grupos: {} },
+    ],
+  });
+  const preguntados: string[] = [];
+  const tg: LlamarTelegram = async (metodo, cuerpo = {}) => {
+    preguntados.push(`${metodo}:${cuerpo.chat_id}:${cuerpo.user_id}`);
+    /* A la 12 no la encuentra en el primer grupo, sí en el segundo; la 10 es una cuenta borrada. */
+    if (cuerpo.user_id === 12 && cuerpo.chat_id === GENERAL) return { ok: false, description: "user not found" };
+    const usuario = cuerpo.user_id === 10 ? { id: 10, first_name: "" } : { id: 12, first_name: "Marta", last_name: "Díaz", username: "mdiaz" };
+    return { ok: true, result: { status: "member", user: usuario } };
+  };
+  assert.equal(await completarNombresDeCuentas(db, tg), 2);
+  assert.deepEqual(tablas.telegram_personas.map((p) => [p.id, p.nombre, p.usuario]), [
+    ["10", "(sin nombre)", null], ["11", "Ya tiene", "ya"], ["12", "Marta Díaz", "mdiaz"], ["13", "", null],
+  ]);
+  assert.deepEqual(preguntados, [`getChatMember:${GENERAL}:10`, `getChatMember:${GENERAL}:12`, `getChatMember:${NOVEDADES}:12`], "la 13 no está en ningún grupo: no se pregunta");
+  preguntados.length = 0;
+  assert.equal(await completarNombresDeCuentas(db, tg), 0, "la segunda pasada ya no pregunta por las completas");
 });
