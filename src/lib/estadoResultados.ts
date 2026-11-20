@@ -1,6 +1,6 @@
 import { fechaLarga, pct, tasaTexto } from "./format";
 import {
-  comisionesDelDirector, comisionesPorCloser, devolucionesDelMes, feesPorProcesador, gastosPorCategoriaDetalle,
+  comisionesDelDirector, comisionesPorCloser, costosDelMes, devolucionesDelMes, esComisionDeDirectorCargada, feesPorProcesador, gastosPorCategoriaDetalle,
   ingresosPorCliente, type IngresoCliente, type PyL,
 } from "./finanzas";
 import type { RangoMes } from "./metricas";
@@ -50,7 +50,9 @@ export const RENGLON_DE_GRUPO: Record<GrupoGasto, string> = {
   directo: "directos", operativo: "operativos", dueno: "honorarios", retiro: "",
 };
 
-export function rutaDeGasto(g: Pick<Gasto, "id" | "grupo" | "categoria">): string[] {
+export function rutaDeGasto(g: Pick<Gasto, "id" | "grupo" | "categoria"> & Partial<Pick<Gasto, "extra">>): string[] {
+  /* Lo pagado al director cargado como gasto cae en su renglón, no en «Otros costos directos». */
+  if (esComisionDeDirectorCargada({ extra: {}, ...g })) return ["director", `director/g:${g.id}`];
   const r = RENGLON_DE_GRUPO[g.grupo];
   if (!r) return [];
   return [r, `${r}/c:${g.categoria}`, `${r}/c:${g.categoria}/g:${g.id}`];
@@ -158,10 +160,17 @@ export function armarEstadoResultados(
 
   /* ---------- Comisión del director: por venta ---------- */
   const dir = comisionesDelDirector(e, mes);
+  /* Lo pagado al director cargado como gasto (los meses de la planilla de Angelo): va acá y no en «Otros costos directos». */
+  const dirCargada = costosDelMes(e, mes, "directo").filter(esComisionDeDirectorCargada)
+    .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
   const director: NodoPyL = {
     id: "director", titulo: "Comisión del director", cc: -p.comisionDirector, rev: -p.comisionDirector,
     vacio: "Ninguna venta cobrada en este período le deja comisión al director.",
-    hijos: dir.ventas.map((c): NodoPyL => {
+    hijos: [...dirCargada.map((g): NodoPyL => ({
+      id: `director/g:${g.id}`, titulo: g.concepto || g.categoria,
+      sub: [g.proveedor, "pagado como gasto", g.fechaPago ? `el ${fechaLarga(g.fechaPago)}` : ""].filter(Boolean).join(" · "),
+      cc: -g.monto, rev: -g.monto, href: hrefGasto(g.id),
+    })), ...dir.ventas.map((c): NodoPyL => {
       const d = e.equipo.find((x) => x.id === c.directorId);
       return {
         id: `director/v:${c.id}`,
@@ -171,7 +180,7 @@ export function armarEstadoResultados(
           : `${d?.nombre ?? "Director"} · ${tasaTexto(c.tasaDirector)} de ${M(c.netoProcesador, 2)} neto de procesador${servicioDe(c.productoId)}`,
         cc: -c.comisionDirector, rev: -c.comisionDirector, href: hrefVenta(c.ventaId),
       };
-    }),
+    })],
     notas: dir.sinComision > 0
       ? [`${cant(dir.sinComision, "venta cobrada no le deja", "ventas cobradas no le dejan")} comisión: las cerró alguien que no comisiona, o no tienen director.`]
       : undefined,
@@ -199,7 +208,11 @@ export function armarEstadoResultados(
 
   /* ---------- Gastos: por categoría, y cada categoría en sus gastos ---------- */
   const gastos = (id: string, titulo: string, grupo: GrupoGasto, total: number, vacio: string): NodoPyL => {
-    const categorias = gastosPorCategoriaDetalle(e, mes, grupo).map((c): NodoPyL => ({
+    const categorias = gastosPorCategoriaDetalle(e, mes, grupo)
+      .map((c) => (grupo === "directo" ? { ...c, gastos: c.gastos.filter((g) => !esComisionDeDirectorCargada(g)) } : c))
+      .map((c) => ({ ...c, total: c.gastos.reduce((a, g) => a + g.monto, 0) }))
+      .filter((c) => c.gastos.length > 0)
+      .map((c): NodoPyL => ({
       id: `${id}/c:${c.categoria}`, titulo: c.categoria, sub: cant(c.gastos.length, "gasto", "gastos"),
       cc: -c.total, rev: -c.total,
       hijos: c.gastos.map((g): NodoPyL => ({

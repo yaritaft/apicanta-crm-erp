@@ -151,7 +151,8 @@ export function cajaEsperada(
   const equipo = suma(salieron.filter((g) => g.grupo !== "retiro" && esPagoDeEquipo(g)));
   const gastos = suma(salieron.filter((g) => g.grupo !== "retiro" && !esPagoDeEquipo(g)));
   const liquidacion = suma(pagados.filter(esDeLaLiquidacion));
-  const comisiones = p.comisionCloser + p.comisionDirector;
+  /* Lo que se debe: lo cargado como gasto ya se pagó (está en `gastos`). */
+  const comisiones = p.comisionCloser + p.comisionDirector - p.comisionDirectorCargada;
   const reparto = p.growth + p.socio;
   const enCaminoAntes = enCamino(e, desde.fecha, tipoCambio);
   const viajando = enCamino(e, hasta, tipoCambio);

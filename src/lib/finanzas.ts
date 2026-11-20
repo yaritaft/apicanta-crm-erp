@@ -346,6 +346,12 @@ export function gastosPagadosEn(e: Pick<EstadoApp, "gastos">, m: RangoMes, grupo
  *  sueldo cuenta dos veces (el pago cargado a mano y la liquidación). Lo marca quien carga, desde Equipo y honorarios → Liquidación. */
 export const esPagoDeEquipo = (g: Pick<Gasto, "extra">): boolean => g.extra?.pagoDeEquipo === true;
 
+/** La categoría con la que se carga lo pagado al director cuando Finanzas no lo calcula (los meses de la planilla de Angelo). */
+export const CATEGORIA_COMISION_DIRECTOR = "Comisiones Director de Ventas";
+/** Un gasto que es la comisión del director (directo, que cuenta como costo): suma en la línea del director del P&L. */
+export const esComisionDeDirectorCargada = (g: Pick<Gasto, "categoria" | "grupo" | "extra">): boolean =>
+  g.grupo === "directo" && !esPagoDeEquipo(g) && g.categoria.trim().toLowerCase() === CATEGORIA_COMISION_DIRECTOR.toLowerCase();
+
 /** Los gastos del período que cuentan como costo: todos menos los pagos de equipo marcados. Es lo que suma el P&L. */
 export function costosDelMes(e: EstadoApp, m: RangoMes, grupo?: Gasto["grupo"]): Gasto[] {
   return gastosDelMes(e, m, grupo).filter((g) => !esPagoDeEquipo(g));
@@ -383,7 +389,11 @@ export interface PyL {
   tasaCobro: number;
   /* Costos directos */
   comisionCloser: number;
+  /* La del director: la que Finanzas calcula de las ventas MÁS la cargada como gasto (comisionDirectorCargada). */
   comisionDirector: number;
+  /* Lo pagado al director cargado como gasto «Comisiones Director de Ventas» (directo): lo de los meses que se liquidaban con la
+     planilla de Angelo, que Finanzas no puede calcular. Va en la línea del director y no en «Otros costos directos». */
+  comisionDirectorCargada: number;
   feesProcesador: number;
   otrosDirectos: number;
   totalDirectos: number;
@@ -423,8 +433,11 @@ export function calcularPyL(e: EstadoApp, m: RangoMes): PyL {
   const cs = comisionesDelMes(e, m);
   const { closers, director } = totalComisiones(cs);
 
-  const otrosDirectos = totalGastos(e, m, "directo");
-  const totalDirectos = closers + director + fees + otrosDirectos;
+  /* Lo pagado al director cargado como gasto se ve en su línea, no en «Otros costos directos»: el total no cambia. */
+  const directos = costosDelMes(e, m, "directo");
+  const directorCargada = directos.filter(esComisionDeDirectorCargada).reduce((a, g) => a + g.monto, 0);
+  const otrosDirectos = directos.reduce((a, g) => a + g.monto, 0) - directorCargada;
+  const totalDirectos = closers + director + directorCargada + fees + otrosDirectos;
 
   const brutoCC = cc - totalDirectos;
   const brutoRev = rev - dev - totalDirectos;
@@ -452,7 +465,7 @@ export function calcularPyL(e: EstadoApp, m: RangoMes): PyL {
 
   return {
     revenue: rev, cobrado: entro, devoluciones: dev, cashCollected: cc, tasaCobro: rev > 0 ? (cc / rev) * 100 : 0,
-    comisionCloser: closers, comisionDirector: director, feesProcesador: fees,
+    comisionCloser: closers, comisionDirector: director + directorCargada, comisionDirectorCargada: directorCargada, feesProcesador: fees,
     otrosDirectos, totalDirectos,
     brutoCC, brutoRev,
     gastosOperativos, inversionAds,
