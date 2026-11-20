@@ -1,5 +1,5 @@
 import type { ConfigContratos } from "./types";
-import { esPerfil, modeloDeBienvenida, PERFILES, type GuiaBienvenida } from "./bienvenida-alumno";
+import { esPerfil, explicacionDe, modeloDeBienvenida, PERFILES, type GuiaBienvenida } from "./bienvenida-alumno";
 import { diaDeNegocio } from "./dia-negocio";
 import { fechaHora, relativo } from "./format";
 
@@ -394,6 +394,8 @@ export function cambiosDelFirmante(f: FirmanteDelDocumento, d: Partial<DatosCont
 
 export interface AccesoParaBienvenida {
   plataforma: "wisboo" | "telegram" | "zoom";
+  /* El id del curso, grupo o reunión: con él se dice qué hay ahí (lib/bienvenida-alumno.ts → explicacionDe). */
+  recurso?: string;
   estado: "pendiente" | "dado" | "entro" | "fallo" | "quitado";
   recursoNombre: string;
   externo: Record<string, unknown>;
@@ -406,14 +408,18 @@ export interface Bienvenida {
   fase: "firmar" | "preparando" | "listo" | "sin-accesos" | "terminado" | "reserva";
   nombre: string;
   programa: string;
-  telegram: { nombre: string; url: string | null; adentro: boolean }[];
-  wisboo: { url: string | null; cursos: string[] } | null;
-  zoom: { nombre: string; url: string | null }[];
+  /* `detalle`: qué hay en ese grupo o qué día es esa clase (Lili, 20/11), si se sabe. */
+  telegram: { nombre: string; url: string | null; adentro: boolean; detalle?: string }[];
+  wisboo: { url: string | null; cursos: string[]; bonos?: boolean } | null;
+  zoom: { nombre: string; url: string | null; detalle?: string }[];
   /* Algo no salió solo: el equipo lo termina a mano (se le dice, sin el detalle técnico). */
   faltaAlgo: boolean;
   /* Su roadmap, su formulario semanal y el WhatsApp de soporte (Lili, 22/10; lib/bienvenida-alumno.ts). */
   guia?: GuiaBienvenida | null;
 }
+
+const NOMBRE_DEL_DIA = { martes: "Martes", miercoles: "Miércoles", jueves: "Jueves" } as const;
+const mayuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** Lo que ve el alumno: sólo su nombre de pila, el programa y sus links (nunca su mail, documento ni nada más). */
 export function armarBienvenida(a: {
@@ -433,19 +439,31 @@ export function armarBienvenida(a: {
   if (!a.contrato.accesosEn) return { ...base, fase: a.accesosAutomaticos ? "preparando" : "sin-accesos" };
   const vigentes = a.accesos.filter((x) => x.estado !== "quitado");
   if (a.accesos.length > 0 && vigentes.length === 0) return { ...base, fase: "terminado" };
+  const que = (x: AccesoParaBienvenida) => explicacionDe(x.plataforma, x.recurso ?? "", x.recursoNombre);
   const telegram = vigentes.filter((x) => x.plataforma === "telegram" && x.estado !== "fallo").map((x) => ({
     nombre: x.recursoNombre, adentro: x.estado === "entro",
     url: x.estado === "dado" && typeof x.externo.link === "string" ? x.externo.link : null,
-  }));
-  const cursos = vigentes.filter((x) => x.plataforma === "wisboo" && x.estado !== "fallo").map((x) => x.recursoNombre);
-  const zoom = vigentes.filter((x) => x.plataforma === "zoom" && x.estado !== "fallo").map((x) => ({
-    nombre: x.recursoNombre, url: typeof x.externo.joinUrl === "string" ? x.externo.joinUrl : null,
-  }));
+    ...(que(x)?.detalle ? { detalle: mayuscula(que(x)!.detalle!) } : {}),
+    orden: que(x)?.orden ?? 100,
+  })).sort((a, b) => a.orden - b.orden).map(({ orden: _o, ...g }) => g);
+  /* Con el nombre con que los cuenta el mail («Hackear IT», no «Mentoría (Hackear IT)»), en el mismo orden. */
+  const deWisboo = vigentes.filter((x) => x.plataforma === "wisboo" && x.estado !== "fallo")
+    .map((x) => ({ nombre: que(x)?.nombre ?? x.recursoNombre, orden: que(x)?.orden ?? 100 }))
+    .sort((a, b) => a.orden - b.orden);
+  const cursos = deWisboo.map((x) => x.nombre);
+  const zoom = vigentes.filter((x) => x.plataforma === "zoom" && x.estado !== "fallo").map((x) => {
+    const e = que(x);
+    return {
+      nombre: x.recursoNombre, url: typeof x.externo.joinUrl === "string" ? x.externo.joinUrl : null,
+      ...(e?.dia && e.detalle ? { detalle: `${NOMBRE_DEL_DIA[e.dia]} 18:00 (Argentina) · ${e.detalle}` } : {}),
+      orden: e?.orden ?? 100,
+    };
+  }).sort((a, b) => a.orden - b.orden).map(({ orden: _o, ...z }) => z);
   const faltaAlgo = vigentes.some((x) => x.estado === "fallo");
   const hay = telegram.length + cursos.length + zoom.length > 0;
   return {
     ...base, fase: hay ? "listo" : "sin-accesos", telegram, zoom, faltaAlgo,
-    wisboo: cursos.length ? { url: a.linkWisboo, cursos } : null,
+    wisboo: cursos.length ? { url: a.linkWisboo, cursos, ...(cursos.includes("Bonos") ? { bonos: true } : {}) } : null,
   };
 }
 

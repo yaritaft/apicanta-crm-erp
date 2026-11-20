@@ -4,7 +4,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { CheckCircle2, GraduationCap, LifeBuoy, Map as MapaIcono, Mic, NotebookPen, Send, Video } from "lucide-react";
 import type { Bienvenida } from "@/lib/contratos";
-import type { GuiaBienvenida } from "@/lib/bienvenida-alumno";
+import { CONTENIDO_DE_BONOS, type GuiaBienvenida } from "@/lib/bienvenida-alumno";
+import { MODULOS_PARA_SIMULACRO } from "@/lib/simulacros";
 
 /* ==================================================================
    La bienvenida: adonde PandaDoc manda al alumno apenas firma su contrato.
@@ -77,6 +78,11 @@ function Guia({ g, primario }: { g: GuiaBienvenida; primario: () => boolean }) {
               ? <a href={g.simulacro} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label="Anotarme al simulacro del martes">Anotarme</a>
               : <span className="bienv-nota bienv-fila__aparte">Te lo mandamos por WhatsApp</span>}
           </Fila>
+          {/* Lili, 20/11: a la clase puede ir cualquiera de oyente; el simulacro pide haber visto antes sus módulos. */}
+          {/* Entre dos filas: lleva la misma línea que las separa (con la nota en el medio, la de la fila de abajo no sale). */}
+          <p className="bienv-nota" style={{ margin: 0, paddingBottom: "var(--space-2)", borderBottom: "1px solid color-mix(in srgb, var(--border) 60%, transparent)" }}>
+            A la clase podés ir de oyente. Para hacer tu simulacro, antes tenés que haber visto {MODULOS_PARA_SIMULACRO.hr} (HR) o {MODULOS_PARA_SIMULACRO.tecnica} (técnica).
+          </p>
           <Fila nombre="Dejar una consulta" detalle="Los jueves a las 18 h son las consultas: si no podés venir, dejala acá y mirá la respuesta en la grabación.">
             {g.consulta
               ? <a href={g.consulta} target="_blank" rel="noopener noreferrer" className={claseBoton(false)} aria-label="Dejar una consulta para el jueves">Consultar</a>
@@ -183,8 +189,9 @@ export default function PaginaBienvenida() {
 
             {b.telegram.length > 0 && (
               <Seccion icono={<Send size={15} />} titulo="Comunidad en Telegram">
+                <Chico>Nuestro principal medio de comunicación.</Chico>
                 {b.telegram.map((g) => (
-                  <Fila key={g.nombre} nombre={g.nombre}>
+                  <Fila key={g.nombre} nombre={g.nombre} detalle={g.detalle}>
                     {g.adentro
                       ? <span className="bienv-ok"><CheckCircle2 size={16} aria-hidden /> Ya estás</span>
                       : g.url ? <a href={g.url} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label={`Entrar a ${g.nombre}`}>Entrar</a> : null}
@@ -196,9 +203,10 @@ export default function PaginaBienvenida() {
 
             {b.wisboo && (
               <Seccion icono={<GraduationCap size={15} />} titulo="Tus cursos">
-                <Fila nombre="Plataforma de cursos" detalle={b.wisboo.cursos.join(" · ")}>
+                <Fila nombre="Plataforma de cursos" detalle={`Todo el contenido grabado: ${b.wisboo.cursos.join(" · ")}`}>
                   {b.wisboo.url && <a href={b.wisboo.url} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label="Entrar a mis cursos">Entrar</a>}
                 </Fila>
+                {b.wisboo.bonos && <Chico>En «Bonos»: {CONTENIDO_DE_BONOS}.</Chico>}
                 <Chico>{b.wisboo.url
                   ? "La primera vez te pide elegir una contraseña: tu usuario es el mail con el que firmaste."
                   : "Entrá a la plataforma de cursos con el mail con el que firmaste."}</Chico>
@@ -208,7 +216,7 @@ export default function PaginaBienvenida() {
             {b.zoom.length > 0 && (
               <Seccion icono={<Video size={15} />} titulo="Clases en vivo por Zoom">
                 {b.zoom.map((z) => (
-                  <Fila key={z.nombre} nombre={sinZoom(z.nombre)}>
+                  <Fila key={z.nombre} nombre={sinZoom(z.nombre)} detalle={z.detalle}>
                     {z.url
                       ? <a href={z.url} target="_blank" rel="noopener noreferrer" className={claseBoton(primario())} aria-label={`Mi link a ${sinZoom(z.nombre)}`}>Mi link</a>
                       : <span className="bienv-nota bienv-fila__aparte">Te lo mandamos por WhatsApp</span>}

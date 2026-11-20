@@ -12,6 +12,7 @@ import {
   conCodigoDelAlumno, estadoDelMail, guiaDeBienvenida, mensajeDelRoadmap, perfilDeStack, perfilEfectivo, PERFILES, roadmapYaEnviado, seguimientoDeBienvenida, textoDeBienvenida,
 } from "@/lib/bienvenida-alumno";
 import { fechaHora, fechaLarga } from "@/lib/format";
+import { programaPorId, programasDe } from "@/lib/programas";
 import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
@@ -92,7 +93,11 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
   }, [contratoId, mailId, vuelta]);
 
   if (!contrato) return null;
-  const guia = guiaDeBienvenida({ reserva: contrato.datos.reserva, programa: contrato.programa, perfil: perfilEfectivo(contrato.datos.perfil, stackDeLaFicha), config });
+  /* Lo que trae su programa (Ajustes → Programas): el mensaje cuenta sólo lo suyo, igual que el mail (Lili, 20/11). */
+  const guia = guiaDeBienvenida({
+    reserva: contrato.datos.reserva, programa: contrato.programa, perfil: perfilEfectivo(contrato.datos.perfil, stackDeLaFicha), config,
+    delPrograma: programaPorId(programasDe(e.ajustes), contrato.programa),
+  });
   if (!guia) return null;
 
   const copiar = async () => {

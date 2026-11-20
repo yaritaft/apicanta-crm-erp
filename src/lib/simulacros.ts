@@ -48,6 +48,21 @@ export const TIPOS_PEDIDOS = [
 
 export const TEXTO_PREPARADO = "Sí, ya vi el módulo de Wisboo que explica cómo pasar este tipo de entrevistas y ya me preparé";
 
+/* Lo que tiene que haber visto ANTES de anotarse (Lili, 20/11): a la clase del martes puede sumarse cualquiera como oyente, pero para
+   que le tomen un simulacro tiene que llegar preparado; si no se aclara, se anota antes de tiempo y espera algo que no corresponde a su
+   etapa. Una sola regla para el mail de bienvenida, su página y este formulario. */
+export const MODULOS_PARA_SIMULACRO = { hr: "el Módulo 5 de Hackear IT", tecnica: "los Módulos 7, 8 y 9 de Hackear IT" } as const;
+
+/** «Recursos Humanos» es el de HR; todos los demás tipos (teórico, algoritmia, diseño, defensa del THC) son técnicos. */
+export const esSimulacroDeHr = (tipoPedido: string | null | undefined): boolean => tipoPedido === "Recursos Humanos";
+
+/** Los módulos que pide ese tipo de simulacro, en palabras («el Módulo 5 de Hackear IT»). */
+export const modulosDelSimulacro = (tipoPedido: string | null | undefined): string =>
+  esSimulacroDeHr(tipoPedido) ? MODULOS_PARA_SIMULACRO.hr : MODULOS_PARA_SIMULACRO.tecnica;
+
+/** Lo que confirma al anotarse, con los módulos de lo que eligió. */
+export const textoPreparado = (tipoPedido: string | null | undefined): string => `Sí, ya vi ${modulosDelSimulacro(tipoPedido)} y me preparé`;
+
 /* Quienes los toman (su ficha de Equipo): Yari y Nahuel. Les aparece la tarjeta en su panel y van primeros al elegir. */
 export const TOMAN_SIMULACROS = ["eq_yari", "eq_socio"];
 
@@ -99,7 +114,7 @@ export function claseDeEntrada(hoy: string): string {
 export function problemaDeInscripcion(x: { stack?: string; tipoPedido?: string; preparado?: boolean }): string | null {
   if (!(x.stack ?? "").trim()) return "Contanos con qué stack trabajás.";
   if (!TIPOS_PEDIDOS.includes((x.tipoPedido ?? "") as (typeof TIPOS_PEDIDOS)[number])) return "Elegí qué tipo de entrevista querés.";
-  if (!x.preparado) return "Para anotarte tenés que haber visto el módulo de Wisboo y haberte preparado.";
+  if (!x.preparado) return `Para anotarte tenés que haber visto ${modulosDelSimulacro(x.tipoPedido)} y haberte preparado.`;
   return null;
 }
 

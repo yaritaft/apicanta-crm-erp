@@ -11,6 +11,7 @@ import { useAcceso } from "@/lib/acceso";
 import { fecha, relativo } from "@/lib/format";
 import { claveDeCorte, mesesDeCorte, PROGRAMAS_POR_DEFECTO, programasDe, type PlataformaDeAcceso, type Programa } from "@/lib/programas";
 import { nombreDeReunion, PRODUCTOS_WISBOO } from "@/lib/accesos-alumnos";
+import { accesosSinExplicacion, modeloDeBienvenida, type NombresDeAccesos } from "@/lib/bienvenida-alumno";
 import type { ConfigContratos } from "@/lib/types";
 import type { Pruebas } from "./AccesosAlumnosIntegracion";
 import { marcarRecargaPropia } from "@/components/shell/AvisoVersion";
@@ -267,6 +268,12 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
   }, [pruebas]);
   const reuniones = pruebas?.zoom.reuniones ?? [];
   const productos = e.productos.filter((p) => p.activo);
+  /* Los nombres de cada curso, grupo y reunión, para decir cuál no tiene explicación en el mail de bienvenida. */
+  const nombres = useMemo<NombresDeAccesos>(() => Object.fromEntries([
+    ...cursos.map((x) => [`wisboo:${x.id}`, x.nombre]),
+    ...grupos.map((g) => [`telegram:${g.chatId}`, g.titulo || g.chatId]),
+    ...reuniones.map((m) => [`zoom:${m.id}`, nombreDeReunion(m, reuniones)]),
+  ]), [cursos, grupos, reuniones]);
 
   const cambiar = (id: string, c: Partial<Programa>) => setLista((xs) => xs.map((p) => (p.id === id ? { ...p, ...c } : p)));
   const alternar = (id: string, campo: "productos" | "wisboo" | "telegram" | "zoom", valor: string) =>
@@ -355,6 +362,16 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
                       ...p.zoom.map((id) => ({ plataforma: "zoom" as const, id, nombre: `Zoom · ${(() => { const m = reuniones.find((x) => x.id === id); return m ? nombreDeReunion(m, reuniones) : id; })()}` })),
                     ]}
                   />
+                  {(() => {
+                    /* El mail de bienvenida cuenta qué hay en cada acceso del programa (Lili, 20/11): si se suma uno que todavía no tiene
+                       su explicación, el mail lo nombra sin decir qué es. Se avisa acá, que es donde se suma. */
+                    const sin = modeloDeBienvenida({ programa: p.id }) ? accesosSinExplicacion(p, nombres) : [];
+                    return sin.length > 0 && (
+                      <p className="t-sm" style={{ color: "var(--warning)" }}>
+                        El mail de bienvenida nombra {sin.map((x) => `«${x}»`).join(", ")} sin explicar qué hay ahí. Avisá para sumarle su explicación.
+                      </p>
+                    );
+                  })()}
                   <Bonos bonos={p.bonos} onCambio={(bonos) => cambiar(p.id, { bonos })} />
                 </div>
               )}

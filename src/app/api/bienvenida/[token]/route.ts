@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { nubeServidor } from "@/lib/servidor";
 import { accesosAlFirmar, armarBienvenida, esCodigoBienvenida, type AccesoParaBienvenida, type Contrato } from "@/lib/contratos";
-import { anotarVistaDeBienvenida, configBienvenida, perfilDelContrato, programasGuardados, sincronizar } from "@/lib/contratos-servidor";
+import { accesosParaBienvenida, anotarVistaDeBienvenida, configBienvenida, perfilDelContrato, programasGuardados, sincronizar } from "@/lib/contratos-servidor";
 import { linkMagicoWisboo } from "@/lib/accesos-servidor";
 import { programaPorId } from "@/lib/programas";
 import { conCodigoDelAlumno, guiaDeBienvenida } from "@/lib/bienvenida-alumno";
@@ -48,7 +48,7 @@ export async function GET(peticion: Request, ctx: { params: Promise<{ token?: st
   let accesos: AccesoParaBienvenida[] = [];
   let linkWisboo: string | null = null;
   if (c.estado === "firmado" && c.accesosEn && c.alumnoId) {
-    const r = await db.from("accesos_alumno").select("plataforma, estado, recursoNombre, externo").eq("alumnoId", c.alumnoId);
+    const r = await db.from("accesos_alumno").select("plataforma, recurso, estado, recursoNombre, externo").eq("alumnoId", c.alumnoId);
     accesos = (r.data ?? []) as AccesoParaBienvenida[];
     /* El link para entrar a Wisboo se pide en el momento (vence): uno por visita. */
     const usuario = accesos.find((x) => x.plataforma === "wisboo" && x.estado === "dado" && typeof x.externo.usuarioId === "string");
@@ -57,7 +57,8 @@ export async function GET(peticion: Request, ctx: { params: Promise<{ token?: st
   /* Su roadmap (según el perfil que cargó el closer), su formulario semanal y el WhatsApp de soporte. */
   let guia = null;
   if (c.estado === "firmado") {
-    guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: await perfilDelContrato(db, c), config: await configBienvenida(db) });
+    const { delPrograma, nombres } = await accesosParaBienvenida(db, c.programa, c.alumnoId ?? null);
+    guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: await perfilDelContrato(db, c), config: await configBienvenida(db), delPrograma, nombres });
     if (guia?.modelo === "completo" && c.alumnoId) {
       const codigo = await codigoDeAlumno(db, c.alumnoId).catch(() => null);
       guia = conCodigoDelAlumno(guia, origenDeLaApp(peticion), codigo);

@@ -239,7 +239,8 @@ test("la bienvenida: qué ve el alumno en cada momento (y nunca su mail ni su do
   assert.equal(b.fase, "listo");
   assert.equal(b.nombre, "María");
   assert.deepEqual(b.telegram, [{ nombre: "Comunidad Hackear AI", adentro: false, url: "https://t.me/+abc" }, { nombre: "Avisos", adentro: true, url: null }]);
-  assert.deepEqual(b.wisboo, { url: "https://wisboo/magic", cursos: ["Mentoría (Hackear AI)"] });
+  /* Con el nombre con que lo cuenta el mail de bienvenida (Lili, 20/11): «Hackear IA», no «Mentoría (Hackear AI)». */
+  assert.deepEqual(b.wisboo, { url: "https://wisboo/magic", cursos: ["Hackear IA"] });
   assert.deepEqual(b.zoom, [], "lo quitado no se muestra");
   assert.equal(b.faltaAlgo, true);
   assert.ok(!JSON.stringify(b).includes("maria@ejemplo.com"));

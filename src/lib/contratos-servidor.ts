@@ -12,7 +12,7 @@ import { cambiarFicha, darAccesos, type ResultadoAccesos } from "./accesos-servi
 import { motivoSinPagoDelPrograma, type CuotaDelPlan, type PagoDeCuota } from "./accesos-minimo";
 import { plantillaDelContrato, programaDePlantilla, programaPorId, programasDe, type Programa } from "./programas";
 import type { ConfigContratos } from "./types";
-import { conCodigoDelAlumno, esPerfil, guiaDeBienvenida, htmlDeBienvenida, perfilEfectivo, roadmapYaEnviado, textoDeBienvenida, textoDelRoadmap, type ConfigBienvenida } from "./bienvenida-alumno";
+import { conCodigoDelAlumno, esPerfil, guiaDeBienvenida, htmlDeBienvenida, perfilEfectivo, roadmapYaEnviado, textoDeBienvenida, textoDelRoadmap, type ConfigBienvenida, type NombresDeAccesos } from "./bienvenida-alumno";
 import { codigoDeAlumno, configResend, enviarPorResend, estadoEnResend, leerMailEnResend } from "./reporte-servidor";
 import { diaDeNegocio } from "./dia-negocio";
 
@@ -54,6 +54,20 @@ export async function programasGuardados(db: SupabaseClient): Promise<{ programa
   const r = await db.from("ajustes").select("programas, contratos").limit(1).maybeSingle();
   const fila = (r.data ?? {}) as { programas?: Programa[]; contratos?: ConfigContratos };
   return { programas: programasDe(fila), config: fila.contratos ?? { estado: "apagado" } };
+}
+
+/** Su programa tal como está en Ajustes → Programas (lo que se le da al firmar) y los nombres de los accesos que ya tiene: con eso el
+    mail de bienvenida cuenta sólo lo suyo y qué hay en cada lugar (Lili, 20/11). */
+export async function accesosParaBienvenida(db: SupabaseClient, programaId: string, alumnoId: string | null): Promise<{ delPrograma: Programa | null; nombres: NombresDeAccesos }> {
+  const { programas } = await programasGuardados(db);
+  const nombres: NombresDeAccesos = {};
+  if (alumnoId) {
+    const r = await db.from("accesos_alumno").select("plataforma, recurso, recursoNombre").eq("alumnoId", alumnoId);
+    for (const x of (r.data ?? []) as { plataforma: string; recurso: string; recursoNombre: string | null }[]) {
+      if (x.recursoNombre?.trim()) nombres[`${x.plataforma}:${x.recurso}`] = x.recursoNombre.trim();
+    }
+  }
+  return { delPrograma: programaPorId(programas, programaId), nombres };
 }
 
 /** Los roadmaps y los contactos de soporte de la bienvenida (Ajustes; no están en el código porque el repositorio es público). */
@@ -644,7 +658,8 @@ export async function mandarBienvenida(db: SupabaseClient, c: Contrato, alumnoId
 /** El texto del mail de bienvenida de un contrato (el mismo para el primer envío y para el reenvío); null si el programa no tiene. */
 async function armarMailDeBienvenida(db: SupabaseClient, c: Contrato, alumnoId: string | null) {
   const config = await configBienvenida(db);
-  let guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: await perfilDelContrato(db, c, alumnoId), config });
+  const { delPrograma, nombres } = await accesosParaBienvenida(db, c.programa, alumnoId);
+  let guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil: await perfilDelContrato(db, c, alumnoId), config, delPrograma, nombres });
   if (!guia) return null;
   const origen = process.env.APP_URL?.trim() || baseDeLaApp(null);
   if (guia.modelo === "completo" && alumnoId && origen) {

@@ -7,7 +7,7 @@ import { Button, Input } from "@/components/ui/ui";
 import { Asistente, Opcion, Pregunta } from "@/components/ui/Asistente";
 import { fechaLarga } from "@/lib/format";
 import { esCodigoValido } from "@/lib/reporte-enlace";
-import { codigoEnTexto, diaDeClase, esMailValido, MSJ_CODIGO_MALO, problemaDeInscripcion, TEXTO_PREPARADO, TIPOS_PEDIDOS } from "@/lib/simulacros";
+import { codigoEnTexto, diaDeClase, esMailValido, esSimulacroDeHr, modulosDelSimulacro, MSJ_CODIGO_MALO, problemaDeInscripcion, textoPreparado, TIPOS_PEDIDOS } from "@/lib/simulacros";
 
 /* ==================================================================
    Inscripción al simulacro de entrevista de los martes (Lili, 23/10).
@@ -116,7 +116,7 @@ function Inscripcion() {
     const id = PASOS[paso].id;
     const falta = id === "stack" ? (d.stack.trim() ? null : "Contanos con qué stack trabajás.")
       : id === "tipo" ? (d.tipoPedido ? null : "Elegí qué tipo de entrevista querés.")
-        : (d.preparado ? null : "Confirmá que te preparaste.");
+        : (d.preparado ? null : "Confirmá que viste los módulos.");
     const martes = alumno.fecha ? `del martes ${diaDeClase(alumno.fecha, fechaLarga)}` : "del martes";
     return (
       <>
@@ -137,16 +137,19 @@ function Inscripcion() {
               <Pregunta texto="¿Qué tipo de entrevista querés que te evaluemos?" />
               <div className="opciones opciones--lista">
                 {TIPOS_PEDIDOS.map((t, i) => (
-                  <Opcion key={t} tecla={String(i + 1)} nombre={t} activo={d.tipoPedido === t} onClick={() => cambiar({ tipoPedido: t })} />
+                  /* Cambiar de tipo pide confirmar de nuevo: cada uno pide otros módulos. */
+                  <Opcion key={t} tecla={String(i + 1)} nombre={t} activo={d.tipoPedido === t} onClick={() => cambiar(d.tipoPedido === t ? {} : { tipoPedido: t, preparado: false })} />
                 ))}
               </div>
             </>
           )}
           {id === "preparado" && (
             <>
-              <Pregunta texto="¿Te preparaste para la entrevista?" sub="Para aprovechar el espacio, antes mirá el módulo de Wisboo que explica cómo pasar este tipo de entrevistas." />
+              {/* Lo que pide cada simulacro antes de anotarse (Lili, 20/11): el mismo requisito que dice el mail de bienvenida. */}
+              <Pregunta texto="¿Ya viste los módulos que pide este simulacro?"
+                sub={`Para el simulacro de entrevista ${esSimulacroDeHr(d.tipoPedido) ? "de HR" : "técnica"} tenés que haber visto antes ${modulosDelSimulacro(d.tipoPedido)}. Si todavía no, podés sumarte a la clase del martes como oyente y anotarte cuando lo completes.`} />
               <div className="opciones opciones--lista">
-                <Opcion tecla="1" nombre={TEXTO_PREPARADO} activo={d.preparado} onClick={() => cambiar({ preparado: !d.preparado })} />
+                <Opcion tecla="1" nombre={textoPreparado(d.tipoPedido)} activo={d.preparado} onClick={() => cambiar({ preparado: !d.preparado })} />
               </div>
             </>
           )}
