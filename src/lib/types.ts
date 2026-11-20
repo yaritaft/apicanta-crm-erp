@@ -1332,6 +1332,15 @@ export interface Embudo {
    no vende: operaciones, contenido, edición. */
 export type RolEquipo = "closer" | "director" | "growth" | "socio" | "ceo" | "setter" | "otro";
 
+/* Un tramo de la historia de los % de alguien en Finanzas: del `desde` al `hasta` (YYYY-MM-DD, los dos incluidos; sin uno, abierto),
+   el general y el de cada servicio que comisiona distinto. */
+export interface TasaVigente {
+  desde?: string;
+  hasta?: string;
+  general: number;
+  servicios?: Record<ID, number>;
+}
+
 export interface MiembroEquipo {
   id: ID;
   nombre: string;
@@ -1341,6 +1350,9 @@ export interface MiembroEquipo {
      en esas ventas vale éste en vez de `comisionRate`. Como `comisionRate`,
      se escribe solo desde lo que cobra la persona (lib/honorarios.ts). */
   comisionServicios?: Record<ID, number>;
+  /* Los % de antes, con sus fechas: Finanzas calcula cada cobro con el % que valía ese día (no con el de hoy). Se escribe solo desde lo
+     que cobra la persona, como `comisionRate` (lib/honorarios.ts, historialParaFinanzas). Sin esto, `comisionRate` para todos los días. */
+  comisionHistorial?: TasaVigente[];
   /* El % del setter cuando la venta sale de una agenda que ÉL marcó (por mensaje), como fracción (0,02 = 2%). Sin dato, comisiona lo de siempre.
      La base lo escribe en `Venta.comisionSetter` cuando la venta toma a ese setter (supabase/comision-setter-marcada.sql). null borra el dato. */
   comisionSetterMarcada?: number | null;
@@ -1705,6 +1717,13 @@ export interface ConceptoPago {
   desde?: string;
   hasta?: string;
   notas?: string;
+  /* Las versiones de una misma regla (Yari, 20/11: «que en cada momento te calcule las cosas como se calculaban en ese momento»).
+     Cambiar cómo se calcula no pisa la regla: la de antes queda con `hasta` y la nueva arranca con `desde`, y todas llevan acá el
+     id de la primera. Sin esto, es la primera (o la única). Ver lib/versiones-regla.ts. */
+  versionDe?: ID;
+  /* soloVentasDesdeInicio en una versión que no es la primera: el inicio de la regla de verdad (el `desde` de la primera). Sin esto,
+     las ventas cuentan desde el `desde` de esta versión, que es el día del cambio y no el del inicio. */
+  inicioVentas?: string;
 }
 
 /* Lo que cobra una persona: uno por persona, id `hon_<miembroId>`. */

@@ -12,6 +12,8 @@ import {
 import type {
   AlcanceVentas, BaseMedicion, ConceptoPago, EstadoApp, MiembroEquipo, Moneda, TipoConcepto,
 } from "@/lib/types";
+import { mismoCalculo, yaValio, type DesdeCuando } from "@/lib/versiones-regla";
+import { DesdeCuandoOpciones, hoyLocal, textoDeDesde } from "./DesdeCuando";
 
 /* ==================================================================
    Una parte de lo que cobra alguien, una pregunta por pantalla.
@@ -23,13 +25,18 @@ import type {
    que se lee ahí es lo que la liquidación va a calcular.
 
    Para editar se entra directo al resumen, como en los gastos.
+
+   Al final, «¿Desde cuándo?» (Yari, 20/11): si el cambio toca cómo se
+   calcula una regla que ya valía, o si es algo nuevo, se elige desde qué
+   día vale y lo de antes queda como estaba (lib/versiones-regla.ts). Así
+   los meses viejos se siguen calculando con la regla de ese momento.
    ================================================================== */
 
-type PasoId = "tipo" | "monto" | "pieza" | "base" | "deque" | "tasa" | "tramo" | "resumen";
+type PasoId = "tipo" | "monto" | "pieza" | "base" | "deque" | "tasa" | "tramo" | "resumen" | "cuando";
 
 const TITULO: Record<PasoId, string> = {
   tipo: "Qué es", monto: "Monto", pieza: "Pieza", base: "Sobre qué", deque: "De qué",
-  tasa: "Porcentaje", tramo: "Tramo", resumen: "Resumen",
+  tasa: "Porcentaje", tramo: "Tramo", resumen: "Resumen", cuando: "Desde cuándo",
 };
 
 function pasosDe(tipo: TipoConcepto | null): PasoId[] {
@@ -72,6 +79,9 @@ interface Borrador {
   desde: string;
   hasta: string;
   notas: string;
+  /* De qué regla es versión y desde cuándo cuentan sus ventas (lib/versiones-regla.ts): no se editan, se conservan. */
+  versionDe?: string;
+  inicioVentas?: string;
 }
 
 const alcanceDeRol = (m: MiembroEquipo): AlcanceVentas =>
@@ -100,6 +110,7 @@ function inicial(m: MiembroEquipo, c: ConceptoPago | null | undefined, base: Mon
     descuentaComisionDe: c.descuentaComisionDe ?? [],
     utmSource: c.utmSource ?? "", unidad: c.unidad ?? "", condicion: c.condicion ?? "",
     desde: c.desde ?? "", hasta: c.hasta ?? "", notas: c.notas ?? "",
+    versionDe: c.versionDe, inicioVentas: c.inicioVentas,
   };
 }
 
@@ -165,6 +176,8 @@ function armar(b: Borrador, id: string, base: Moneda): ConceptoPago {
   if (b.desde) c.desde = b.desde;
   if (b.hasta) c.hasta = b.hasta;
   if (b.notas.trim()) c.notas = b.notas.trim();
+  if (b.versionDe) c.versionDe = b.versionDe;
+  if (c.soloVentasDesdeInicio && b.inicioVentas) c.inicioVentas = b.inicioVentas;
   return c;
 }
 
@@ -192,6 +205,8 @@ function validar(paso: PasoId, b: Borrador): string | null {
       if (b.desde && b.hasta && b.desde > b.hasta) return "La fecha de fin es anterior a la de inicio";
       if (b.soloVentasDesdeInicio && !b.desde) return "Poné la fecha «Desde»: la regla de cuotas cuenta las ventas cerradas a partir de ahí";
       return null;
+    case "cuando":
+      return null;
   }
 }
 
@@ -200,39 +215,52 @@ export function AsistenteConcepto({ miembro, concepto, onCerrar, onListo }: {
   /* Con un concepto, se edita; sin, se agrega uno. */
   concepto?: ConceptoPago | null;
   onCerrar: () => void;
-  onListo: (c: ConceptoPago) => void;
+  /* `cuando`: desde qué día vale (lo de antes queda como estaba) o «siempre» (se pisa: estaba mal cargada). */
+  onListo: (c: ConceptoPago, cuando: DesdeCuando) => void;
 }) {
   const e = useEstado();
   const base = e.ajustes.monedaBase;
   const editando = Boolean(concepto);
   const [b, setB] = useState<Borrador>(() => inicial(miembro, concepto, base));
   const set = useCallback((cambios: Partial<Borrador>) => setB((x) => ({ ...x, ...cambios })), []);
+  const [cuando, setCuando] = useState<DesdeCuando | null>(null);
+  const [otroDia, setOtroDia] = useState(false);
 
-  const pasos = pasosDe(b.tipo);
-  const resumen = pasos.length - 1;
+  const final = useMemo(() => armar(b, concepto?.id ?? "nuevo", base), [b, concepto?.id, base]);
+  const hoy = hoyLocal();
+  /* Se pregunta desde cuándo si cambia cómo se calcula algo que ya valía, o si es algo nuevo sin «Desde» puesto a mano. Cambiar el
+     nombre, lo acordado o las fechas no lo pregunta. */
+  /* Lo que había, pasado por el mismo armado: un campo que el asistente no guarda no cuenta como cambio. */
+  const original = useMemo(() => (concepto ? armar(inicial(miembro, concepto, base), concepto.id, base) : null), [concepto, miembro, base]);
+  const pideCuando = concepto && original ? yaValio(concepto, hoy) && !mismoCalculo(original, final) : !b.desde;
+
+  const pasos: PasoId[] = [...pasosDe(b.tipo), ...(pideCuando ? ["cuando" as const] : [])];
+  const resumen = pasosDe(b.tipo).length - 1;
   const [i, setI] = useState(editando ? resumen : 0);
   const [vioResumen, setVioResumen] = useState(editando);
-  const paso = pasos[Math.min(i, resumen)];
-  const problema = validar(paso, b);
+  const actual = Math.min(i, pasos.length - 1);
+  const paso = pasos[actual];
+  const problema = paso === "cuando" ? (cuando ? null : "Elegí desde cuándo vale") : validar(paso, b);
 
   const irA = (k: number) => {
     setI(k);
     if (k === pasosDe(b.tipo).length - 1) setVioResumen(true);
   };
 
-  const final = useMemo(() => armar(b, concepto?.id ?? "nuevo", base), [b, concepto?.id, base]);
-
-  const volverAlResumen = vioResumen && paso !== "resumen" && problema === null
+  const volverAlResumen = vioResumen && paso !== "resumen" && paso !== "cuando" && problema === null
     ? <button type="button" className="link t-sm" style={{ alignSelf: "flex-start" }} onClick={() => irA(resumen)}>Listo, volver al resumen</button>
     : null;
+
+  const hermanos = e.honorarios.find((h) => h.miembroId === miembro.id)?.conceptos;
+  const sinFechas = (c: ConceptoPago): ConceptoPago => ({ ...c, desde: undefined, hasta: undefined });
 
   return (
     <Asistente
       etiqueta={editando ? `Editar lo que cobra ${miembro.nombre}` : `Agregar a lo que cobra ${miembro.nombre}`}
-      pasos={pasos.map((id) => ({ id, titulo: TITULO[id] }))} actual={Math.min(i, resumen)} onCambiarPaso={irA}
+      pasos={pasos.map((id) => ({ id, titulo: TITULO[id] }))} actual={actual} onCambiarPaso={irA}
       problema={problema} onCerrar={onCerrar}
-      terminarTexto={editando ? "Guardar cambios" : "Agregar"}
-      onTerminar={() => onListo(armar(b, concepto?.id ?? nuevoId("con"), base))}
+      terminarTexto={pideCuando ? textoDeDesde(cuando, editando ? "cambio" : "nueva") : editando ? "Guardar cambios" : "Agregar"}
+      onTerminar={() => onListo(armar(b, concepto?.id ?? nuevoId("con"), base), pideCuando && cuando ? cuando : { tipo: "siempre" })}
     >
       {paso === "tipo" && <PasoTipo b={b} set={set} miembro={miembro} editando={editando} />}
       {paso === "monto" && <PasoMonto b={b} set={set} />}
@@ -243,6 +271,22 @@ export function AsistenteConcepto({ miembro, concepto, onCerrar, onListo }: {
       {paso === "tramo" && <PasoTramo b={b} set={set} base={base} />}
       {paso === "resumen" && (
         <PasoResumen b={b} set={set} e={e} final={final} editando={editando} pasos={pasos} irA={irA} miembro={miembro} />
+      )}
+      {paso === "cuando" && (
+        <>
+          <Pregunta
+            texto={editando ? "¿Desde cuándo vale el cambio?" : `¿Desde cuándo cobra esto ${miembro.nombre.split(" ")[0]}?`}
+            sub={editando
+              ? "Lo de antes queda como estaba: los meses viejos se siguen calculando con la regla de ese momento."
+              : "Los meses de antes de ese día no lo cuentan."}
+          />
+          <DesdeCuandoOpciones
+            tipo={b.tipo} modo={editando ? "cambio" : "nueva"} valor={cuando} onCambiar={setCuando}
+            liquidaciones={e.liquidaciones} otroAbierto={otroDia} onOtroAbierto={setOtroDia}
+            antes={concepto ? describirConcepto(sinFechas(concepto), e, hermanos) : undefined}
+            despues={describirConcepto(sinFechas(final), e, hermanos)}
+          />
+        </>
       )}
       {volverAlResumen}
     </Asistente>

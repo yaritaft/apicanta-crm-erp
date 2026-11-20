@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserX } from "lucide-react";
+import { History, KeyRound, Pencil, Plus, ShieldCheck, Trash2, UserX } from "lucide-react";
 import { Drawer } from "@/components/ui/Drawer";
 import { Badge, Button, Empty, Field, IconButton, Input, Select, Switch, Textarea } from "@/components/ui/ui";
-import { Confirmar } from "@/components/ui/Modal";
+import { Confirmar, Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { acciones, hayNube, useEstado } from "@/lib/store";
+import { acciones, hayNube, nuevoId, useEstado } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
 import { tasaDeComision } from "@/lib/comision";
 import { tasaDeTexto, textoDeTasa, textoParaEditar } from "@/lib/comision-setter";
@@ -17,7 +17,11 @@ import {
   TIPOS_CONCEPTO, categoriaPorDefecto, describirConcepto, idEsquema,
 } from "@/lib/honorarios";
 import type { ConceptoPago, EsquemaPago, MiembroEquipo, RolEquipo } from "@/lib/types";
+import {
+  conVersiones, reglasConHistoria, sinVersion, versionAnterior, yaValio, type DesdeCuando,
+} from "@/lib/versiones-regla";
 import { AsistenteConcepto } from "./AsistenteConcepto";
+import { DesdeCuandoOpciones, hoyLocal, textoDeDesde } from "./DesdeCuando";
 import { ClaveGenerada } from "./ClaveGenerada";
 import { CuotasDelCloser } from "./CuotasDelCloser";
 import { HistorialLiquidado } from "./HistorialLiquidado";
@@ -54,6 +58,7 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
 
   const [editando, setEditando] = useState<ConceptoPago | "nuevo" | null>(null);
   const [borrando, setBorrando] = useState<ConceptoPago | null>(null);
+  const [historiaAbierta, setHistoriaAbierta] = useState<Set<string>>(new Set());
 
   const categorias = useMemo(
     () => categoriasDisponibles(e).filter((c) => c.grupo !== "dueno" || c.categoria === esq?.categoriaGasto),
@@ -178,22 +183,56 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
               Todavía nada. Un sueldo, un bono, una comisión, un monto por tramo o una tarifa por pieza: se agrega de a uno.
             </p>
           ) : (
+            <>
             <ul className="con-lista">
-              {esquema.conceptos.map((c) => (
-                <li key={c.id} className="con-item">
-                  <button type="button" className="con-item__texto" onClick={() => setEditando(c)}>
-                    <span className="con-item__nombre">
-                      {c.nombre}
-                      <span className="tag">{TIPOS_CONCEPTO.find((t) => t.tipo === c.tipo)?.nombre}</span>
-                    </span>
-                    <span className="con-item__frase">{describirConcepto(c, e, esquema.conceptos)}</span>
-                    {c.notas && <span className="con-item__nota">{c.notas}</span>}
-                  </button>
-                  <IconButton etiqueta={`Editar ${c.nombre}`} onClick={() => setEditando(c)}><Pencil size={15} /></IconButton>
-                  <IconButton etiqueta={`Sacar ${c.nombre}`} onClick={() => setBorrando(c)}><Trash2 size={15} /></IconButton>
-                </li>
-              ))}
+              {reglasConHistoria(esquema.conceptos, hoyLocal()).map(({ actual: c, anteriores, proximas }) => {
+                const otras = [...proximas, ...anteriores];
+                const abierta = historiaAbierta.has(c.id);
+                return (
+                  <li key={c.id} className="con-item con-item--historia">
+                    <div className="con-item__fila">
+                      <button type="button" className="con-item__texto" onClick={() => setEditando(c)}>
+                        <span className="con-item__nombre">
+                          {c.nombre}
+                          <span className="tag">{TIPOS_CONCEPTO.find((t) => t.tipo === c.tipo)?.nombre}</span>
+                        </span>
+                        <span className="con-item__frase">{describirConcepto(c, e, esquema.conceptos)}</span>
+                        {c.notas && <span className="con-item__nota">{c.notas}</span>}
+                      </button>
+                      <IconButton etiqueta={`Editar ${c.nombre}`} onClick={() => setEditando(c)}><Pencil size={15} /></IconButton>
+                      <IconButton etiqueta={`Sacar ${c.nombre}`} onClick={() => setBorrando(c)}><Trash2 size={15} /></IconButton>
+                    </div>
+                    {otras.length > 0 && (
+                      <div className="con-historia">
+                        <button
+                          type="button" className="con-historia__boton" aria-expanded={abierta}
+                          onClick={() => setHistoriaAbierta((xs) => { const n = new Set(xs); if (n.has(c.id)) n.delete(c.id); else n.add(c.id); return n; })}
+                        >
+                          <History size={13} aria-hidden />
+                          {anteriores.length > 0 ? `Cómo era antes (${anteriores.length})` : ""}
+                          {anteriores.length > 0 && proximas.length > 0 ? " · " : ""}
+                          {proximas.length > 0 ? `Lo que viene (${proximas.length})` : ""}
+                        </button>
+                        {abierta && (
+                          <ol className="con-historia__lista">
+                            {otras.map((v) => (
+                              <li key={v.id} className="con-historia__item" data-proxima={proximas.includes(v) || undefined}>
+                                <span className="con-historia__frase">{describirConcepto(v, e, esquema.conceptos)}</span>
+                                {v.confirmadaPor && <span className="con-historia__sello">Confirmada por {v.confirmadaPor}</span>}
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
+            <p className="t-sm t-subtle">
+              Al cambiar cómo se calcula algo, se elige desde cuándo vale: lo de antes queda guardado y los meses viejos se siguen calculando como se calculaban.
+            </p>
+            </>
           )}
 
           <Field label="Lo que falta definir (opcional)" ayuda="Sale como aviso en la liquidación hasta que lo borres.">
@@ -235,26 +274,79 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
         <AsistenteConcepto
           miembro={m} concepto={editando === "nuevo" ? null : editando}
           onCerrar={() => setEditando(null)}
-          onListo={(c) => {
+          onListo={(c, cuando) => {
             const existe = esquema.conceptos.some((x) => x.id === c.id);
+            const nuevos = existe ? esquema.conceptos.map((x) => (x.id === c.id ? c : x)) : [...esquema.conceptos, c];
             guardarEsquema(
-              { conceptos: existe ? esquema.conceptos.map((x) => (x.id === c.id ? c : x)) : [...esquema.conceptos, c] },
-              existe ? `${c.nombre}: guardado.` : `${c.nombre}: agregado a lo que cobra ${m.nombre.split(" ")[0]}.`,
+              { conceptos: conVersiones(esquema.conceptos, nuevos, cuando, () => nuevoId("con")) },
+              cuando.tipo === "desde"
+                ? `${c.nombre}: vale desde el ${ddmm(cuando.dia)}. Lo de antes quedó guardado.`
+                : existe ? `${c.nombre}: guardado.` : `${c.nombre}: agregado a lo que cobra ${m.nombre.split(" ")[0]}.`,
             );
             setEditando(null);
           }}
         />
       )}
-      <Confirmar
-        abierto={Boolean(borrando)} onCerrar={() => setBorrando(null)} confirmarTexto="Sacar"
-        titulo={`Sacar «${borrando?.nombre ?? ""}»`}
-        texto="Deja de calcularse en las liquidaciones abiertas. Las que ya se cerraron no cambian."
-        onConfirmar={() => {
-          if (!borrando) return;
-          guardarEsquema({ conceptos: esquema.conceptos.filter((x) => x.id !== borrando.id) }, `${borrando.nombre}: sacado.`);
-        }}
-      />
+      {borrando && (yaValio(borrando, hoyLocal()) ? (
+        <SacarRegla
+          concepto={borrando} conceptos={esquema.conceptos} onCerrar={() => setBorrando(null)}
+          onSacar={(cuando) => {
+            const conceptos = cuando.tipo === "siempre"
+              ? sinVersion(esquema.conceptos, borrando)
+              : conVersiones(esquema.conceptos, esquema.conceptos.filter((x) => x.id !== borrando.id), cuando, () => nuevoId("con"));
+            guardarEsquema({ conceptos }, cuando.tipo === "siempre"
+              ? `${borrando.nombre}: sacado.` : `${borrando.nombre}: deja de valer el ${ddmm(cuando.dia)}. Lo de antes quedó guardado.`);
+            setBorrando(null);
+          }}
+        />
+      ) : (
+        <Confirmar
+          abierto onCerrar={() => setBorrando(null)} confirmarTexto="Sacar"
+          titulo={`Sacar «${borrando.nombre}»`}
+          texto="Todavía no empezó a valer: se saca y listo."
+          onConfirmar={() => guardarEsquema({ conceptos: sinVersion(esquema.conceptos, borrando) }, `${borrando.nombre}: sacado.`)}
+        />
+      ))}
     </Drawer>
+  );
+}
+
+const ddmm = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
+
+/* ---------- Sacar algo que ya valía: desde cuándo deja de valer ---------- */
+
+function SacarRegla({ concepto, conceptos, onCerrar, onSacar }: {
+  concepto: ConceptoPago; conceptos: ConceptoPago[]; onCerrar: () => void; onSacar: (cuando: DesdeCuando) => void;
+}) {
+  const e = useEstado();
+  const [cuando, setCuando] = useState<DesdeCuando | null>(null);
+  const [otroDia, setOtroDia] = useState(false);
+  const anterior = versionAnterior(conceptos, concepto);
+  return (
+    <Modal
+      abierto onCerrar={onCerrar} titulo={`Sacar «${concepto.nombre}»`}
+      sub="Lo de antes queda como estaba: los meses en que valía se siguen calculando con ella."
+      pie={
+        <>
+          <Button variante="ghost" onClick={onCerrar}>Cancelar</Button>
+          <span className="spacer" />
+          <Button variante={cuando?.tipo === "siempre" ? "danger" : "primary"} disabled={!cuando} onClick={() => cuando && onSacar(cuando)}>
+            {textoDeDesde(cuando, "sacar")}
+          </Button>
+        </>
+      }
+    >
+      <DesdeCuandoOpciones
+        tipo={concepto.tipo} modo="sacar" valor={cuando} onCambiar={setCuando}
+        liquidaciones={e.liquidaciones} otroAbierto={otroDia} onOtroAbierto={setOtroDia}
+        antes={describirConcepto({ ...concepto, desde: undefined, hasta: undefined }, e, conceptos)}
+      />
+      {cuando?.tipo === "siempre" && anterior && (
+        <p className="t-sm t-muted" style={{ marginTop: "var(--space-3)" }}>
+          Vuelve a valer la de antes: {describirConcepto({ ...anterior, desde: undefined, hasta: undefined }, e, conceptos)}.
+        </p>
+      )}
+    </Modal>
   );
 }
 

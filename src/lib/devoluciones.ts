@@ -1,6 +1,6 @@
 import type { Devolucion, EstadoApp, ID, Liquidacion, MiembroEquipo, Pago, Sesion, Venta } from "./types";
 import type { RangoMes } from "./metricas";
-import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./comision";
+import { closerDeCuota, cobraDirector, cobraEnFecha, tasaPonderada } from "./comision";
 import { moverPeriodo, periodoDeFecha } from "./periodos";
 import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
 import { opcionesDe } from "./crm";
@@ -273,7 +273,9 @@ export function reversasDeComision(e: EstadoDeReversas, opciones: OpcionesDeReve
         partes.push(parteDe(
           `c:${k}`, "closer", cobrosDelCloser.filter((p) => (regla ? regla.cuentaCobro(p) : cobraEnFecha(closer, p.fecha))),
           closer ? { id: closer.id, nombre: closer.nombre } : undefined,
-          (regla ? false : sinComision) || descuentaPorCierre(sinCierre, venta, k) ? 0 : regla ? regla.tasa : tasaDeComision(closer, venta.productoId),
+          (regla ? false : sinComision) || descuentaPorCierre(sinCierre, venta, k) ? 0 : regla ? regla.tasa
+            /* Cada cobro con el % que valía ese día: se revierte lo que de verdad se le comisionó. */
+            : tasaPonderada(closer, venta.productoId, cobrosDelCloser.filter((p) => cobraEnFecha(closer, p.fecha))),
           k && k !== venta.closerId ? deLaVenta?.nombre ?? "otro closer" : undefined,
           Boolean(regla),
         ));
@@ -282,7 +284,8 @@ export function reversasDeComision(e: EstadoDeReversas, opciones: OpcionesDeReve
         const regla = opciones.propia?.(director, "director", venta);
         partes.push(parteDe(
           "d", "director", hasta.filter((p) => (regla ? regla.cuentaCobro(p) : cobraDirector(director, p.fecha))),
-          { id: director.id, nombre: director.nombre }, regla ? regla.tasa : sinComision ? 0 : tasaDeComision(director, venta.productoId),
+          { id: director.id, nombre: director.nombre },
+          regla ? regla.tasa : sinComision ? 0 : tasaPonderada(director, venta.productoId, hasta.filter((p) => cobraDirector(director, p.fecha))),
           undefined, Boolean(regla),
         ));
       }

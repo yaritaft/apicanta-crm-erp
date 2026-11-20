@@ -87,6 +87,8 @@ const hoy = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 const vale = (c: ConceptoPago, dia: string) => (!c.desde || c.desde.slice(0, 10) <= dia) && (!c.hasta || c.hasta.slice(0, 10) >= dia);
+/* Las versiones que ya terminaron son historia: el cuadro cambia sólo la de hoy (lib/versiones-regla.ts). */
+const noTermino = (c: ConceptoPago) => !c.hasta || c.hasta.slice(0, 10) >= hoy();
 
 /* La comisión de las ventas de esta persona según su rol. */
 const esSuya = (m: Pick<MiembroEquipo, "rol">, c: ConceptoPago) => esComisionDeVentas(c) && c.alcance === alcanceDe(m);
@@ -104,7 +106,7 @@ const esquemaDe = (esq: EsquemaPago | undefined, m: MiembroEquipo): EsquemaPago 
 function general(conceptos: ConceptoPago[], m: MiembroEquipo): ConceptoPago | undefined {
   const es = (c: ConceptoPago) => esSuya(m, c) && !c.productoIds?.length;
   const dia = hoy();
-  return conceptos.find((c) => es(c) && vale(c, dia)) ?? conceptos.find(es);
+  return conceptos.find((c) => es(c) && vale(c, dia)) ?? conceptos.find((c) => es(c) && noTermino(c));
 }
 
 /* Sin comisión general cargada, la que Finanzas ya le venía aplicando: si
@@ -133,7 +135,14 @@ export function conComisionGeneral(esq: EsquemaPago | undefined, m: MiembroEquip
 }
 
 function sinPropiosIguales(conceptos: ConceptoPago[], m: MiembroEquipo, tasaGeneral: number): ConceptoPago[] {
-  return conceptos.filter((c) => !(esSuya(m, c) && c.productoIds?.length && c.id.startsWith("com_") && Math.abs((c.tasa ?? 0) - tasaGeneral) < 1e-9));
+  return conceptos.filter((c) => !(noTermino(c) && esSuya(m, c) && c.productoIds?.length && c.id.startsWith("com_") && Math.abs((c.tasa ?? 0) - tasaGeneral) < 1e-9));
+}
+
+/** Lo que cobra la persona tal como lo ve el cuadro: con su comisión general aunque nunca se haya cargado (la que Finanzas le venía
+ *  aplicando). Es el «antes» contra el que se versiona un cambio del cuadro. */
+export function esquemaDelCuadro(esq: EsquemaPago | undefined, m: MiembroEquipo): EsquemaPago {
+  const base = esquemaDe(esq, m);
+  return { ...base, conceptos: conGeneral(base.conceptos, m) };
 }
 
 /** Lo que cobra la persona con ese % en ese servicio. `null` (o el mismo %
@@ -150,7 +159,7 @@ export function conComisionDeServicio(
   /* Se saca el servicio de donde estuviera: una comisión que nombraba
      varios sigue con los demás; la que se queda sin ninguno, se va. */
   conceptos = conceptos.flatMap((c) => {
-    if (!esSuya(m, c) || !c.productoIds?.includes(producto.id)) return [c];
+    if (!noTermino(c) || !esSuya(m, c) || !c.productoIds?.includes(producto.id)) return [c];
     const resto = c.productoIds.filter((id) => id !== producto.id);
     return resto.length ? [{ ...c, productoIds: resto }] : [];
   });

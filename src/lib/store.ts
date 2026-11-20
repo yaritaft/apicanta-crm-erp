@@ -20,7 +20,7 @@ import { cobrosAnulados, NOTA_ANULADO } from "./mercury";
 import { MOTIVO_ANULADO } from "./motivos";
 import { categoriaDe } from "./gastos";
 import { esPagoDeTarjeta, problemaDelReparto, type CompraDeTarjeta } from "./reparto-tarjeta";
-import { conAdelantoEnExtra, conExtraEnMes, mismasTasas, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
+import { conAdelantoEnExtra, conExtraEnMes, historialParaFinanzas, mismasTasas, mismoHistorial, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import { sinConfirmarSiCambio } from "./reglas";
 import { diaDeNegocio } from "./dia-negocio";
 import {
@@ -4741,7 +4741,9 @@ export const acciones = {
     const esq = e.honorarios.find((h) => h.miembroId === m.id);
     const tasa = tasaParaFinanzas(m, esq);
     const servicios = tasasPorServicio(m, esq);
-    const fila = tasa === undefined ? m : { ...m, comisionRate: tasa, ...(servicios ? { comisionServicios: servicios } : {}) };
+    const historial = historialParaFinanzas(m, esq);
+    const fila = tasa === undefined ? m
+      : { ...m, comisionRate: tasa, ...(servicios ? { comisionServicios: servicios } : {}), ...(historial ? { comisionHistorial: historial } : {}) };
     const existe = e.equipo.some((x) => x.id === m.id);
     guardar({ ...e, equipo: existe ? e.equipo.map((x) => (x.id === m.id ? fila : x)) : [...e.equipo, fila] });
     empujar({ tipo: "upsert", tabla: "equipo", filas: [fila] });
@@ -4761,14 +4763,38 @@ export const acciones = {
     const m = e.equipo.find((x) => x.id === esq.miembroId);
     const tasa = m ? tasaParaFinanzas(m, actualizado) : undefined;
     const servicios = m ? tasasPorServicio(m, actualizado) : undefined;
+    /* Y la historia de sus %: Finanzas calcula cada cobro con el que valía ese día (lib/versiones-regla.ts). */
+    const historial = m ? historialParaFinanzas(m, actualizado) : undefined;
     let equipo = e.equipo;
-    if (m && tasa !== undefined && (Math.abs(tasa - m.comisionRate) > 1e-9 || !mismasTasas(servicios, m.comisionServicios))) {
-      const fila = { ...m, comisionRate: tasa, comisionServicios: servicios ?? {} };
+    if (m && tasa !== undefined && (Math.abs(tasa - m.comisionRate) > 1e-9 || !mismasTasas(servicios, m.comisionServicios)
+      || !mismoHistorial(historial, m.comisionHistorial))) {
+      const fila = { ...m, comisionRate: tasa, comisionServicios: servicios ?? {}, ...(historial ? { comisionHistorial: historial } : {}) };
       equipo = e.equipo.map((x) => (x.id === m.id ? fila : x));
       empujar({ tipo: "upsert", tabla: "equipo", filas: [fila] });
     }
     guardar({ ...e, equipo, honorarios });
     empujar({ tipo: "upsert", tabla: "honorarios", filas: [actualizado] });
+  },
+
+  /* Si lo que cobra alguien cambió sin pasar por guardarEsquema (un SQL a mano, otra versión de la app), su % y su historia en
+     Finanzas quedan viejos. Esto los vuelve a escribir desde los esquemas; sólo toca a quien no coincide. Devuelve a cuántos. */
+  alinearHistoriasDeFinanzas(): number {
+    const e = snapshot();
+    const filas: MiembroEquipo[] = [];
+    for (const m of e.equipo) {
+      const esq = e.honorarios.find((h) => h.miembroId === m.id);
+      const tasa = tasaParaFinanzas(m, esq);
+      const historial = historialParaFinanzas(m, esq);
+      if (tasa === undefined || !historial) continue;
+      const servicios = tasasPorServicio(m, esq) ?? {};
+      if (Math.abs(tasa - m.comisionRate) <= 1e-9 && mismasTasas(servicios, m.comisionServicios) && mismoHistorial(historial, m.comisionHistorial)) continue;
+      filas.push({ ...m, comisionRate: tasa, comisionServicios: servicios, comisionHistorial: historial });
+    }
+    if (filas.length === 0) return 0;
+    const porId = new Map(filas.map((f) => [f.id, f] as const));
+    guardar({ ...e, equipo: e.equipo.map((x) => porId.get(x.id) ?? x) });
+    empujar({ tipo: "upsert", tabla: "equipo", filas });
+    return filas.length;
   },
 
   /* Lo que se carga mientras la liquidación está abierta: cantidades,

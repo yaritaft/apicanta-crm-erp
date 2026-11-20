@@ -1,7 +1,7 @@
 import type {
   AlcanceVentas, BaseMedicion, ConceptoPago, Devolucion, DesgloseLinea, EntradaLiquidacion, EsquemaPago, EstadoApp, ExtraLiquidacion,
   Gasto, ID, ItemDesglose, LineaLiquidada, Liquidacion, MiembroEquipo, Moneda, Pago, PersonaLiquidada,
-  PasoDesglose, ResultadoLiquidacion, TipoConcepto, Venta,
+  PasoDesglose, ResultadoLiquidacion, TasaVigente, TipoConcepto, Venta,
 } from "./types";
 import type { RangoMes } from "./metricas";
 import { calcularPyL, closerDeCuota, cobraEnFecha, costosDelMes, pagosDelMes, parteMarketing, tasaDeComision, ventasDelMes } from "./finanzas";
@@ -18,6 +18,7 @@ import {
 import { devolucionesDelMes, liquidadaEn, mesDeLiquidacion, reversasDeComision, type OpcionesDeReversas, type ParteReversa, type Reversa } from "./devoluciones";
 import { descuentaPorCierre, descuentoDesde, diaSinCierreDe, reglaDeCierre, ventasSinCierre } from "./cierre-del-dia";
 import { instanteDeAgenda } from "./resells-agendados";
+import { diaAnterior, diaSiguiente } from "./versiones-regla";
 
 /* ==================================================================
    Honorarios: lo que cobra cada uno y la liquidación de cada mes.
@@ -164,7 +165,7 @@ function filtros(c: ConceptoPago, e: Catalogos, hermanos?: ConceptoPago[]): stri
   }
   if (c.sinVentasSinComision && (c.alcance ?? "todas") === "todas") out.push(`sin las que cerró ${quienesNoComisionan(e)}`);
   if (c.sinExcluidasMarketing) out.push("sin las excluidas de marketing");
-  if (c.soloVentasDesdeInicio && c.desde) out.push("sólo ventas cerradas desde el inicio");
+  if (inicioDeVentas(c)) out.push("sólo ventas cerradas desde el inicio");
   if (c.base === "cash-neto" && c.procesadoresDeTodas) out.push("restando los procesadores de pago de todas las ventas del mes");
   /* Una comisión de ventas va directo sobre su base: no resta lo que cobra otro (eso sólo lo hace el profit propio, con
      `descuentaComisionDe`). Se dice en la regla para que nadie tenga que preguntarlo. */
@@ -306,6 +307,14 @@ const valeEl = (c: Vigencia, dia: string) => (!c.desde || c.desde.slice(0, 10) <
 /* El día de un cobro, en la hora de acá: el mismo borde que las fechas de salida. */
 const diaDe = (iso: string) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10);
 
+/** «Sólo ventas cerradas desde el inicio»: desde qué día cuentan las ventas (YYYY-MM-DD), o undefined si la regla no lo pide. En una
+ *  versión que no es la primera, el inicio de la regla de verdad (`inicioVentas`), no el día del cambio (lib/versiones-regla.ts). */
+export function inicioDeVentas(c: Pick<ConceptoPago, "soloVentasDesdeInicio" | "desde" | "inicioVentas">): string | undefined {
+  if (!c.soloVentasDesdeInicio) return undefined;
+  const d = c.inicioVentas ?? c.desde;
+  return d ? d.slice(0, 10) : undefined;
+}
+
 /** Una comisión sobre las ventas de alguien (las que cerró, agendó o dirige). */
 export const esComisionDeVentas = (c: ConceptoPago): boolean =>
   c.tipo === "porcentaje" && (c.base === "cash" || c.base === "cash-neto")
@@ -346,7 +355,7 @@ export function calculaFinanzas(m: Pick<MiembroEquipo, "rol">, c: ConceptoPago):
   /* Finanzas no sabe sacar el profit de lo suyo ni la regla de cuotas por fecha de venta: con
      alguna de las dos, el renglón es un costo de la liquidación (entra a Finanzas al cerrarla) y
      su tasa para Finanzas queda en 0, así no se cuenta dos veces. */
-  if (c.profitPropio || (c.soloVentasDesdeInicio && c.desde) || c.sinEmbudoIds?.length || c.siempreEmbudoIds?.length) return false;
+  if (c.profitPropio || inicioDeVentas(c) || c.sinEmbudoIds?.length || c.siempreEmbudoIds?.length) return false;
   if (c.base === "profit") return m.rol === "growth" || m.rol === "socio";
   if (c.base !== "cash-neto") return false;
   if (c.alcance === "closer") return m.rol === "closer" || m.rol === "ceo";
@@ -405,6 +414,61 @@ export function tasasPorServicio(m: Pick<MiembroEquipo, "rol">, esq: EsquemaPago
     for (const id of c.productoIds) if (!(id in out)) out[id] = c.tasa ?? 0;
   }
   return out;
+}
+
+/** La historia de los % de esta persona para Finanzas (`equipo.comisionHistorial`): un tramo por cada período en que su comisión fue
+ *  la misma, así cada cobro se calcula con el % que valía ese día. undefined: el esquema no dice nada (como tasaParaFinanzas). Sin
+ *  reglas con fecha, un solo tramo abierto con lo mismo que `comisionRate` y `comisionServicios`. Un día en que no vale ninguna
+ *  comisión suya (antes del inicio, después del fin) va en 0, como en la liquidación. */
+export function historialParaFinanzas(m: Pick<MiembroEquipo, "rol">, esq: EsquemaPago | undefined): TasaVigente[] | undefined {
+  if (!esq || esq.conceptos.length === 0) return undefined;
+  const suya = esLaDeSuRol(m);
+  if (!suya) return undefined;
+  const propias = esq.conceptos.filter((c) => suya(c));
+  const bordes = new Set<string>();
+  for (const c of propias) {
+    if (c.desde) bordes.add(c.desde.slice(0, 10));
+    if (c.hasta) bordes.add(diaSiguiente(c.hasta.slice(0, 10)));
+  }
+  if (bordes.size === 0) return [{ general: tasaParaFinanzas(m, esq) ?? 0, servicios: tasasPorServicio(m, esq) ?? {} }];
+  const enDia = (dia: string): TasaVigente => {
+    const general = propias.find((c) => !c.productoIds?.length && valeEl(c, dia));
+    const servicios: Record<ID, number> = {};
+    for (const c of propias) {
+      if (!esComisionDeVentas(c) || !c.productoIds?.length || !valeEl(c, dia)) continue;
+      for (const id of c.productoIds) if (!(id in servicios)) servicios[id] = c.tasa ?? 0;
+    }
+    return { general: general?.tasa ?? 0, servicios };
+  };
+  const xs = [...bordes].sort();
+  const tramos: TasaVigente[] = [{ ...enDia(diaAnterior(xs[0])), hasta: diaAnterior(xs[0]) }];
+  xs.forEach((d, i) => {
+    const t: TasaVigente = { desde: d, ...enDia(d) };
+    if (i + 1 < xs.length) t.hasta = diaAnterior(xs[i + 1]);
+    tramos.push(t);
+  });
+  /* Dos tramos seguidos con los mismos % son uno solo. */
+  const juntos: TasaVigente[] = [];
+  for (const t of tramos) {
+    const ult = juntos[juntos.length - 1];
+    if (ult && Math.abs(ult.general - t.general) < 1e-12 && mismasTasas(ult.servicios, t.servicios)) {
+      if (t.hasta) ult.hasta = t.hasta; else delete ult.hasta;
+    } else juntos.push({ ...t });
+  }
+  return juntos.map((t) => {
+    const out: TasaVigente = { general: t.general, servicios: t.servicios ?? {} };
+    if (t.desde) out.desde = t.desde;
+    if (t.hasta) out.hasta = t.hasta;
+    return out;
+  });
+}
+
+/** Si dos historias de % dicen lo mismo (sin historia = un tramo con lo de hoy). */
+export function mismoHistorial(a: TasaVigente[] | undefined, b: TasaVigente[] | undefined): boolean {
+  const x = a ?? [], y = b ?? [];
+  if (x.length !== y.length) return false;
+  return x.every((t, i) => (t.desde ?? "") === (y[i].desde ?? "") && (t.hasta ?? "") === (y[i].hasta ?? "")
+    && Math.abs(t.general - y[i].general) < 1e-12 && mismasTasas(t.servicios, y[i].servicios));
 }
 
 /** Si dos mapas de % por servicio dicen lo mismo. */
@@ -485,7 +549,7 @@ function armarContexto(e: EstadoApp, rango: RangoMes, tc: number, corte: Date | 
    Cash collected de Finanzas, así que cuenta todos los pagos. */
 const esTotal = (c: ConceptoPago) =>
   (c.alcance ?? "todas") === "todas" && !c.productoIds?.length && !c.sinVentasSinComision && !c.sinExcluidasMarketing && !c.sinEmbudoIds?.length
-  && !(c.soloVentasDesdeInicio && c.desde);
+  && !inicioDeVentas(c);
 
 /* Si una venta cuenta para este concepto. Con cualquier filtro, las ventas
    canceladas no cuentan (como en las comisiones de Finanzas), y en las del
@@ -514,15 +578,17 @@ function veredicto(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | u
   if (v.estado === "cancelada") return deOtroDirector ? { cuenta: false } : no("La venta está cancelada");
   if (deOtroDirector) {
     const otro = v.directorId ? cx.equipo.get(v.directorId)?.nombre : undefined;
-    const antes = c.soloVentasDesdeInicio && c.desde && diaDe(v.fecha) < c.desde.slice(0, 10);
+    const inicio = inicioDeVentas(c);
+    const antes = inicio && diaDe(v.fecha) < inicio;
     return no(otro
       ? `La dirige ${otro}, no ${m.nombre}${antes ? ` (venta del ${ddmm(diaDe(v.fecha))}, anterior al inicio de su regla)` : ""}`
       : "La venta no tiene director asignado");
   }
   /* La regla de cuotas: sólo las ventas cerradas desde el inicio de la regla; lo que se
      cobra hoy de una venta anterior no cuenta, aunque entre dentro de los días de la regla. */
-  if (c.soloVentasDesdeInicio && c.desde && diaDe(v.fecha) < c.desde.slice(0, 10)) {
-    return no(`Venta del ${ddmm(diaDe(v.fecha))}, anterior al inicio de su regla (${ddmm(c.desde.slice(0, 10))}): no cuenta lo que se cobra de ventas de antes`);
+  const inicio = inicioDeVentas(c);
+  if (inicio && diaDe(v.fecha) < inicio) {
+    return no(`Venta del ${ddmm(diaDe(v.fecha))}, anterior al inicio de su regla (${ddmm(inicio)}): no cuenta lo que se cobra de ventas de antes`);
   }
   /* Un % general y otro por servicio: el cobro entra en uno solo. */
   if (hermanos && esComisionDeVentas(c)) {
@@ -780,7 +846,7 @@ function linea(
           ...(prof.partes ? { partes: prof.partes } : {}),
           ...(cx.corte ? { corte: `${cx.corte.getFullYear()}-${String(cx.corte.getMonth() + 1).padStart(2, "0")}-${String(cx.corte.getDate()).padStart(2, "0")}` } : {}),
           ...(parcial ? { dias: { dias: vig.dias, diasMes: vig.diasMes } } : {}),
-          ...(c.soloVentasDesdeInicio && c.desde ? { soloVentasDesde: c.desde.slice(0, 10) } : {}),
+          ...(inicioDeVentas(c) ? { soloVentasDesde: inicioDeVentas(c) } : {}),
         };
       } else if (b === "profit") {
         const p = prof ?? { profit: 0, parte: 1 };

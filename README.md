@@ -429,6 +429,11 @@ Una agenda sin UTMs queda con `source=direct` y `medium=none`: llegó sola, sin 
 
 ## Equipo y honorarios
 
+> **Las reglas tienen historia (20/11).** Cambiar cómo cobra alguien pregunta «¿desde cuándo vale?»:
+> la regla de antes queda con su fin y la nueva arranca ese día, así cada mes se sigue calculando
+> con la regla de ese momento (Finanzas, webinars, devoluciones y liquidaciones). Nunca pisar una
+> regla que ya valió, tampoco por SQL: ver [docs/cambiar-reglas-de-comision.md](docs/cambiar-reglas-de-comision.md).
+
 Una sección que ven sólo los dueños (Yari y Juan Cruz), con tres solapas:
 
 - **Equipo y lo que cobra.** Cada persona tiene su puesto, su rol en las ventas (closer, setter,

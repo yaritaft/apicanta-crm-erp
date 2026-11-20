@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { CloudOff, Lock } from "lucide-react";
 import { Card, CardHead, Empty, Tabs } from "@/components/ui/ui";
 import { CuadroComisiones } from "@/components/finanzas/CuadroComisiones";
@@ -14,7 +14,7 @@ import { reglasSinConfirmar } from "@/lib/reglas";
 import { useEstadoDeClosers } from "@/components/closers/EstadoDeClosers";
 import { useAcceso, useAccesos } from "@/lib/acceso";
 import { nivelDeLiquidacion, puedeArmarElEquipo } from "@/lib/permisos";
-import { useEstado, useSelector, useSync } from "@/lib/store";
+import { acciones, useEstado, useSelector, useSync } from "@/lib/store";
 import { useParamsURL } from "@/lib/useParamsURL";
 import { CopiarLink } from "@/components/ui/Filtros";
 import "@/components/finanzas/visual/visual.css";
@@ -62,6 +62,12 @@ export default function EquipoYHonorarios() {
   const hayEsquemas = useSelector((e) => e.honorarios.length > 0);
   /* Las reglas de comisión que todavía nadie confirmó: se avisan en la solapa. */
   const sinConfirmar = useSelector((e) => reglasSinConfirmar(e).length);
+  /* Si una regla cambió por fuera de la app (un SQL), el % y la historia que usa Finanzas se vuelven a escribir desde lo que cobra
+     cada uno: así Finanzas sigue calculando cada mes con la regla de ese momento (lib/versiones-regla.ts). */
+  const puedeAlinear = acceso.esDueno || armaElEquipo;
+  useEffect(() => {
+    if (puedeAlinear && hayEsquemas && (sync.estado === "listo" || sync.estado === "local")) acciones.alinearHistoriasDeFinanzas();
+  }, [puedeAlinear, hayEsquemas, sync.estado]);
 
   const cabecera = <h1 className="sr-only">Equipo y honorarios</h1>;
 

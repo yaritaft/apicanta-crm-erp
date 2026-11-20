@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, Check, Copy, Pencil } from "lucide-react";
+import { AlertTriangle, Check, Copy, History, Pencil } from "lucide-react";
 import { Avatar, Badge, Button, Card, Empty, Input } from "@/components/ui/ui";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { Avance, Plegable } from "@/components/finanzas/visual/visual";
@@ -9,6 +9,8 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
 import { reglasAcordadas, selloDeRegla, textoDeReglas, type ReglaAcordada } from "@/lib/reglas";
+import { describirConcepto } from "@/lib/honorarios";
+import { cambiosDeReglas } from "@/lib/versiones-regla";
 
 /* ==================================================================
    Reglas: lo que se acordó para cada comisión, con sus palabras, y quién lo
@@ -87,7 +89,44 @@ export function ReglasAcordadas({ editable, onEditar }: { editable: boolean; onE
           {lista.map((r) => <FilaDeRegla key={r.concepto.id} r={r} editable={editable} />)}
         </Plegable>
       ))}
+
+      <CambiosDeReglas />
     </div>
+  );
+}
+
+/* Cada regla que cambió, con lo que valía en cada momento: lo de antes no se borra (lib/versiones-regla.ts). */
+function CambiosDeReglas() {
+  const e = useEstado();
+  const cambios = useMemo(() => cambiosDeReglas(e), [e]);
+  return (
+    <Plegable
+      pegado
+      titulo={<span className="reglas__quien"><History size={18} aria-hidden /> Cambios de reglas</span>}
+      resumen={<span className="t-sm t-subtle">{cambios.length === 0 ? "Ninguno todavía" : cambios.length === 1 ? "1 regla cambió" : `${cambios.length} reglas cambiaron`}</span>}
+    >
+      <div className="stack-3" style={{ padding: "var(--space-3) var(--space-4) var(--space-4)" }}>
+        <p className="t-sm t-muted" style={{ margin: 0 }}>
+          Cuando una regla cambia, la de antes queda guardada con su fecha: cada mes se calcula con la que valía en ese momento.
+        </p>
+        {cambios.length === 0 && <p className="t-sm t-subtle" style={{ margin: 0 }}>Todavía ninguna regla cambió desde que se guarda la historia.</p>}
+        {cambios.map((c) => {
+          const esq = e.honorarios.find((h) => h.miembroId === c.miembro.id);
+          return (
+            <div key={c.versiones[0].id} className="reglas__cambio">
+              <span className="reglas__concepto">{c.miembro.nombre} · {c.nombre}</span>
+              <ol className="con-historia__lista">
+                {c.versiones.map((v) => (
+                  <li key={v.id} className="con-historia__item">
+                    <span className="con-historia__frase">{describirConcepto(v, e, esq?.conceptos)}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          );
+        })}
+      </div>
+    </Plegable>
   );
 }
 

@@ -2,7 +2,7 @@ import { fechaDeAcreditacion, retenciones } from "./acreditacion";
 import type { Cuota, EstadoApp, Gasto, MiembroEquipo, Pago, Venta } from "./types";
 import type { RangoMes } from "./metricas";
 import { esSoloReserva } from "./angelo";
-import { cobraDirector, cobraEnFecha, closerDeCuota, tasaDeComision, tasaDeSetterEnVenta } from "./comision";
+import { cobraDirector, cobraEnFecha, closerDeCuota, diaArgentina, tasaDeComision, tasaDeSetterEnVenta } from "./comision";
 import { devolucionesDelMes, reversasDelMes, totalDevuelto, type Reversa } from "./devoluciones";
 import { fechaDePago } from "./gastos";
 
@@ -192,6 +192,9 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
   /* Las ventas de un día sin cierre cargado ese mismo día: vacío mientras el
      interruptor esté apagado, así no cambia nada. */
   const sinCierre = ventasSinCierre(e);
+  /* El día que cuenta cada cobro (el de la acreditación, si la cuenta retiene): con el % que valía ese día. */
+  const ret = retenciones(e.procesadores);
+  const diaDelCobro = (p: Pago) => diaArgentina(ret.size ? fechaDeAcreditacion(p, ret) : p.fecha);
 
   for (const v of e.ventas) {
     if (v.estado === "cancelada") continue;
@@ -214,9 +217,26 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
     for (const [k, pagos] of porCloser) {
       const closer = k ? miembro.get(k) : undefined;
       const neto = (xs: typeof pagos) => xs.reduce((a, p) => a + (p.monto - p.feeMonto), 0);
-      const tasaCloser = sinComision ? 0 : tasaDeComision(closer, v.productoId);
-      const tasaDirector = sinComision ? 0 : tasaDeComision(director, v.productoId);
-      const comisionBruta = neto(pagos.filter((p) => cobraEnFecha(closer, p.fecha))) * tasaCloser;
+      /* Cada cobro con el % que valía el día que entró (la regla de ese momento, no la de hoy). */
+      const comisionDe = (quien: typeof closer, xs: typeof pagos) => {
+        const tasas = xs.map((p) => tasaDeComision(quien, v.productoId, diaDelCobro(p)));
+        /* Con un solo %, la cuenta de siempre (neto × %), así los totales no cambian ni en un centavo. */
+        if (tasas.every((t) => t === tasas[0])) return neto(xs) * (tasas[0] ?? 0);
+        return xs.reduce((a, p, i) => a + (p.monto - p.feeMonto) * tasas[i], 0);
+      };
+      const delCloser = pagos.filter((p) => cobraEnFecha(closer, p.fecha));
+      const delDirector = pagos.filter((p) => cobraDirector(director, p.fecha));
+      /* El % que se muestra: el de esos cobros (si cambió en el medio del mes, el que da la cuenta). */
+      const tasaDe = (quien: typeof closer, xs: typeof pagos) => {
+        if (xs.length === 0) return tasaDeComision(quien, v.productoId, diaDelCobro(pagos[0]));
+        const tasas = xs.map((p) => tasaDeComision(quien, v.productoId, diaDelCobro(p)));
+        if (tasas.every((t) => t === tasas[0])) return tasas[0];
+        const n = neto(xs);
+        return Math.abs(n) > 1e-9 ? comisionDe(quien, xs) / n : tasas[tasas.length - 1];
+      };
+      const tasaCloser = sinComision ? 0 : tasaDe(closer, delCloser);
+      const tasaDirector = sinComision ? 0 : tasaDe(director, delDirector);
+      const comisionBruta = sinComision ? 0 : comisionDe(closer, delCloser);
       const descuento = descuentaPorCierre(sinCierre, v, k) ? comisionBruta : 0;
       out.push({
         id: porCloser.size > 1 ? `${v.id}:${k || "sin"}` : v.id,
@@ -231,7 +251,7 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
         ...(descuento > 0 ? { descuentoCierre: descuento } : {}),
         directorId: v.directorId,
         tasaDirector,
-        comisionDirector: neto(pagos.filter((p) => cobraDirector(director, p.fecha))) * tasaDirector,
+        comisionDirector: sinComision ? 0 : comisionDe(director, delDirector),
         sinComision,
         ...(k && k !== v.closerId ? { heredadaDe: deLaVenta?.nombre ?? "otro closer" } : {}),
       });
@@ -259,6 +279,12 @@ export function totalComisiones(cs: ComisionVenta[]) {
    Referidores), igual que en la planilla, así no se cuenta dos veces. */
 
 const netoDe = (p: Pago) => p.monto - p.feeMonto;
+
+/* El último día del período (YYYY-MM-DD, en la hora de acá): con él se elige el % de lo que se calcula por mes. */
+const ultimoDia = (m: RangoMes) => {
+  const d = m.hasta;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 export function comisionSetterDePago(e: EstadoApp, venta: Venta | undefined, p: Pago): number {
   if (!venta?.setterId) return 0;
@@ -419,8 +445,9 @@ export function calcularPyL(e: EstadoApp, m: RangoMes): PyL {
      ventas marcadas como excluidas de marketing, así que se prorratea. */
   const parte = parteMarketing(e, m);
 
-  const tasaGrowth = e.equipo.find((x) => x.rol === "growth")?.comisionRate ?? 0;
-  const tasaSocio = e.equipo.find((x) => x.rol === "socio")?.comisionRate ?? 0;
+  /* El % que valía al cierre del período (si cambió, el mes de antes sigue con el suyo). */
+  const tasaGrowth = tasaDeComision(e.equipo.find((x) => x.rol === "growth"), undefined, ultimoDia(m));
+  const tasaSocio = tasaDeComision(e.equipo.find((x) => x.rol === "socio"), undefined, ultimoDia(m));
   const baseReparto = Math.max(operativoCC, 0);
 
   return {
@@ -666,7 +693,7 @@ export function comisionesPorCloser(e: EstadoApp, m: RangoMes): ComisionesCloser
       const x = e.equipo.find((q) => q.id === c.closerId);
       g = {
         clave, closerId: c.closerId, nombre: c.closerNombre,
-        tasa: x?.comisionRate ?? 0, sinComision: c.sinComision, total: 0, ventas: [],
+        tasa: tasaDeComision(x, undefined, ultimoDia(m)), sinComision: c.sinComision, total: 0, ventas: [],
       };
       grupos.set(clave, g);
     }

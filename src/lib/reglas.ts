@@ -43,9 +43,12 @@ export function reglasAcordadas(e: EstadoApp, periodo?: string): ReglaAcordada[]
     /* Quien ya no está sólo cuenta si todavía cobra en ese mes. */
     if (rango && m.activo === false && !(m.hasta && m.hasta.slice(0, 10) >= dia(rango.desde))) continue;
     if (!rango && m.activo === false) continue;
+    const hoy = dia(new Date());
     for (const c of comisiones) {
       /* Con un mes, sólo las que valen en algún día de ese mes. */
       if (rango && ((c.desde && c.desde.slice(0, 10) > dia(rango.hasta)) || (c.hasta && c.hasta.slice(0, 10) < dia(rango.desde)))) continue;
+      /* Sin mes, las de hoy en adelante: una versión que ya terminó es historia (se ve en la ficha, en «Cómo era antes»). */
+      if (!rango && c.hasta && c.hasta.slice(0, 10) < hoy) continue;
       out.push({
         miembro: m, concepto: c, regla: describirConcepto(c, e, esq.conceptos),
         criterio: c.notas?.trim() || undefined,
@@ -96,17 +99,23 @@ export function textoDeReglas(e: EstadoApp, periodo?: string): string {
 export const fechaDeConfirmacion = (iso?: string): string => (iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? fechaLarga(`${iso.slice(0, 10)}T12:00:00`) : "");
 
 /** Al guardar un esquema: una regla confirmada que cambió (su %, sobre qué se mide, sus filtros, sus fechas) deja de estar confirmada, salvo que
- *  en el mismo guardado se haya tocado a propósito la confirmación. Cambiar sólo el nombre o lo acordado (las notas) no la borra. */
+ *  en el mismo guardado se haya tocado a propósito la confirmación. Cambiar sólo el nombre o lo acordado (las notas) no la borra.
+ *  Cortarla (ponerle un fin antes del que tenía, porque desde ahí vale una versión nueva) tampoco: lo que se confirmó sigue valiendo
+ *  para los días que quedan (lib/versiones-regla.ts). */
 export function sinConfirmarSiCambio(previos: ConceptoPago[] | undefined, nuevos: ConceptoPago[]): ConceptoPago[] {
-  const sinDatosDeConfirmacion = (c: ConceptoPago) => {
-    const { confirmadaPor: _p, confirmadaEl: _e, notas: _n, nombre: _nombre, ...regla } = c;
+  const sinDatosDeConfirmacion = (c: ConceptoPago, sinHasta = false) => {
+    const { confirmadaPor: _p, confirmadaEl: _e, notas: _n, nombre: _nombre, versionDe: _v, inicioVentas: _i, ...regla } = c;
+    if (sinHasta) delete regla.hasta;
     return JSON.stringify(regla, Object.keys(regla).sort());
   };
+  const seCorto = (antes: ConceptoPago, c: ConceptoPago) =>
+    Boolean(c.hasta) && (!antes.hasta || c.hasta!.slice(0, 10) < antes.hasta.slice(0, 10));
   return nuevos.map((c) => {
     const antes = previos?.find((x) => x.id === c.id);
     if (!antes?.confirmadaPor) return c;
     const igualConfirmacion = c.confirmadaPor === antes.confirmadaPor && c.confirmadaEl === antes.confirmadaEl;
     if (!igualConfirmacion || sinDatosDeConfirmacion(antes) === sinDatosDeConfirmacion(c)) return c;
+    if (seCorto(antes, c) && sinDatosDeConfirmacion(antes, true) === sinDatosDeConfirmacion(c, true)) return c;
     const { confirmadaPor: _p, confirmadaEl: _e, ...resto } = c;
     return resto;
   });

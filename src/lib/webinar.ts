@@ -2,6 +2,7 @@ import type {
   AdInsight, CanalOrigen, Contacto, Cuota, EstadoApp, GrupoWppResumen, Lead, NivelIngles, Sesion, Venta, Webinar,
 } from "./types";
 import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./finanzas";
+import { diaArgentina } from "./comision";
 import { devolucionesDe, esDevolucionConfirmada, reversasDeComision } from "./devoluciones";
 import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
 import { diaDeNegocio } from "./dia-negocio";
@@ -454,8 +455,10 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
     const closerId = closerDeCuota(v, c);
     const closer = closerId ? miembro.get(closerId) : undefined;
     const director = v.directorId ? miembro.get(v.directorId) : undefined;
-    if (cobraEnFecha(closer, p.fecha) && !descuentaPorCierre(sinCierre, v, closerId)) comisiones += neto * tasaDeComision(closer, v.productoId);
-    if (cobraDirector(director, p.fecha)) comisiones += neto * tasaDeComision(director, v.productoId);
+    /* Con el % que valía el día del cobro: el resultado de un webinar viejo no cambia si después cambia la regla. */
+    const dia = diaArgentina(p.fecha);
+    if (cobraEnFecha(closer, p.fecha) && !descuentaPorCierre(sinCierre, v, closerId)) comisiones += neto * tasaDeComision(closer, v.productoId, dia);
+    if (cobraDirector(director, p.fecha)) comisiones += neto * tasaDeComision(director, v.productoId, dia);
   }
   /* Y lo que se les revierte por las devoluciones: lo mismo que Finanzas. */
   if (devuelto > 0) {

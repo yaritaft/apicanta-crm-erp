@@ -1,14 +1,17 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Select } from "@/components/ui/ui";
+import { Button, Select } from "@/components/ui/ui";
+import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { acciones } from "@/lib/store";
+import { DesdeCuandoOpciones, textoDeDesde } from "@/components/equipo/DesdeCuando";
+import { acciones, nuevoId } from "@/lib/store";
+import { conVersiones, type DesdeCuando } from "@/lib/versiones-regla";
 import { tasaTexto } from "@/lib/format";
 import { leerMonto } from "@/lib/gastos";
 import { useUsuarioActual } from "@/lib/usuario";
 import {
-  conComisionDeServicio, conComisionGeneral, quienesComisionan, serviciosDelCuadro, tasaEnServicio, type FilaComision,
+  conComisionDeServicio, conComisionGeneral, esquemaDelCuadro, quienesComisionan, serviciosDelCuadro, tasaEnServicio, type FilaComision,
 } from "@/lib/comisiones";
 import type { EstadoApp, Producto, RolEquipo } from "@/lib/types";
 
@@ -33,6 +36,8 @@ function leerTasa(texto: string): number | null {
 const enCampo = (t: number) => (Math.round(t * 1e6) / 1e4).toLocaleString("es-AR", { maximumFractionDigits: 2, useGrouping: false });
 
 type Celda = { miembroId: string; columna: string };
+/* Un % cambiado que espera el «¿desde cuándo?» antes de guardarse. */
+type Cambio = { f: FilaComision; producto: Producto | null; tasa: number | null; antes: number };
 
 export function CuadroComisiones({ e, editable = false, onVerPersona }: {
   e: EstadoApp;
@@ -46,6 +51,9 @@ export function CuadroComisiones({ e, editable = false, onVerPersona }: {
   const [extra, setExtra] = useState<string[]>([]);
   const [celda, setCelda] = useState<Celda | null>(null);
   const [texto, setTexto] = useState("");
+  const [cambio, setCambio] = useState<Cambio | null>(null);
+  const [cuando, setCuando] = useState<DesdeCuando | null>(null);
+  const [otroDia, setOtroDia] = useState(false);
 
   const filas = useMemo(() => quienesComisionan(e), [e]);
   const servicios = useMemo(() => serviciosDelCuadro(e, filas, extra), [e, filas, extra]);
@@ -64,14 +72,26 @@ export function CuadroComisiones({ e, editable = false, onVerPersona }: {
     if (!producto && tasa === null) return;
     if (tasa !== null && Math.abs(tasa - antes) < 1e-9) return;
     if (producto && tasa === null && !(producto.id in f.propios)) return;
+    if (tasa !== null && !(tasa >= 0 && tasa <= 1)) { toast("El porcentaje tiene que estar entre 0 y 100.", "err"); return; }
+    /* Antes de guardar, desde cuándo vale: lo de antes queda como estaba (lib/versiones-regla.ts). */
+    setCuando(null);
+    setOtroDia(false);
+    setCambio({ f, producto, tasa, antes });
+  }
+
+  function confirmar(c: Cambio, desde: DesdeCuando) {
+    const { f, producto, tasa } = c;
+    setCambio(null);
     const esq = e.honorarios.find((h) => h.miembroId === f.miembro.id);
     try {
       const nuevo = producto ? conComisionDeServicio(esq, f.miembro, producto, tasa) : conComisionGeneral(esq, f.miembro, tasa ?? 0);
-      acciones.guardarEsquema(nuevo, yo.nombre);
+      const previos = esquemaDelCuadro(esq, f.miembro).conceptos;
+      acciones.guardarEsquema({ ...nuevo, conceptos: conVersiones(previos, nuevo.conceptos, desde, () => nuevoId("con")) }, yo.nombre);
       const nombre = f.miembro.nombre.split(" ")[0];
-      toast(!producto ? `${nombre}: ${tasaTexto(tasa ?? 0)} en general.`
-        : tasa === null || Math.abs(tasa - f.general) < 1e-9 ? `${nombre}: ${producto.nombre} vuelve a su % general (${tasaTexto(f.general)}).`
-          : `${nombre}: ${tasaTexto(tasa)} en ${producto.nombre}.`);
+      const desdeTexto = desde.tipo === "desde" ? ` desde el ${desde.dia.slice(8, 10)}/${desde.dia.slice(5, 7)}; lo de antes quedó guardado` : "";
+      toast(!producto ? `${nombre}: ${tasaTexto(tasa ?? 0)} en general${desdeTexto}.`
+        : tasa === null || Math.abs(tasa - f.general) < 1e-9 ? `${nombre}: ${producto.nombre} vuelve a su % general (${tasaTexto(f.general)})${desdeTexto}.`
+          : `${nombre}: ${tasaTexto(tasa)} en ${producto.nombre}${desdeTexto}.`);
     } catch (err) {
       toast(err instanceof Error ? err.message : "No se pudo guardar ese porcentaje.", "err");
     }
@@ -153,6 +173,27 @@ export function CuadroComisiones({ e, editable = false, onVerPersona }: {
           <span className="cuadro-com__muestra" data-propio /> Tiene su propio % en ese servicio: en esas ventas vale ése en vez del general.
           {editable ? " Tocá una celda para cambiarla; vaciala para que vuelva al general." : null}
         </p>
+        {cambio && (
+          <Modal
+            abierto onCerrar={() => setCambio(null)}
+            titulo={`${cambio.f.miembro.nombre.split(" ")[0]}: ${tasaTexto(cambio.antes)} → ${tasaTexto(cambio.tasa ?? cambio.f.general)}${cambio.producto ? ` en ${cambio.producto.nombre}` : " en general"}`}
+            sub="¿Desde cuándo vale? Lo de antes queda como estaba: los meses viejos se siguen calculando con el % de ese momento."
+            pie={
+              <>
+                <Button variante="ghost" onClick={() => setCambio(null)}>Cancelar</Button>
+                <span className="spacer" />
+                <Button variante="primary" disabled={!cuando} onClick={() => cuando && confirmar(cambio, cuando)}>{textoDeDesde(cuando, "cambio")}</Button>
+              </>
+            }
+          >
+            <DesdeCuandoOpciones
+              tipo="porcentaje" modo="cambio" valor={cuando} onCambiar={setCuando}
+              liquidaciones={e.liquidaciones} otroAbierto={otroDia} onOtroAbierto={setOtroDia}
+              antes={`${tasaTexto(cambio.antes)}${cambio.producto ? ` en ${cambio.producto.nombre}` : " en general"}`}
+              despues={`${tasaTexto(cambio.tasa ?? cambio.f.general)}${cambio.producto ? ` en ${cambio.producto.nombre}` : " en general"}`}
+            />
+          </Modal>
+        )}
         {/* Para ponerle un % a un servicio que todavía no vendió nadie. */}
         {editable && sinColumna.length > 0 && (
           <Select
