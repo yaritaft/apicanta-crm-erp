@@ -15,6 +15,7 @@ import { accesosSinExplicacion, modeloDeBienvenida, type NombresDeAccesos } from
 import type { ConfigContratos } from "@/lib/types";
 import type { Pruebas } from "./AccesosAlumnosIntegracion";
 import { marcarRecargaPropia } from "@/components/shell/AvisoVersion";
+import { IdentificarTelegram } from "./IdentificarTelegram";
 
 /* ==================================================================
    La configuración de los contratos y los accesos (Ajustes → Integraciones,
@@ -56,6 +57,7 @@ export function ContratosAjustes({ pruebas }: { pruebas: Pruebas | null }) {
       <EstadoContratos config={config} />
       <AvisoPandadoc />
       <BotTelegram />
+      <IdentificarTelegram />
       <Programas pruebas={pruebas} />
     </div>
   );

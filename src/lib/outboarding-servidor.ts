@@ -30,6 +30,8 @@ export interface PasadaOutboarding {
 }
 
 const ddmm = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
+const NOMBRE_DE_PLATAFORMA: Record<string, string> = { wisboo: "Wisboo", telegram: "Telegram", zoom: "Zoom" };
+const unirConY = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} y ${xs[xs.length - 1]}`);
 
 export async function pasarOutboardings(db: SupabaseClient, ahora = new Date(), quitar: Quitar = quitarAccesos): Promise<PasadaOutboarding> {
   const hoy = hoyDelNegocio(ahora);
@@ -67,7 +69,10 @@ export async function pasarOutboardings(db: SupabaseClient, ahora = new Date(), 
     try {
       const r = await quitar(db, { alumnoId: a.id, quien: "Outboarding automático" });
       salida.hechos.push({ alumnoId: a.id, quitados: r.quitados, fallaron: r.fallaron });
-      if (r.quitados + r.fallaron > 0) await avisarAServicio(db, a, fin, r.quitados, r.accesos.filter((x) => x.error).map((x) => x.recursoNombre || x.recurso), seg.otrosMails);
+      if (r.quitados + r.fallaron > 0) {
+        await avisarAServicio(db, a, fin, r.quitados, r.accesos.filter((x) => x.error).map((x) => x.recursoNombre || x.recurso), seg.otrosMails,
+          r.accesos.filter((x) => !x.error && x.estado === "quitado").map((x) => x.plataforma));
+      }
     } catch (e) {
       console.error("[outboarding]", a.id, e instanceof Error ? e.message : String(e));
     }
@@ -78,13 +83,18 @@ export async function pasarOutboardings(db: SupabaseClient, ahora = new Date(), 
 /* El aviso a Customer Success (como el del roadmap, lib/contratos-servidor.ts): uno por alumno y por día. */
 async function avisarAServicio(
   db: SupabaseClient, a: { id: string; nombre: string; leadId: string | null }, fin: string | null, quitados: number, fallaron: string[], otrosMails: readonly string[] = [],
+  plataformas: readonly string[] = [],
 ): Promise<void> {
   try {
     const r = await db.from("equipo").select("email").eq("activo", true)
       .or("puesto.ilike.%customer success%,puesto.ilike.%servicio%,puesto.ilike.%csm%");
     const dia = hoyDelNegocio();
+    /* Un alumno de antes de la app sólo está registrado en Telegram (lo reconoció el bot): lo de Wisboo y Zoom que tuviera no está en la app y se saca a mano. */
+    const sacadas = [...new Set(plataformas)].map((p) => NOMBRE_DE_PLATAFORMA[p] ?? p);
+    const faltan = sacadas.length ? (["wisboo", "zoom"] as const).filter((p) => !plataformas.includes(p)).map((p) => NOMBRE_DE_PLATAFORMA[p]) : [];
     const partes = [
-      `Está en Outboarding${fin ? ` y su programa terminó el ${ddmm(fin)}` : ""}: se le ${quitados === 1 ? "sacó 1 acceso" : `sacaron ${quitados} accesos`} (Wisboo, Telegram y Zoom).`,
+      `Está en Outboarding${fin ? ` y su programa terminó el ${ddmm(fin)}` : ""}: se le ${quitados === 1 ? "sacó 1 acceso" : `sacaron ${quitados} accesos`} (${sacadas.length ? unirConY(sacadas) : "Wisboo, Telegram y Zoom"}).`,
+      faltan.length ? `${unirConY(faltan)} ${faltan.length === 1 ? "no figura" : "no figuran"} en la app: si los tiene de antes, sacáselos a mano desde su ficha.` : "",
       fallaron.length ? `No se pudo sacar: ${fallaron.join(", ")}. Hacelo a mano desde su ficha → Servicio → Accesos.` : "",
       /* Lili, 28/10: los viejos entran a Wisboo con un mail y a Zoom con otro. */
       otrosMails.length ? `Además de su mail principal usa ${otrosMails.join(", ")}: revisá que no le quede acceso con ninguno.` : "",

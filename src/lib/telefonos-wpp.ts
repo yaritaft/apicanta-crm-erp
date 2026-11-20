@@ -278,6 +278,20 @@ function clavesDeUno(texto: string, pais: string | null | undefined): string[] {
   return salida;
 }
 
+/** La clave de UN número escrito en una ficha, sólo si no es una apuesta: la que sale de su «+» (o «00»), o de la regla del país de la
+    persona. Si el número no sirve para ese país (un argentino mal escrito que sólo sería válido en México), o no se sabe de qué país es
+    y no trae el «+», null: `clavesDeTelefono` daría la clave de otro país, que sirve para buscar en un grupo pero no para atar una cuenta
+    a una persona (Telegram, 20/11: a quien se ata se lo puede sacar de los grupos). */
+export function clavePropiaDeTelefono(crudo: string | null | undefined, pais?: string | null): string | null {
+  const t = String(crudo ?? "").trim();
+  if (!t) return null;
+  if (traePais(t)) return clavesDeUno(t, pais)[0] ?? null;
+  const propia = reglaDe(isoDe(pais));
+  const d = soloDigitos(t);
+  if (!propia || d.length < 7 || d.length > 15) return null;
+  return [...claves(d, propia, true), ...conCodigo(d, propia, true)][0] ?? null;
+}
+
 /** ¿Trae el país? (escrito con el + o el 00, o los dígitos de un WhatsApp). Si
     no, la clave es una apuesta. */
 export function traePais(crudo: string | null | undefined): boolean {

@@ -18,6 +18,7 @@ import type { Acceso, EstadoAcceso, Plataforma } from "@/lib/accesos-servidor";
 import { contratosPrendidos } from "./cliente";
 import { mensajeDeBienvenida } from "@/lib/accesos-alumnos";
 import { AccionesServicio, BloqueServicio, FilaServicio } from "@/components/ficha/FilaServicio";
+import { IdentidadTelegram } from "./IdentidadTelegram";
 
 /* ==================================================================
    Los accesos de un alumno (el Loom de Yari), en la ficha → Servicio:
@@ -166,6 +167,11 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
   }
 
   const programaSugerido = programaDeProducto(programas, venta?.productoId)?.id ?? "";
+  /* Quién es en Telegram (Manu, 20/11): con eso «Quitar» y el outboarding lo pueden sacar de los grupos, también a los de antes de la app. */
+  const identidad = (
+    <IdentidadTelegram alumno={alumno} acciona={acciona} conAccesoVigente={vigentes.some((x) => x.plataforma === "telegram")}
+      onCambio={() => { void leer(); void acciones.traerFichaDe(alumno.id); }} />
+  );
   const modales = (
     <>
       {dar !== null && (
@@ -229,6 +235,7 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
           /* Sin estado general de la plataforma (Juan Cruz, 21/10): cada fila ya dice a qué tiene acceso y a qué no. */
           return (
             <BloqueServicio key={clave} titulo={nombre}>
+              {clave === "telegram" && identidad}
               {xs.length === 0
                 ? (manual?.[clave] ?? <p className="hs-nada">Todavía no se le dio nada desde la app.</p>)
                 : xs.map((x) => {
@@ -275,8 +282,9 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
             /* Sin nada de la app: lo marcado a mano en la ficha (con su editor), o «sin acceso». */
             if (xs.length === 0) {
               return (
-                <li key={clave}>
+                <li key={clave} className={clave === "telegram" ? "stack-1" : undefined}>
                   {manual?.[clave] ?? <FilaPlataforma icono={icono} rotulo={nombre}><Badge variante="neutral">Sin acceso</Badge></FilaPlataforma>}
+                  {clave === "telegram" && identidad}
                 </li>
               );
             }
@@ -284,6 +292,7 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
             return (
               <li key={clave} className="stack-1">
                 <FilaPlataforma icono={icono} rotulo={nombre}><Badge variante={r.variante}>{r.texto}</Badge></FilaPlataforma>
+                {clave === "telegram" && identidad}
                 <ul className="stack-1" style={{ listStyle: "none", margin: 0, padding: "0 0 0 34px" }}>
                   {xs.map((x) => (
                     <li key={x.id} className="row-wrap" style={{ justifyContent: "space-between", gap: 8 }}>

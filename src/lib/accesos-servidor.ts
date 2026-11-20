@@ -576,6 +576,23 @@ export async function topeDeLaBaja(db: SupabaseClient, alumnoId: string): Promis
 
 /* ---------- Quitar ---------- */
 
+/** Las cuentas de Telegram atadas a un alumno (lib/telegram-identidades-servidor.ts). Si la tabla todavía no existe, ninguna. */
+async function cuentasDeTelegramDelAlumno(db: SupabaseClient, alumnoId: string): Promise<string[]> {
+  const r = await db.from("telegram_personas").select("id").eq("alumnoId", alumnoId);
+  return r.error ? [] : ((r.data ?? []) as { id: string }[]).map((p) => p.id);
+}
+
+/** Ya no está en ese grupo: sale de los grupos donde se la veía adentro. Es sólo un dato para mostrar: si falla, no importa. */
+async function dejarDeVerEnElGrupo(db: SupabaseClient, personaId: string, chatId: string): Promise<void> {
+  try {
+    const p = (await db.from("telegram_personas").select("grupos").eq("id", personaId).maybeSingle()).data as { grupos?: Record<string, string> } | null;
+    if (!p?.grupos || !(chatId in p.grupos)) return;
+    const resto = { ...p.grupos };
+    delete resto[chatId];
+    await db.from("telegram_personas").update({ grupos: resto }).eq("id", personaId);
+  } catch { /* nada */ }
+}
+
 /** Saca los accesos pedidos (o todos los que tiene). Lo que no se pudo sacar queda como estaba, con el error. */
 export async function quitarAccesos(db: SupabaseClient, a: {
   alumnoId: string; ids?: string[]; quien: string;
@@ -600,15 +617,19 @@ export async function quitarAccesos(db: SupabaseClient, a: {
       } else if (x.plataforma === "telegram") {
         if (!hayTelegram()) throw new ErrorAcceso("Falta el token del bot de Telegram en Vercel.");
         const link = typeof x.externo.link === "string" ? x.externo.link : null;
-        const usuario = typeof x.externo.telegramUserId === "number" || typeof x.externo.telegramUserId === "string" ? x.externo.telegramUserId : null;
+        const delAcceso = typeof x.externo.telegramUserId === "number" || typeof x.externo.telegramUserId === "string" ? x.externo.telegramUserId : null;
         if (link) await telegram("revokeChatInviteLink", { chat_id: x.recurso, invite_link: link });
-        if (usuario) {
+        /* Sin el id en el acceso (se dio un link y nadie vio entrar a quien lo usó), las cuentas de Telegram que el equipo o el bot ataron a este alumno. */
+        const usuarios: (number | string)[] = delAcceso !== null ? [delAcceso] : await cuentasDeTelegramDelAlumno(db, a.alumnoId);
+        for (const usuario of usuarios) {
           /* Expulsar = banear y desbanear: sale del grupo y puede volver con otro link si algún día vuelve. */
           const b = await telegram("banChatMember", { chat_id: x.recurso, user_id: usuario, revoke_messages: false });
           if (!b.ok) throw new ErrorAcceso(`Telegram no lo sacó del grupo: ${b.description ?? "sin motivo"}.`);
           await telegram("unbanChatMember", { chat_id: x.recurso, user_id: usuario, only_if_banned: true });
-        } else if (x.estado === "entro") {
-          throw new ErrorAcceso("No se sabe su usuario de Telegram: sacalo a mano del grupo.");
+          await dejarDeVerEnElGrupo(db, String(usuario), x.recurso);
+        }
+        if (usuarios.length === 0 && x.estado === "entro") {
+          throw new ErrorAcceso("No sabemos quién es en Telegram: buscalo en su ficha (Accesos → Telegram → «Buscar en los grupos») o sacalo a mano del grupo.");
         }
       } else if (x.plataforma === "zoom") {
         const registrante = typeof x.externo.registranteId === "string" ? x.externo.registranteId : null;
