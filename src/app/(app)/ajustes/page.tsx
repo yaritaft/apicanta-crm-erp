@@ -23,6 +23,7 @@ import { ModalForm, Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado, useTema } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
+import { nivelEn, puedeEditar } from "@/lib/permisos";
 import { num, relativo } from "@/lib/format";
 import type { Ajustes as TAjustes, CampoPersonalizado, EntidadNombre, Etapa, TipoCampo } from "@/lib/types";
 import { objecionesDe } from "@/lib/eod";
@@ -114,10 +115,14 @@ const TODAS = MENU.flatMap((g) => g.items);
 
 export default function Ajustes() {
   const [url, cambiar] = useParamsURL({ seccion: "negocio", pipeline: "" });
-  const { esDueno } = useAcceso();
+  const { acceso, esDueno } = useAcceso();
+  /* Quien llega a Ajustes por Finanzas (Aldana, 20/11) edita las cuentas recaudadoras, que viven en el Catálogo: ve sólo esa sección.
+     Las demás son de quien edita Ajustes. */
+  const tieneAjustes = nivelEn(acceso, "ajustes") >= 1;
+  const alcanza = (i: ItemMenu) => (!i.soloDuenos || esDueno) && (tieneAjustes || (i.valor === "ventas" && puedeEditar(acceso, "procesadores")));
   /* Los links viejos: la pestaña Listas y las dos del pipeline. */
   const pedida: string = url.seccion === "listas" ? "crm" : url.seccion === "pipeline" && url.pipeline === "servicio" ? "servicio" : url.seccion;
-  const item = TODAS.find((i) => i.valor === pedida && (!i.soloDuenos || esDueno)) ?? TODAS[0];
+  const item = TODAS.find((i) => i.valor === pedida && alcanza(i)) ?? TODAS.find(alcanza) ?? TODAS[0];
   const seccion = item.valor;
   const ir = (s: Seccion) => cambiar({ seccion: s, pipeline: null }, { webinar: null });
   /* En el teléfono el menú es una tira que se corre de costado: la sección elegida queda a la vista. */
@@ -130,11 +135,16 @@ export default function Ajustes() {
     nav.scrollLeft += dx - (nav.clientWidth - el.offsetWidth) / 2;
   }, [seccion]);
 
+  /* Ve Finanzas pero no la edita (ni edita Ajustes): no hay nada que pueda cambiar acá. */
+  if (!alcanza(item)) {
+    return <Empty icono={<Settings2 size={22} />} titulo="Acá no hay nada para vos" texto="Ajustes es de quien edita Ajustes; las cuentas recaudadoras, también de quien edita Finanzas. Pedile el permiso a un dueño desde Equipo → Accesos." />;
+  }
+
   return (
     <div className="aj">
       <nav className="aj-menu" aria-label="Secciones de Ajustes" ref={menu}>
         {MENU.map((g, i) => {
-          const items = g.items.filter((x) => !x.soloDuenos || esDueno);
+          const items = g.items.filter(alcanza);
           if (!items.length) return null;
           return (
             <div className="aj-menu__grupo" key={g.grupo ?? i}>

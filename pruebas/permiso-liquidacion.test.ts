@@ -45,8 +45,8 @@ test("/equipo: entra quien tiene el permiso (ver = mirar, editar = usarla); «To
   assert.equal(nivelDeRuta(aldana(), "/equipo"), 0);
   assert.equal(nivelDeRuta(tipo("equipo"), "/equipo"), 0);
   assert.equal(nivelDeRuta(tipo("admin"), "/equipo"), 0);
-  /* Y el permiso no abre nada más: Ajustes sigue cerrado para ella. */
-  assert.equal(nivelDeRuta(aldana("editar"), "/ajustes"), 0);
+  /* Y el permiso no abre nada más: sin Finanzas, Ajustes sigue cerrado. (Con Finanzas se abre sólo el Catálogo de cuentas recaudadoras: 20/11.) */
+  assert.equal(nivelDeRuta({ ...aldana("editar"), areas: { liquidacion: "editar" } }, "/ajustes"), 0);
 });
 
 test("el menú: «Equipo y honorarios» aparece para quien tiene el permiso y no para quien no", () => {

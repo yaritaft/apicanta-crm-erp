@@ -303,7 +303,9 @@ export const EDITAN: Record<string, AreaId[]> = {
   etapas: ["ajustes"],
   embudos: ["ajustes"],
   productos: ["ajustes"],
-  procesadores: ["ajustes"],
+  /* Las cuentas recaudadoras («medios de pago») también las edita Finanzas (Aldana, 20/11: «podrás agregar como medio de pago Financiera Capital
+     ARS y USD»: sumar una cuenta no tiene por qué pasar por un dueño). Lo demás de Ajustes sigue siendo de quien edita Ajustes. */
+  procesadores: ["ajustes", "finanzas"],
   metas: ["ajustes"],
 };
 
@@ -372,7 +374,11 @@ export function puedeEditar(a: MiAcceso | null | undefined, tabla: string): bool
 
 /* Pantallas que, además de su área, ve quien ve otra: «Mi panel» es del CRM para los closers y de Alumnos para Customer Success
    (adentro, cada uno ve el panel que le toca según su puesto en Equipo). */
-const RUTAS_TAMBIEN: Record<string, AreaId[]> = { "/mi-panel": ["alumnos"] };
+const RUTAS_TAMBIEN: Record<string, AreaId[]> = {
+  "/mi-panel": ["alumnos"],
+  /* Ajustes → Catálogo → Cuentas recaudadoras lo usa también Finanzas; el resto de las secciones las filtra la propia pantalla. */
+  "/ajustes": ["finanzas"],
+};
 
 /* De qué área es cada pantalla, por el comienzo de la ruta. "equipo" es
    Equipo y honorarios: sólo los dueños, no se reparte. */

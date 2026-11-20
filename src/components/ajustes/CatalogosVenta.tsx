@@ -10,6 +10,8 @@ import { enOtros } from "@/lib/caja";
 import { Modal, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
+import { useAcceso } from "@/lib/acceso";
+import { puedeEditar } from "@/lib/permisos";
 import { nombrePasarela } from "@/lib/pasarelas";
 import { cobrosConOtraTasa } from "@/lib/finanzas";
 import { money } from "@/lib/format";
@@ -34,13 +36,17 @@ const TIPOS: { valor: Producto["tipo"]; texto: string }[] = [
 ];
 
 export function CatalogosVenta() {
+  /* Cada lista, a quien la puede editar: Finanzas (Aldana) llega acá sólo por las cuentas recaudadoras; no ve los servicios ni las
+     estrategias para no tocarlos y que la base los rechace. */
+  const { acceso } = useAcceso();
+  const edita = (tabla: string) => puedeEditar(acceso, tabla);
   return (
     <div className="stack-4">
-      <Servicios />
-      <Cuentas />
-      <Estrategias />
-      <Proyectos />
-      <Referidor />
+      {edita("productos") && <Servicios />}
+      {edita("procesadores") && <Cuentas />}
+      {edita("embudos") && <Estrategias />}
+      {edita("ajustes") && <Proyectos />}
+      {edita("ajustes") && <Referidor />}
     </div>
   );
 }

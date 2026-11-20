@@ -285,7 +285,7 @@ as $$
     when 'etapas'          then array['ajustes']
     when 'embudos'         then array['ajustes']
     when 'productos'       then array['ajustes']
-    when 'procesadores'    then array['ajustes']
+    when 'procesadores'    then array['ajustes','finanzas']
     when 'metas'           then array['ajustes']
     -- equipo, tipos_cuenta, usuarios_permitidos, honorarios, liquidaciones:
     -- sólo los dueños.

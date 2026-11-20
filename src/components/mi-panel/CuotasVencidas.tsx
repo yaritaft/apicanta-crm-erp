@@ -28,12 +28,13 @@ const POR_DEFECTO = 8;
 const OPCIONES = [{ valor: "", texto: "Sin marcar" }, ...ESTADOS_SEGUIMIENTO.map((x) => ({ valor: x.id as string, texto: x.texto }))];
 const diaMes = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
-export function CuotasVencidas({ e, miembro, viendoOtro, ahora }: { e: EstadoApp; miembro: MiembroEquipo; viendoOtro: boolean; ahora: number }) {
+/* Sin `miembro` son las de todo el equipo (el panel del director). */
+export function CuotasVencidas({ e, miembro, viendoOtro, ahora }: { e: EstadoApp; miembro: MiembroEquipo | null; viendoOtro: boolean; ahora: number }) {
   const { acceso } = useAcceso();
   const abrirFicha = useAbrirFicha();
   const [todas, setTodas] = useState(false);
-  const vencidas = useMemo(() => vencidasConSeguimiento(e, miembro.id, ahora), [e, miembro.id, ahora]);
-  const pagaron = useMemo(() => cuotasQuePagaronVencidas(e, miembro.id, ahora), [e, miembro.id, ahora]);
+  const vencidas = useMemo(() => vencidasConSeguimiento(e, miembro?.id ?? null, ahora), [e, miembro, ahora]);
+  const pagaron = useMemo(() => cuotasQuePagaronVencidas(e, miembro?.id ?? null, ahora), [e, miembro, ahora]);
   if (vencidas.length === 0 && pagaron.length === 0) return null;
 
   const puede = !viendoOtro && puedeEditar(acceso, "cuotas");
@@ -50,7 +51,7 @@ export function CuotasVencidas({ e, miembro, viendoOtro, ahora }: { e: EstadoApp
       </div>
       <span className="mp-nota" style={{ marginTop: 2 }}>
         {vencidas.length > 0
-          ? `${viendoOtro ? "Deben" : "Te deben"} ${money(debe, "USD", 0)}${sinMarcar > 0 ? ` · ${sinMarcar} sin marcar cómo va el cobro` : " · todas con seguimiento"}. `
+          ? `${!miembro ? "Les deben a los closers" : viendoOtro ? "Deben" : "Te deben"} ${money(debe, "USD", 0)}${sinMarcar > 0 ? ` · ${sinMarcar} sin marcar cómo va el cobro` : " · todas con seguimiento"}. `
           : ""}
         Marcá cómo va cada una: lo ve Finanzas. Cuando pagan, quedan un día como «Pagó».
       </span>

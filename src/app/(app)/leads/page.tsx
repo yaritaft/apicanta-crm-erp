@@ -15,7 +15,7 @@ import { ETIQUETA_CANAL } from "@/lib/calendly";
 import { ModalForm, Confirmar, Modal } from "@/components/ui/Modal";
 import { CamposExtra } from "@/components/ui/CamposExtra";
 import { useToast } from "@/components/ui/Toast";
-import { acciones, useEstado } from "@/lib/store";
+import { acciones, useEstado, useSync } from "@/lib/store";
 import { CeldaEditable } from "@/components/crm-tabla/CeldaEditable";
 import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
@@ -27,6 +27,7 @@ import { DateRangePicker, diaDeNegocio } from "@/components/ui/DateRangePicker";
 import { useRangoURL } from "@/lib/useRango";
 import { CopiarLink } from "@/components/ui/Filtros";
 import { ordenAURL, ordenDeURL, paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
+import { MOMENTOS, momentoDeEntrada, webinarsPorFecha } from "@/lib/momento-webinar";
 import type { Lead, Moneda } from "@/lib/types";
 
 /* Las columnas que se pueden prender, como en el Administrador de anuncios.
@@ -45,6 +46,7 @@ const COLUMNAS_LEADS: DefColumna[] = [
   { clave: "utmSource", titulo: "utm_source", grupo: "Origen" },
   { clave: "utmCampaign", titulo: "utm_campaign", grupo: "Origen" },
   { clave: "webinar", titulo: "Webinar", grupo: "Origen" },
+  { clave: "momento", titulo: "Momento", grupo: "Origen", ayuda: "Pre-webinar: entró antes de que empiece el próximo webinar. Del webinar: ya pasó el que le tocaba" },
   { clave: "email", titulo: "Email", grupo: "Contacto" },
   { clave: "telefono", titulo: "Teléfono", grupo: "Contacto" },
   { clave: "pais", titulo: "País", grupo: "Contacto" },
@@ -58,10 +60,14 @@ const COLUMNAS_LEADS: DefColumna[] = [
   { clave: "compras", titulo: "Compró", grupo: "Actividad", ayuda: "Lo facturado en sus ventas activas" },
   { clave: "notas", titulo: "Notas", grupo: "Seguimiento", ayuda: "Un lugar para notas y comentarios del lead: un clic y se escribe" },
 ];
-const POR_DEFECTO_LEADS = ["nombre", "etapa", "notas", "fuente", "pais", "ingles", "exp", "monto", "act"];
+const POR_DEFECTO_LEADS = ["nombre", "etapa", "momento", "notas", "fuente", "pais", "ingles", "exp", "monto", "act"];
 /* Quien ya eligió sus columnas recibe «Notas» una vez, a la vista (después de la etapa), no escondida a la derecha (Mariano, 21/10:
    «sería necesario una columna para dejar notas, comentarios»). */
-const COLUMNAS_SUMADAS_LEADS = [{ id: "notas-2110", despuesDe: "etapa", claves: ["notas"] }];
+/* «Momento» (Daniel, 18/11): pre-webinar o del webinar, a la vista para quien ya eligió sus columnas. */
+const COLUMNAS_SUMADAS_LEADS = [
+  { id: "notas-2110", despuesDe: "etapa", claves: ["notas"] },
+  { id: "momento-1811", despuesDe: "etapa", claves: ["momento"] },
+];
 
 /* Lo que se está mirando vive en la URL (lib/useParamsURL): se guarda en
    favoritos o se manda el link y se ve tal cual. El período va aparte, en
@@ -69,10 +75,11 @@ const COLUMNAS_SUMADAS_LEADS = [{ id: "notas-2110", despuesDe: "etapa", claves: 
    - etapa: el id de la etapa
    - fuente: la fuente tal cual la tiene el lead
    - ingles: el nivel (basico, intermedio, conversacional…)
+   - momento: pre (antes de que empiece el próximo webinar) o webinar (ya pasó el que le tocaba)
    - q: nombre, correo, teléfono, país o campaña
    - orden: la columna, con "-" adelante si va de mayor a menor
    - pag: la página, desde 1 */
-const VISTA_LEADS = { etapa: "todas", fuente: "todas", ingles: "todos", orden: "-act", pag: "1" };
+const VISTA_LEADS = { etapa: "todas", fuente: "todas", ingles: "todos", momento: "todos", orden: "-act", pag: "1" };
 const ORDEN_INICIAL = { clave: "act", desc: true };
 
 const VACIO = (fuente: string, etapaId: string): Omit<Lead, "id"> => ({
@@ -89,15 +96,19 @@ export default function Leads() {
   const abrirFicha = useAbrirFicha();
   const params = useSearchParams();
   const escribirURL = useEscribirURL();
+  /* Mientras llegan los datos de la nube la lista está vacía: no es «no hay leads» (Santiago, 18/11: «Todavía no hay leads» y a los
+     segundos aparecían 2.690). */
+  const cargandoNube = useSync().estado === "cargando";
 
   const [vista, setVista] = useParamsURL(VISTA_LEADS);
   const [q, setQ] = useBusquedaURL("q", ["pag"]);
-  const { etapa, fuente, ingles } = vista;
+  const { etapa, fuente, ingles, momento } = vista;
   /* Otro filtro vuelve a la primera página: quedarse en la 7 de un resultado
      que ahora tiene 2 muestra una tabla vacía. */
   const setEtapa = (v: string) => setVista({ etapa: v, pag: null });
   const setFuente = (v: string) => setVista({ fuente: v, pag: null });
   const setIngles = (v: string) => setVista({ ingles: v, pag: null });
+  const setMomento = (v: string) => setVista({ momento: v, pag: null });
   /* El rango va con el mismo componente que el resto de la app, no un
      selector de mes propio: Yari pidio ver los leads por mes, pero tambien
      comparar periodos, y un mes suelto no deja hacer eso. */
@@ -119,15 +130,18 @@ export default function Leads() {
     else if (url.ver) abrirFicha(url.ver);
   }, [url, e.ajustes.fuentes, etapaInicial, abrirFicha]);
 
-  /* La ficha manda a editar los datos de un lead con ?editar=<id>. */
+  /* La ficha manda a editar los datos de un lead con ?editar=<id>. Se espera a que lleguen los datos: antes el ?editar se gastaba con la
+     lista todavía vacía, el editor nunca se abría y la persona se quedaba mirando la lista (Santiago, 18/11: no encontraba dónde cambiar
+     el responsable). */
   useEffect(() => {
     const id = params.get("editar");
-    if (!id) return;
+    if (!id || cargandoNube) return;
     const lead = e.leads.find((l) => l.id === id);
     if (lead) setForm({ ...lead });
+    else toast("No encontramos ese lead: puede que lo hayan borrado.", "err");
     /* Sólo se saca el ?editar: los filtros y el período quedan. */
     escribirURL({ editar: null });
-  }, [params, e.leads, escribirURL]);
+  }, [params, e.leads, escribirURL, cargandoNube, toast]);
 
   /* Solo el rango. Los chips de etapa cuentan sobre esto: si contaran sobre
      `filtrados`, el chip de la etapa elegida mostraria su propio total y los
@@ -153,24 +167,37 @@ export default function Leads() {
       .map((f) => ({ valor: f, texto: `${f} · ${num(cuenta.get(f) ?? 0)}` }));
   }, [e.ajustes.fuentes, e.leads, enRango, fuente]);
 
+  /* Pre-webinar o del webinar, por cuándo entró (lib/momento-webinar.ts). */
+  const momentoDe = useMemo(() => {
+    const orden = webinarsPorFecha(e.webinars);
+    const ahora = Date.now();
+    const cache = new Map<string, string>();
+    return (l: Lead): string => {
+      let v = cache.get(l.id);
+      if (v === undefined) { v = momentoDeEntrada(l.creadoEn, orden, ahora)?.id ?? ""; cache.set(l.id, v); }
+      return v;
+    };
+  }, [e.webinars]);
+
   const filtrados = useMemo(() => {
     const t = q.trim().toLowerCase();
     return enRango.filter((l) => {
+      if (momento !== "todos" && momentoDe(l) !== momento) return false;
       if (etapa !== "todas" && l.etapaId !== etapa) return false;
       if (fuente !== "todas" && l.fuente !== fuente) return false;
       if (ingles !== "todos" && (l.inglesNivel ?? "") !== ingles) return false;
       if (!t) return true;
       return [l.nombre, l.email, l.telefono, l.pais, l.campania].some((x) => x?.toLowerCase().includes(t));
     });
-  }, [enRango, q, etapa, fuente, ingles]);
+  }, [enRango, q, etapa, fuente, ingles, momento, momentoDe]);
 
   const etapaDe = (id: string) => e.etapas.find((x) => x.id === id);
 
   /* Limpia lo que recorta la lista. El período y el orden quedan. */
-  const hayFiltros = q.trim() !== "" || etapa !== "todas" || fuente !== "todas" || ingles !== "todos";
+  const hayFiltros = q.trim() !== "" || etapa !== "todas" || fuente !== "todas" || ingles !== "todos" || momento !== "todos";
   function limpiarFiltros() {
     setQ("");
-    setVista({ etapa: null, fuente: null, ingles: null, pag: null }, { q: null });
+    setVista({ etapa: null, fuente: null, ingles: null, momento: null, pag: null }, { q: null });
   }
 
   function guardar(borrador: BorradorLead) {
@@ -257,6 +284,11 @@ export default function Leads() {
     },
     utmSource: { clave: "utmSource", titulo: "utm_source", tipo: "secondary", orden: (l) => contactoDe(l)?.utm?.utm_source ?? "", celda: (l) => contactoDe(l)?.utm?.utm_source ?? "—" },
     utmCampaign: { clave: "utmCampaign", titulo: "utm_campaign", tipo: "secondary", orden: (l) => contactoDe(l)?.utm?.utm_campaign ?? "", celda: (l) => contactoDe(l)?.utm?.utm_campaign ?? "—" },
+    momento: {
+      clave: "momento", titulo: "Momento", tipo: "secondary",
+      orden: (l) => momentoDe(l) || "z",
+      celda: (l) => { const m = momentoDe(l); return m ? <Badge variante={m === "pre" ? "warning" : "neutral"}>{MOMENTOS.find((x) => x.id === m)?.texto}</Badge> : "—"; },
+    },
     webinar: { clave: "webinar", titulo: "Webinar", tipo: "secondary", orden: (l) => ind.webinar.get(l.webinarId ?? "") ?? "", celda: (l) => ind.webinar.get(l.webinarId ?? "") ?? "—" },
     tecnologias: { clave: "tecnologias", titulo: "Lenguajes", tipo: "secondary", orden: (l) => contactoDe(l)?.tecnologias ?? "", celda: (l) => contactoDe(l)?.tecnologias || "—" },
     formacion: { clave: "formacion", titulo: "Formación", tipo: "secondary", orden: (l) => contactoDe(l)?.formacion ?? "", celda: (l) => contactoDe(l)?.formacion || "—" },
@@ -302,7 +334,7 @@ export default function Leads() {
     <div className="stack-5">
       <PageHead
         titulo="Leads"
-        sub={`${e.leads.length} personas en total. Cargá una, movela de etapa y cuando compre convertila en alumno.`}
+        sub={cargandoNube && e.leads.length === 0 ? "Cargando los leads…" : `${e.leads.length} personas en total. Cargá una, movela de etapa y cuando compre convertila en alumno.`}
         acciones={
           <>
             <DateRangePicker
@@ -331,6 +363,12 @@ export default function Leads() {
                   { valor: "todos", texto: "Cualquier inglés" },
                   ...ORDEN_INGLES.map((n) => ({ valor: n, texto: ETIQUETA_INGLES[n] })),
                 ]}
+              />
+            </div>
+            <div style={{ width: 175 }}>
+              <Select
+                value={momento} onChange={(ev) => setMomento(ev.target.value)} aria-label="Filtrar por pre-webinar o del webinar"
+                opciones={[{ valor: "todos", texto: "Todos los momentos" }, ...MOMENTOS.map((m) => ({ valor: m.id, texto: m.texto }))]}
               />
             </div>
             <div style={{ width: 190 }}>
@@ -375,7 +413,11 @@ export default function Leads() {
               <IconButton etiqueta="Eliminar" onClick={() => setBorrar(l)}><Trash2 size={15} /></IconButton>
             </>
           )}
-          vacio={
+          vacio={cargandoNube && e.leads.length === 0 ? (
+            <div className="stack-2" aria-busy="true" aria-label="Cargando los leads" style={{ padding: 16 }}>
+              {[0, 1, 2, 3, 4].map((i) => <div key={i} className="skeleton" style={{ height: 44, opacity: 1 - i * 0.15 }} />)}
+            </div>
+          ) : (
             <Empty
               icono={<Users size={22} />}
               titulo={hayFiltros ? "Ningún lead coincide" : "Todavía no hay leads"}
@@ -386,7 +428,7 @@ export default function Leads() {
                   : <Button variante="brand" icono={<Plus size={16} />} onClick={() => setForm(VACIO(e.ajustes.fuentes[0] ?? "", etapaInicial))}>Cargar mi primer lead</Button>
               }
             />
-          }
+          )}
         />
       </Card>
 

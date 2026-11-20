@@ -88,9 +88,9 @@ export const NAV: GrupoNav[] = [
   },
 ];
 
-/* El menú del closer (una cuenta que ve sólo lo suyo): tres entradas y nada
+/* El menú del closer (una cuenta que ve sólo lo suyo): pocas entradas y nada
    más. «Mis llamadas» es el CRM de hoy, «Cerrar el día» es el cierre del día
-   y «Cargar venta» abre el asistente de venta. Leads, Agenda, Clientes y el
+   y «Cargar venta» abre el asistente de venta. Leads, Clientes y el
    resto siguen abiertos por link, filtrados a lo suyo por la base: sólo se
    esconden del menú. «Cerrar el día» y «Cargar venta» guardan, así que piden
    editar el CRM y Ventas (`edita`); «Mis llamadas» alcanza con verla. */
@@ -101,6 +101,9 @@ export const NAV_CLOSER: GrupoNav[] = [
       { href: "/mis-llamadas", texto: "Mis llamadas", icono: PhoneCall, ayuda: "Tus llamadas de hoy: cargá cómo terminó cada una" },
       { href: "/mi-panel", texto: "Mi panel", icono: UserRound, ayuda: "Tus comisiones, tus cuotas por cobrar y tus próximas llamadas" },
       { href: "/crm", texto: "CRM", icono: Sheet, ayuda: "Todas tus llamadas, de cualquier día: se filtran y se corrigen como un Excel" },
+      /* Dante (20/11): «los closers podemos tener acceso al panel de agenda? Es más práctico para ver a los leads que tuvimos». Ya se abría por
+         link; ahora está en el menú. Cada closer ve sus llamadas (la base lo filtra); con «Leads de todos», las de todos. */
+      { href: "/agenda", texto: "Agenda", icono: CalendarDays, ayuda: "Tus llamadas por día, con los leads que tuviste: entran solas desde Calendly" },
       { href: "/ventas", texto: "Ventas", icono: HandCoins, ayuda: "Tus ventas con sus cuotas y cobros: lo que falta cobrar, registrar un pago o corregirlo" },
       { href: "/cerrar-el-dia", texto: "Cerrar el día", icono: ClipboardCheck, ayuda: "Pasá por tus llamadas y contá cómo terminó cada una", edita: true },
       { href: "/cargar-venta", texto: "Cargar venta", icono: HandCoins, ayuda: "Cargá una venta nueva: pasa a cliente", edita: true },

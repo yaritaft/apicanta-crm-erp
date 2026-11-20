@@ -8,6 +8,7 @@ import type { CambiosLlamada } from "./store";
 import { COBROS_EN_CERO, cobrosPorVenta, quienEs, sumarCobros, type CobrosDeVenta } from "./control-cobros";
 import { devolucionesDeVenta } from "./devoluciones";
 import { PAISES, paisDeTelefono } from "./pais-de-telefono";
+import { momentoDeEntrada, webinarsPorFecha } from "./momento-webinar";
 
 /* ==================================================================
    El CRM como una tabla fácil, como un Excel (Yari, 29/09): "lo fácil le
@@ -56,6 +57,8 @@ export interface FilaTabla {
   oferta: string;        // Sí · No · ""
   cierre: string;        // aaaa-mm-dd
   via: string;
+  /* Pre-webinar o Del webinar, por cuándo entró la persona (lib/momento-webinar.ts); vacío si no se sabe. */
+  momento: string;
   /* De dónde vino, con un solo nombre: YouTube, Meta, Instagram… (fuenteDeUtm). */
   fuente: string;
   ad: string;
@@ -192,6 +195,7 @@ export function filasTabla(
   };
   const contactos = new Map(e.contactos.map((c) => [c.id, c]));
   const leads = new Map(e.leads.map((l) => [l.id, l]));
+  const webinarsOrdenados = webinarsPorFecha(e.webinars ?? []);
   const estados = opcionesDe(e.ajustes, "estadoLlamada");
   return filasCrm(e).map((f) => {
     const s = f.sesion;
@@ -217,6 +221,7 @@ export function filasTabla(
       oferta: s.hizoOferta === true ? "Sí" : s.hizoOferta === false ? "No" : "",
       cierre: s.cierreEstimado ?? "",
       via: viaDe(s, f),
+      momento: momentoDeEntrada(l?.creadoEn ?? c?.creadoEn, webinarsOrdenados, ahora)?.texto ?? "",
       fuente: fuenteDeUtm(s.utm)?.texto ?? "",
       ad, angulo: anguloDe(ad), campania,
       pais: c?.pais?.trim() || l?.pais?.trim() || paisDeTelefono(f.telefono),
@@ -250,7 +255,7 @@ export function filasTabla(
 
 export type ClaveColumna =
   | "llamada" | "nombre" | "closer" | "estadoPreCall" | "estadoLlamada" | "followUp" | "preCall" | "objecion" | "oferta" | "cierre"
-  | "via" | "fuente" | "ad" | "angulo" | "campania" | "pais" | "edad" | "nacimiento" | "tecnologias" | "ingles" | "experiencia" | "formacion"
+  | "via" | "momento" | "fuente" | "ad" | "angulo" | "campania" | "pais" | "edad" | "nacimiento" | "tecnologias" | "ingles" | "experiencia" | "formacion"
   | "ingreso" | "inversion" | "calificada" | "grabacion" | "venta" | "producto" | "cobrado" | "comprobante" | "conciliado" | "cargo" | "chequeo" | "email" | "telefono" | "agendo" | "notas"
   /* Un campo propio de las llamadas (Ajustes → Campos propios → Sesiones): «extra:» + su clave. Ver registrarCamposPropios. */
   | `extra:${string}`;
@@ -389,6 +394,7 @@ export const COLUMNAS: ColumnaTabla[] = [
   { clave: "cargo", titulo: "Cargó", grupo: "Resultado", valores: (f) => (f.cobros === null ? [SIN_VENTA] : f.cobros.total === 0 ? [SIN_COBROS] : f.cargo), orden: (f) => f.cargo.join(", "), ancho: 150 },
   { clave: "chequeo", titulo: "Chequeo", grupo: "Resultado", valores: (f) => valoresChequeo(f.cobros), orden: (f) => rangoCobros(valoresChequeo(f.cobros)), ancho: 150 },
   { clave: "via", titulo: "Vía", grupo: "Origen", valores: (f) => uno(f.via), ancho: 170 },
+  { clave: "momento", titulo: "Momento", grupo: "Origen", valores: (f) => uno(f.momento), ancho: 130 },
   { clave: "fuente", titulo: "Fuente", grupo: "Origen", valores: (f) => uno(f.fuente), ancho: 150 },
   { clave: "ad", titulo: "Ad", grupo: "Origen", valores: (f) => uno(f.ad), ancho: 200 },
   { clave: "angulo", titulo: "Ángulo", grupo: "Origen", valores: (f) => uno(f.angulo), ancho: 190 },
@@ -506,7 +512,7 @@ export function celdaParaCsv(c: ColumnaTabla, f: FilaTabla): string {
 export const esColumna = (k: string): k is ClaveColumna => Object.prototype.hasOwnProperty.call(COLUMNA, k);
 
 export const VISIBLES_POR_DEFECTO: ClaveColumna[] = [
-  "llamada", "nombre", "telefono", "email", "closer", "estadoPreCall", "estadoLlamada", "followUp", "objecion", "oferta", "cierre", "via", "fuente", "ad", "pais",
+  "llamada", "nombre", "telefono", "email", "closer", "estadoPreCall", "estadoLlamada", "followUp", "objecion", "oferta", "cierre", "via", "momento", "fuente", "ad", "pais",
   "tecnologias", "ingles", "ingreso", "inversion", "calificada", "grabacion", "notas", "venta", "comprobante", "conciliado",
 ];
 
@@ -521,6 +527,8 @@ export const COLUMNAS_SUMADAS: { id: string; despuesDe: string; claves: ClaveCol
   { id: "fuente-0211", despuesDe: "via", claves: ["fuente"] },
   /* Daniel (06/11): saber a quién de los no-show ya se recontactó. */
   { id: "followup-0611", despuesDe: "estadoLlamada", claves: ["followUp"] },
+  /* Daniel (18/11): separar a los leads «pre» (antes de que empiece el webinar) de los del webinar como tal. */
+  { id: "momento-1811", despuesDe: "via", claves: ["momento"] },
 ];
 
 /* Las dos columnas que miran los cobros de la venta: sólo las ve quien puede leer los cobros. */
@@ -561,6 +569,7 @@ export const EDITOR: Partial<Record<ClaveColumna, EditorColumna>> = {
 export const POR_QUE_NO: Partial<Record<ClaveColumna, string>> = {
   agendo: "Cuándo agendó, según Calendly.",
   via: "Sale del link con el que agendó.",
+  momento: "Sale de cuándo entró: «Pre-webinar» si el webinar que le toca todavía no empezó, «Del webinar» si ya pasó.",
   fuente: "Sale del link con el que agendó: YT, YouTube y la landing con medium YT son YouTube.",
   ad: "Sale del link del anuncio con el que llegó.",
   angulo: "Sale del nombre del anuncio.",

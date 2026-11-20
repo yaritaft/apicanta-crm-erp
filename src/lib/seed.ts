@@ -56,6 +56,9 @@ export const PRODUCTOS: Producto[] = [
 export const PROCESADORES: Procesador[] = [
   { id: "proc_financiera_ars",   nombre: "Financiera ARS Juan", feeRate: 0,     activo: true, automatico: false, moneda: "ARS" },
   { id: "proc_financiera_usd",   nombre: "Financiera USD Juan", feeRate: 0,     activo: true, automatico: false },
+  /* Una financiera nueva, aparte de la de Juan: lo de cada una queda separado (Aldana, 20/11). El tope de la Financiera cuenta sólo las de Juan. */
+  { id: "proc_financiera_capital_ars", nombre: "Financiera Capital ARS", feeRate: 0, activo: true, automatico: false, moneda: "ARS" },
+  { id: "proc_financiera_capital_usd", nombre: "Financiera Capital USD", feeRate: 0, activo: true, automatico: false },
   { id: "proc_stripe",           nombre: "Stripe",              feeRate: 0.029, activo: true, automatico: true,  proveedor: "stripe" },
   { id: "proc_mercury",          nombre: "ACH-WIRE Mercury",    feeRate: 0,     activo: true, automatico: true,  proveedor: "mercury" },
   /* Desde fines de octubre, lo que retiran Stripe, Whop y Hotmart llega acá (Yari, 28/10: definitivo). Se cuenta a mano. */

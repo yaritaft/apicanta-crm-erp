@@ -170,9 +170,9 @@ const DIA = 86400000;
 /** El rango del panel (días «aaaa-mm-dd») como lo piden las cuentas de Finanzas. */
 export const rangoDelPanel = (desde: string, hasta: string, etiqueta: string): RangoMes => rangoDeFechas(desde, hasta, etiqueta);
 
-/** La mesa de cobro de un closer: se lee siempre contra HOY (no sigue el rango), porque «lo que
+/** La mesa de cobro de un closer (o de todo el equipo, sin closer): se lee siempre contra HOY (no sigue el rango), porque «lo que
  *  vence este mes» y «lo vencido de antes» son del día en que se mira. */
-export function mesaDe(e: Pick<EstadoApp, "cuotas" | "ventas" | "pagos">, closerId: string, hoy: string): MesaDeCobro {
+export function mesaDe(e: Pick<EstadoApp, "cuotas" | "ventas" | "pagos">, closerId: string | null, hoy: string): MesaDeCobro {
   const ventas = new Map(e.ventas.map((v) => [v.id, v] as const));
   const pagado = new Map<string, number>();
   for (const p of e.pagos) pagado.set(p.cuotaId, (pagado.get(p.cuotaId) ?? 0) + p.monto);
@@ -181,7 +181,7 @@ export function mesaDe(e: Pick<EstadoApp, "cuotas" | "ventas" | "pagos">, closer
   const m: MesaDeCobro = { mesPendiente: 0, mesProyectado: 0, mesCobrado: 0, mesPct: null, atrasado: 0, enRiesgo: 0, futuro: 0, sinFecha: 0, incobrable: 0 };
   for (const c of e.cuotas) {
     const v = ventas.get(c.ventaId);
-    if (!v || v.estado === "cancelada" || closerDeCuota(v, c) !== closerId) continue;
+    if (!v || v.estado === "cancelada" || (closerId && closerDeCuota(v, c) !== closerId)) continue;
     if (esIncobrable(c)) { m.incobrable += c.monto - (pagado.get(c.id) ?? 0); continue; }
     if (c.estado === "cancelada") continue;
     const cobrado = Math.min(c.monto, pagado.get(c.id) ?? 0);

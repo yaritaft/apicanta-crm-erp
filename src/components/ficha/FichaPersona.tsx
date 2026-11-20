@@ -41,7 +41,8 @@ import { cobradoDeVenta } from "@/lib/ventas-repetidas";
 import { reservaSinCompletar } from "@/lib/reservas";
 import { otrosEmails } from "@/lib/duplicados";
 import { fechaLarga, money } from "@/lib/format";
-import type { Alumno, Cuota, EstadoApp, EstadoVenta, Pago, Venta } from "@/lib/types";
+import { momentoDe } from "@/lib/momento-webinar";
+import type { Alumno, Cuota, EstadoApp, EstadoVenta, Lead, Pago, Venta } from "@/lib/types";
 
 /* ==================================================================
    La ficha de una persona. La misma, se abra desde donde se abra.
@@ -228,6 +229,14 @@ function Lateral({ e, p, filas, contratos, recargarContratos, onVerVentas }: {
   const lead = p.leads[0];
   const compra = compraDe(e, p);
   const whatsapp = enlaceWhatsapp(p.telefono, p.contacto?.pais || p.leads[0]?.pais);
+  const { acceso } = useAcceso();
+  const puedeReasignar = Boolean(lead) && puedeEditar(acceso, "leads") && !acceso?.soloLoSuyo;
+  /* Alguien del equipo; si el lead trae otro nombre (de una importación), se conserva como opción. */
+  const responsables = useMemo(() => {
+    const nombres = e.equipo.filter((x) => x.activo).map((x) => x.nombre);
+    if (lead?.responsable && !nombres.includes(lead.responsable)) nombres.unshift(lead.responsable);
+    return nombres;
+  }, [e.equipo, lead?.responsable]);
 
   const copiar = (valor: string, que: string) => {
     void copiarTexto(que === "el teléfono" ? numeroParaCopiar(valor, c?.pais || lead?.pais) : valor).then((ok) =>
@@ -242,6 +251,8 @@ function Lateral({ e, p, filas, contratos, recargarContratos, onVerVentas }: {
   /* La fuente del lead, si dice algo que las vías no dicen. */
   const fuente = lead?.fuente && !vias.some((v) => v.toLowerCase().includes(lead.fuente.toLowerCase())) ? lead.fuente : "";
   const entro = lead?.creadoEn ?? c?.creadoEn;
+  /* Pre-webinar o del webinar, por cuándo entró (lib/momento-webinar.ts): «Webinar · seguimiento» del taller viejo no decía que espera el próximo. */
+  const momento = momentoDe(entro, e.webinars);
 
   return (
     <aside className="ficha__lado">
@@ -279,7 +290,16 @@ function Lateral({ e, p, filas, contratos, recargarContratos, onVerVentas }: {
             ) : (
               <>
                 <dt>Valor</dt><dd className="t-num">{money(lead.monto, lead.moneda)}</dd>
-                <dt>Responsable</dt><dd>{lead.responsable || "—"}</dd>
+                <dt>Responsable</dt>
+                <dd>
+                  {/* Cambiarlo ahí mismo (Santiago, 18/11: no encontraba cómo). Quien ve sólo lo suyo no reasigna: el lead se le iría de la vista. */}
+                  {puedeReasignar ? (
+                    <Select
+                      aria-label="Responsable del lead" value={lead.responsable ?? ""} placeholder="Sin asignar" opciones={responsables}
+                      onChange={(ev) => { acciones.actualizar<Lead>("leads", lead.id, { responsable: ev.target.value }, lead.nombre); toast(`${lead.nombre}: ahora lo lleva ${ev.target.value || "nadie"}.`); }}
+                    />
+                  ) : (lead.responsable || "—")}
+                </dd>
               </>
             )}
             <DatosExtra campos={e.campos} entidad="lead" valores={lead.extra} />
@@ -290,10 +310,19 @@ function Lateral({ e, p, filas, contratos, recargarContratos, onVerVentas }: {
 
       <SeccionContrato p={p} contratos={contratos} recargar={recargarContratos} onVerVentas={onVerVentas} />
 
-      {(vias.length > 0 || ad || campania || webinar || fuente || entro) && (
+      {(vias.length > 0 || ad || campania || webinar || fuente || entro || momento) && (
         <section>
           <div className="t-label" style={{ marginBottom: 8 }}>De dónde vino</div>
           <dl className="dl dl--compacta">
+            {momento && (
+              <>
+                <dt>Momento</dt>
+                <dd title={momento.id === "pre" ? `Entró antes de que empiece ${momento.titulo}: es gente para trabajar antes del vivo.` : `Entró antes de ${momento.titulo}: pasó por ese webinar.`}>
+                  <Badge variante={momento.id === "pre" ? "warning" : "neutral"}>{momento.texto}</Badge>
+                </dd>
+                <dt>Le toca</dt><dd className="truncate" title={momento.titulo}>{momento.titulo.replace(/\s+-\s+.*$/, "")}</dd>
+              </>
+            )}
             {vias.length > 0 && <><dt>Vía</dt><dd>{vias.join(" · ")}</dd></>}
             {fuente && <><dt>Fuente</dt><dd>{fuente}</dd></>}
             {ad && <><dt>Ad</dt><dd className="truncate" title={ad}>{ad}</dd></>}

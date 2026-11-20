@@ -18,8 +18,8 @@ export interface CuotaPendiente {
   falta: number;
 }
 
-/** Las cuotas por cobrar cuyos cobros van a comisionar para este closer. */
-export function cuotasPorCobrarDe(e: Pick<EstadoApp, "cuotas" | "ventas" | "pagos">, closerId: ID): CuotaPendiente[] {
+/** Las cuotas por cobrar cuyos cobros van a comisionar para este closer (o las de todos, sin closer: el panel del director, Santiago 20/11). */
+export function cuotasPorCobrarDe(e: Pick<EstadoApp, "cuotas" | "ventas" | "pagos">, closerId: ID | null): CuotaPendiente[] {
   const ventas = new Map(e.ventas.map((v) => [v.id, v] as const));
   const pagado = new Map<ID, number>();
   for (const p of e.pagos) pagado.set(p.cuotaId, (pagado.get(p.cuotaId) ?? 0) + p.monto);
@@ -27,7 +27,7 @@ export function cuotasPorCobrarDe(e: Pick<EstadoApp, "cuotas" | "ventas" | "pago
   for (const c of e.cuotas) {
     const v = ventas.get(c.ventaId);
     if (!v || v.estado === "cancelada" || c.estado === "cancelada") continue;
-    if (closerDeCuota(v, c) !== closerId) continue;
+    if (closerId && closerDeCuota(v, c) !== closerId) continue;
     const falta = Math.round((c.monto - (pagado.get(c.id) ?? 0)) * 100) / 100;
     if (falta > 0.01) out.push({ cuota: c, venta: v, falta });
   }

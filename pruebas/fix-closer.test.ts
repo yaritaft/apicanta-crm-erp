@@ -278,12 +278,12 @@ const acceso = (areas: AreasDeTipo, soloLoSuyo: boolean): MiAcceso => ({ tipo: "
 const rutas = (a: MiAcceso) => navPara(a).flatMap((g) => g.items.map((i) => i.href));
 
 test("«Cargar venta» y «Cerrar el día» sólo están en el menú del closer si su tipo edita Ventas y el CRM; «Mis llamadas», con verlo alcanza", () => {
-  assert.deepEqual(rutas(acceso({ crm: "editar", ventas: "editar" }, true)), ["/mis-llamadas", "/mi-panel", "/crm", "/ventas", "/cerrar-el-dia", "/cargar-venta"]);
-  assert.deepEqual(rutas(acceso({ crm: "editar", ventas: "ver" }, true)), ["/mis-llamadas", "/mi-panel", "/crm", "/ventas", "/cerrar-el-dia"], "con Ventas sólo para mirar, la base rechazaría la venta");
-  assert.deepEqual(rutas(acceso({ crm: "ver", ventas: "editar" }, true)), ["/mis-llamadas", "/mi-panel", "/crm", "/ventas", "/cargar-venta"], "con el CRM sólo para mirar, la base rechazaría el cierre");
-  assert.deepEqual(rutas(acceso({ crm: "ver", ventas: "ver" }, true)), ["/mis-llamadas", "/mi-panel", "/crm", "/ventas"]);
-  assert.deepEqual(rutas(acceso({ crm: "ver" }, true)), ["/mis-llamadas", "/mi-panel", "/crm"]);
-  assert.deepEqual(rutas(acceso({ crm: "editar" }, true)), ["/mis-llamadas", "/mi-panel", "/crm", "/cerrar-el-dia"]);
+  assert.deepEqual(rutas(acceso({ crm: "editar", ventas: "editar" }, true)), ["/mis-llamadas", "/mi-panel", "/crm", "/agenda", "/ventas", "/cerrar-el-dia", "/cargar-venta"]);
+  assert.deepEqual(rutas(acceso({ crm: "editar", ventas: "ver" }, true)), ["/mis-llamadas", "/mi-panel", "/crm", "/agenda", "/ventas", "/cerrar-el-dia"], "con Ventas sólo para mirar, la base rechazaría la venta");
+  assert.deepEqual(rutas(acceso({ crm: "ver", ventas: "editar" }, true)), ["/mis-llamadas", "/mi-panel", "/crm", "/agenda", "/ventas", "/cargar-venta"], "con el CRM sólo para mirar, la base rechazaría el cierre");
+  assert.deepEqual(rutas(acceso({ crm: "ver", ventas: "ver" }, true)), ["/mis-llamadas", "/mi-panel", "/crm", "/agenda", "/ventas"]);
+  assert.deepEqual(rutas(acceso({ crm: "ver" }, true)), ["/mis-llamadas", "/mi-panel", "/crm", "/agenda"]);
+  assert.deepEqual(rutas(acceso({ crm: "editar" }, true)), ["/mis-llamadas", "/mi-panel", "/crm", "/agenda", "/cerrar-el-dia"]);
   assert.deepEqual(rutas(acceso({ ventas: "editar" }, true)), ["/ventas", "/cargar-venta"], "sin el CRM no hay «Mis llamadas», pero hay con qué cargar una venta");
   /* Las dos acciones son las únicas que piden editar. */
   assert.deepEqual(NAV_CLOSER.flatMap((g) => g.items).filter((i) => i.edita).map((i) => i.href), ["/cerrar-el-dia", "/cargar-venta"]);
@@ -333,10 +333,11 @@ test("el inicio de cualquier tipo que ve algo es una pantalla de su menú, con y
 
 test("los tipos de fábrica siguen con su menú de siempre", () => {
   const menus: Record<string, string[]> = {
-    closer: ["/mis-llamadas", "/mi-panel", "/crm", "/ventas", "/cerrar-el-dia", "/cargar-venta"],
+    closer: ["/mis-llamadas", "/mi-panel", "/crm", "/agenda", "/ventas", "/cerrar-el-dia", "/cargar-venta"],
     setter: ["/mi-panel", "/leads", "/crm", "/agenda"],
     director: ["/panel", "/mi-panel", "/leads", "/crm", "/agenda", "/ventas", "/clientes", "/webinars", "/formularios", "/grupos-whatsapp"],
-    admin: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/saldos", "/finanzas/flujo", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/finanzas/ventas-y-cash"],
+    /* Administración llega a Ajustes por Finanzas (20/11): ve sólo el Catálogo, para las cuentas recaudadoras. */
+    admin: ["/panel", "/ventas", "/clientes", "/finanzas", "/finanzas/saldos", "/finanzas/flujo", "/finanzas/end-of-day", "/finanzas/resultados", "/finanzas/transacciones", "/finanzas/ventas-y-cash", "/ajustes"],
     /* El CRM y la Agenda para mirar (Agustín, 26/10); sin «Mi panel», que es de quien trabaja las llamadas. */
     marketing: ["/panel", "/leads", "/crm", "/agenda", "/webinars", "/formularios", "/grupos-whatsapp", "/marketing", "/marketing?nivel=conciliacion"],
     /* «Simulacros» (Lili, 23/10): la clase de entrevistas de los martes. */

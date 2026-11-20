@@ -24,6 +24,7 @@ import { TarjetaConsultas } from "@/components/consultas/Consultas";
 import { LlamadasParaCerrar } from "./LlamadasParaCerrar";
 import { SesionesUnoAUno } from "./SesionesUnoAUno";
 import { CuotasVencidas } from "./CuotasVencidas";
+import { CuotasDelEquipo } from "./CuotasDelEquipo";
 import { PendientesDeConciliar } from "@/components/conciliacion/PendientesDeConciliar";
 import { TarjetaOrigen } from "@/components/conciliacion/TarjetaOrigen";
 import { TOMAN_SIMULACROS } from "@/lib/simulacros";
@@ -192,6 +193,14 @@ export function MiPanel() {
 
           {/* Las cuotas atrasadas de sus clientes, con el teléfono y cómo va el cobro (Aldana, 28/10). */}
           {!esDirector && <CuotasVencidas e={e} miembro={miembro} viendoOtro={viendoOtro} ahora={ahora} />}
+
+          {/* El director no tiene cuotas propias: ve las de todo el equipo, por vencer y por cobrar, y las atrasadas con el teléfono (Santiago, 20/11). */}
+          {esDirector && (
+            <>
+              <CuotasDelEquipo e={e} />
+              <CuotasVencidas e={e} miembro={null} viendoOtro={viendoOtro} ahora={ahora} />
+            </>
+          )}
 
           {!esDirector && <Rendimiento datos={datos} e={e} rangoTxt={rangoTxt} />}
 
