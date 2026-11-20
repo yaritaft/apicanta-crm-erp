@@ -12,3 +12,18 @@ export function cuentasPorUso(e: Pick<EstadoApp, "procesadores" | "pagos">): Pro
     .filter((p) => p.activo)
     .sort((a, b) => (uso.get(b.id) ?? 0) - (uso.get(a.id) ?? 0) || a.nombre.localeCompare(b.nombre, "es"));
 }
+
+/** Las cuentas para ofrecer en el selector de un cobro: las activas (por uso) y, si el cobro ya tiene una que después se apagó, también esa, marcada
+ *  como apagada: sin ella el selector quedaba en blanco al corregir un cobro viejo. Una cuenta apagada no se ofrece para cobros nuevos (Aldana, 20/11). */
+export function opcionesDeCuenta(
+  e: Pick<EstadoApp, "procesadores" | "pagos">,
+  elegidas: readonly (string | undefined)[] = [],
+): { valor: string; texto: string }[] {
+  const activas = cuentasPorUso(e);
+  const ids = new Set(activas.map((p) => p.id));
+  const apagadas = e.procesadores.filter((p) => !p.activo && elegidas.includes(p.id) && !ids.has(p.id));
+  return [
+    ...activas.map((p) => ({ valor: p.id, texto: p.nombre })),
+    ...apagadas.map((p) => ({ valor: p.id, texto: `${p.nombre} (apagada)` })),
+  ];
+}

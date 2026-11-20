@@ -1,6 +1,6 @@
 "use client";
 
-import { cuentasPorUso } from "@/lib/cuentas-por-uso";
+import { cuentasPorUso, opcionesDeCuenta } from "@/lib/cuentas-por-uso";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link2, Plus, Trash2, Unlink } from "lucide-react";
 import { Button, IconButton, Input, Select } from "@/components/ui/ui";
@@ -264,7 +264,7 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
                   value={p.procesadorId} placeholder="Cuenta recaudadora" aria-label="Cuenta recaudadora"
                   disabled={Boolean(p.movimientoId)}
                   onChange={(ev) => editar(p.id, { procesadorId: ev.target.value, monedaLocal: undefined, montoLocal: undefined })}
-                  opciones={procesadores.map((x) => ({ valor: x.id, texto: x.nombre }))}
+                  opciones={opcionesDeCuenta(e, [p.procesadorId])}
                 />
                 <InputMonto value={p.monto} aria-label="Monto abonado USD" title="Monto abonado USD"
                   onChange={(ev) => editar(p.id, { monto: montoDe(ev.target.value), montoArs: undefined })} />

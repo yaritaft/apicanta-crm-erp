@@ -208,7 +208,10 @@ function Cuentas() {
               ) : (
                 <IconButton etiqueta={`Agregar las cuentas bancarias de ${p.nombre}`} onClick={() => setBancarias(p.id)}><Plus size={15} /></IconButton>
               )}
-              <Switch checked={p.activo} etiqueta={`${p.nombre} activa`} onChange={(v) => cambiar(p, { activo: v })} />
+              <Switch
+                checked={p.activo} etiqueta={`${p.nombre} activa`}
+                onChange={(v) => cambiar(p, { activo: v }, v ? `${p.nombre} vuelve a ofrecerse al cargar un cobro.` : `${p.nombre} ya no se ofrece al cargar un cobro. Los cobros que ya tiene siguen ahí.`)}
+              />
               <Switch
                 checked={enOtros(p)} etiqueta={`${p.nombre} va en «Otros» del arqueo`}
                 onChange={(v) => cambiar(p, { cajaOtros: v }, v ? `${p.nombre} va en «Otros» del arqueo.` : `${p.nombre} va con las cuentas de siempre en el arqueo.`)}
