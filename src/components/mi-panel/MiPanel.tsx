@@ -25,6 +25,7 @@ import { LlamadasParaCerrar } from "./LlamadasParaCerrar";
 import { SesionesUnoAUno } from "./SesionesUnoAUno";
 import { CuotasVencidas } from "./CuotasVencidas";
 import { CuotasDelEquipo } from "./CuotasDelEquipo";
+import { VentasSinFormulario } from "./VentasSinFormulario";
 import { PendientesDeConciliar } from "@/components/conciliacion/PendientesDeConciliar";
 import { TarjetaOrigen } from "@/components/conciliacion/TarjetaOrigen";
 import { TOMAN_SIMULACROS } from "@/lib/simulacros";
@@ -201,6 +202,9 @@ export function MiPanel() {
               <CuotasVencidas e={e} miembro={null} viendoOtro={viendoOtro} ahora={ahora} />
             </>
           )}
+
+          {/* Sus ventas sin formulario atado, sólo para mirar (Aldana, 20/11). */}
+          {!esDirector && <VentasSinFormulario e={e} miembro={miembro} ahora={ahora} />}
 
           {!esDirector && <Rendimiento datos={datos} e={e} rangoTxt={rangoTxt} />}
 

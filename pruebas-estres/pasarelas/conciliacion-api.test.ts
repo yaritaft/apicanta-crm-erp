@@ -72,6 +72,22 @@ test("sin sesión, 401; el que ve sólo lo suyo (closer), 403; el que sólo pued
   assert.equal(filaDe("r_mail").contactoId, undefined, "nada se unió");
 });
 
+test("el closer (sólo lo suyo) puede preguntar «unidos» para ver sus ventas sin formulario (Aldana, 20/11), pero nada más: ni buscar, ni candidatos, ni unir, ni avisar", async () => {
+  sembrar();
+  YO.soloLoSuyo = true; YO.nivel = 2;
+  const u = await pedir({ accion: "unidos", contactoIds: ["c1", "c9"] });
+  assert.equal(u.status, 200);
+  assert.deepEqual(u.json, { unidos: ["c9"] }, "sólo dice cuáles tienen formulario: ningún dato de nadie");
+  for (const cuerpo of [
+    { accion: "buscar", q: "ana" }, { accion: "candidatos", emails: ["ana@mail.com"] }, { accion: "estado" },
+    { accion: "unir", registroId: "r_mail", contactoId: "c1", cruce: "manual" }, { accion: "noes", registroId: "r_mail", personaId: "c1" },
+    { accion: "aviso-origen", mes: "2026-10" }, { accion: "avisar-origen", mes: "2026-10", resumen: { conVenta: 1, soloAgenda: 0 } },
+  ]) assert.equal((await pedir(cuerpo)).status, 403, String(cuerpo.accion));
+  assert.equal(filaDe("r_mail").contactoId, undefined, "nada se unió");
+  YO.nivel = 0;
+  assert.equal((await pedir({ accion: "unidos", contactoIds: ["c1"] })).status, 403, "sin ver ventas, ni eso");
+});
+
 test("unidos: de los contactos pedidos, los que ya tienen un formulario", async () => {
   sembrar();
   const r = await pedir({ accion: "unidos", contactoIds: ["c1", "c9", "c_nadie"] });

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { caminoSugerido, contactosDelMes, marcadosDelMes, otroCaminoDe, pendientesDelMes, propuestasPara, resumirPendientes, type DatosPendientes } from "@/lib/pendientes-conciliar";
+import { caminoSugerido, contactosDelMes, marcadosDelMes, otroCaminoDe, pendientesDelMes, propuestasPara, resumirPendientes, ventasSinFormulario, type DatosPendientes } from "@/lib/pendientes-conciliar";
 import { nuevoRegistro } from "@/lib/registros-webinar";
 import type { Contacto } from "@/lib/types";
 
@@ -96,4 +96,29 @@ test("los marcados del mes se pueden ver para deshacerlos, y los contactos del m
   assert.deepEqual(marcadosDelMes(datos, "2026-10").map((p) => p.id), ["c7"]);
   assert.deepEqual(marcadosDelMes(datos, "2026-09"), []);
   assert.deepEqual(contactosDelMes(datos, "2026-10").sort(), ["c1", "c2", "c3", "c7"], "sin la cancelada ni la venta excluida de Marketing");
+});
+
+/* ---------- Las ventas sin formulario de un closer (Aldana, 20/11) ---------- */
+
+test("un closer ve sus ventas sin formulario; las de otro closer, las que ya tienen formulario y las marcadas no", () => {
+  const pend = pendientesDelMes(datos, "2026-10", new Set(["c1"]));
+  const ventas = [{ id: "v2", closerId: "cl_a" }, { id: "v4", closerId: "cl_a" }, { id: "v6", closerId: "cl_b" }];
+  const suyas = ventasSinFormulario(pend, ventas as never, "cl_a");
+  assert.deepEqual(suyas.map((v) => v.ventaId), ["v2"], "Beto compró y no tiene formulario; Dora es de septiembre y Fer no cuenta para Marketing");
+  assert.equal(suyas[0].nombre, "Beto Gómez");
+  assert.equal(suyas[0].monto, 3000);
+  assert.deepEqual(ventasSinFormulario(pend, ventas as never, "cl_b"), [], "la venta de otro closer no aparece");
+});
+
+test("una agenda sin formulario no es una venta, y sin closer (un dueño mirando) están todas", () => {
+  const pend = pendientesDelMes(datos, "2026-10", new Set());
+  const ventas = [{ id: "v2", closerId: "cl_a" }];
+  assert.ok(pend.some((p) => p.tipo === "agenda"), "hay agendas pendientes");
+  assert.deepEqual(ventasSinFormulario(pend, ventas as never, null).map((v) => v.ventaId), ["v2"]);
+  assert.deepEqual(ventasSinFormulario(pend, ventas as never, "cl_a").map((v) => v.ventaId), ["v2"]);
+});
+
+test("con el formulario unido la venta sale de la lista del closer", () => {
+  const pend = pendientesDelMes(datos, "2026-10", new Set(["c2"]));
+  assert.deepEqual(ventasSinFormulario(pend, [{ id: "v2", closerId: "cl_a" }] as never, "cl_a"), []);
 });

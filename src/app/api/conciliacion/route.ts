@@ -28,6 +28,8 @@ export const maxDuration = 60;
    nivel de los cuatro) y no sea de los que ven «sólo lo suyo» (el closer): el
    director resuelve esto desde su panel (Aldana, 31/10). Ver
    lib/permisos-servidor.ts: la misma función de nivel que usan las políticas.
+   Una excepción, sólo `unidos`: el closer ve en su Mi panel qué ventas suyas no tienen formulario (Aldana, 20/11) y para eso necesita saber
+   cuáles de SUS contactos ya tienen uno. Contesta sí o no por cada id que manda; no devuelve ningún formulario ni dato de nadie.
    ================================================================== */
 
 const MAX_LISTA = 800;
@@ -51,7 +53,7 @@ export async function POST(peticion: Request) {
   const accion = texto(cuerpo?.accion);
   const escribe = accion === "unir" || accion === "noes" || accion === "avisar-origen";
 
-  const noPuede = await exigirArea(peticion, ["finanzas", "marketing", "webinars", "ventas"], escribe ? 2 : 1, { sinSoloLoSuyo: true, cerrado: true });
+  const noPuede = await exigirArea(peticion, ["finanzas", "marketing", "webinars", "ventas"], escribe ? 2 : 1, { sinSoloLoSuyo: accion !== "unidos", cerrado: true });
   if (noPuede) return noPuede;
   const db = nubeServidor();
   if (!db) return NextResponse.json({ error: "Falta configurar la base en el servidor (SUPABASE_SERVICE_ROLE_KEY)." }, { status: 503 });

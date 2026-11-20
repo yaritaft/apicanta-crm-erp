@@ -195,3 +195,28 @@ export function propuestasPara(p: Pendiente, registros: RegistroForm[]): Propues
     Number(b.candidato.segura) - Number(a.candidato.segura) || rango[a.candidato.metodo] - rango[b.candidato.metodo]
     || String(b.registro.registradoEn).localeCompare(String(a.registro.registradoEn)));
 }
+
+/** Una venta que todavía no tiene su formulario, para mostrársela a quien la cerró. */
+export interface VentaSinFormulario { ventaId: string; nombre: string; dia: string; monto?: number; moneda?: Moneda; sinFicha: boolean }
+
+/**
+ * Las ventas de un closer sin formulario atado (y sin marcar como «vino por otro camino»), de la más nueva a la más vieja.
+ * Aldana (20/11): «los closers pueden ver las ventas que no están asignadas a formulario» (el punto 4 de Finanzas). Es sólo para mirar:
+ * unir o marcar sigue siendo de Finanzas y del director. Sin `closerId` (un dueño mirando) se incluyen todas.
+ */
+export function ventasSinFormulario(
+  pendientes: Pendiente[],
+  ventas: Pick<Venta, "id" | "closerId">[],
+  closerId: string | null,
+): VentaSinFormulario[] {
+  const suya = new Map(ventas.map((v) => [v.id, v.closerId] as const));
+  const salida: VentaSinFormulario[] = [];
+  for (const p of pendientes) {
+    for (const ev of p.eventos) {
+      if (ev.tipo !== "venta") continue;
+      if (closerId && suya.get(ev.id) !== closerId) continue;
+      salida.push({ ventaId: ev.id, nombre: p.persona.nombre, dia: ev.dia, monto: ev.monto, moneda: ev.moneda, sinFicha: p.sinFicha });
+    }
+  }
+  return salida.sort((a, b) => b.dia.localeCompare(a.dia) || a.nombre.localeCompare(b.nombre, "es"));
+}
