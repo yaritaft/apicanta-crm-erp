@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { History, Lock } from "lucide-react";
+import { Lock } from "lucide-react";
 import { Opcion } from "@/components/ui/Asistente";
 import { Input } from "@/components/ui/ui";
 import {
@@ -125,17 +125,15 @@ export function DesdeCuandoOpciones({ tipo, modo, valor, onCambiar, liquidacione
         />
       </div>
 
-      {valor && (antes || despues) && (
-        <div className="desde-cuando__queda" aria-live="polite">
-          {valor.tipo === "desde" && antes && (
-            <p><History size={14} aria-hidden /> <strong>Hasta el {diaYMes(diaAntes(valor.dia))}:</strong> {antes}</p>
-          )}
-          {modo !== "sacar" && despues && (
-            <p><strong>{valor.tipo === "desde" ? `Desde el ${diaYMes(valor.dia)}:` : "Siempre:"}</strong> {despues}</p>
-          )}
-          {modo === "sacar" && valor.tipo === "desde" && <p><strong>Desde el {diaYMes(valor.dia)}:</strong> no cobra esto.</p>}
-        </div>
-      )}
+      {valor && (() => {
+        const lineas: React.ReactNode[] = [];
+        if (valor.tipo === "desde" && antes) lineas.push(<p key="a"><strong>Hasta el {diaYMes(diaAntes(valor.dia))}:</strong> {antes}</p>);
+        if (modo !== "sacar" && despues) {
+          lineas.push(<p key="d"><strong>{valor.tipo === "desde" ? `Desde el ${diaYMes(valor.dia)}:` : "Siempre:"}</strong> {despues}</p>);
+        }
+        if (modo === "sacar" && valor.tipo === "desde") lineas.push(<p key="s"><strong>Desde el {diaYMes(valor.dia)}:</strong> no cobra esto.</p>);
+        return lineas.length ? <div className="desde-cuando__queda" aria-live="polite">{lineas}</div> : null;
+      })()}
 
       {cerrados.length > 0 && valor && (
         <p className="desde-cuando__cerrado">

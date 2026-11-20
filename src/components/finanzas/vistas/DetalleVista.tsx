@@ -381,7 +381,7 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
           <Card>
             <CardHead
               titulo="Cómo comisiona cada uno"
-              sub={`El % que cobra cada persona de lo que entra de sus ventas, neto de procesador. Puede ser distinto según el servicio.${esDueno ? "" : " Los % los cambian los dueños, en Equipo y honorarios."}`}
+              sub={`El % que cobra hoy cada persona de lo que entra de sus ventas, neto de procesador. Puede ser distinto según el servicio. Si un % cambió, cada cobro de abajo va con el que valía ese día.${esDueno ? "" : " Los % los cambian los dueños, en Equipo y honorarios."}`}
               acciones={esDueno ? <Link href="/equipo?seccion=comisiones" className="hk-btn hk-btn--secondary hk-btn--sm">Cambiar los %</Link> : undefined}
             />
             <CuadroComisiones e={e} />
