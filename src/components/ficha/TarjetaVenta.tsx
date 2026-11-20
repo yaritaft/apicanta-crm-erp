@@ -26,6 +26,7 @@ import { AccionesDeCuota } from "@/components/cobros/AccionesDeCuota";
 import { CambiarPlan } from "@/components/cobros/CambiarPlan";
 import { ContratoCard } from "@/components/contratos/ContratoCard";
 import { reservaSuelta } from "@/lib/reservas";
+import { marcaDeBaja } from "@/lib/baja-a-downsell";
 
 /* ==================================================================
    Una venta dentro de la ficha: qué compró, cuánto lleva pagado y cada
@@ -75,6 +76,8 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
   const cuotasVenta = e.cuotas.filter((c) => c.ventaId === venta.id);
   /* Sólo la reserva, sin nada más por cobrar: no es una venta «cobrada», es una reserva que falta completar. */
   const suelta = reservaSuelta(venta, cuotasVenta);
+  /* Pasó a Downsell por falta de pago (lib/baja-a-downsell.ts): se dice de dónde venía y hasta cuándo sigue. */
+  const baja = marcaDeBaja(venta);
   /* Los cobros de una cuenta que retiene (Hotmart) que todavía no se acreditaron: no cuentan como plata hasta ese día. */
   const retencion = retenciones(e.procesadores);
   const filas = saldo.cuotas.map((c) => {
@@ -100,6 +103,7 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
             <span className="t-strong" style={{ fontSize: 16 }}>{producto}</span>
             <Badge variante={ESTADO[venta.estado].variante}>{ESTADO[venta.estado].texto}</Badge>
             {suelta && <Badge variante="accent">Reserva</Badge>}
+            {baja && <Badge variante="warning">Pasó a Downsell</Badge>}
             {venta.excluidoMarketing && <Badge variante="warning">Excluida de marketing</Badge>}
           </span>
           <span className="t-sm t-subtle" style={{ display: "block", marginTop: 2 }}>
@@ -151,6 +155,12 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
                 <Button sm variante="primary" style={{ alignSelf: "flex-start" }} onClick={onCompletar}>Completar la reserva · pagó lo que faltaba</Button>
               )}
             </div>
+          )}
+          {baja && (
+            <p className="t-sm t-muted" role="note" style={{ margin: 0 }}>
+              Pasó a {baja.programa} por falta de pago el {fechaLarga(`${baja.dia}T15:00:00.000Z`)}: era {baja.desdePrograma} de {M(baja.precioAnterior)} y
+              quedó en lo que pagó. Sigue hasta el {fechaLarga(`${baja.fin}T15:00:00.000Z`)} (el inicio no cambió).{baja.motivo ? ` Motivo: ${baja.motivo}` : ""}
+            </p>
           )}
           <div>
             <div className="row t-sm" style={{ marginBottom: 6 }}>

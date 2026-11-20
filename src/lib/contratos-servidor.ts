@@ -15,6 +15,7 @@ import type { ConfigContratos } from "./types";
 import { conCodigoDelAlumno, esPerfil, guiaDeBienvenida, htmlDeBienvenida, perfilEfectivo, roadmapYaEnviado, textoDeBienvenida, textoDelRoadmap, type ConfigBienvenida, type NombresDeAccesos } from "./bienvenida-alumno";
 import { codigoDeAlumno, configResend, enviarPorResend, estadoEnResend, leerMailEnResend } from "./reporte-servidor";
 import { diaDeNegocio } from "./dia-negocio";
+import { marcaDeBaja, type MarcaDeBaja } from "./baja-a-downsell";
 
 /* ==================================================================
    Los contratos del lado del servidor: lo que se hace con PandaDoc y lo
@@ -456,8 +457,10 @@ export async function alFirmar(db: SupabaseClient, c: Contrato, opciones: { quie
     /* El servicio arranca cuando dice el contrato (puede ser una semana después del pago). */
     /* A las 12 de Argentina: «2026-10-26» a secas es la medianoche UTC, que en Argentina todavía es el 25. */
     const inicio = typeof c.datos.inicio === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.datos.inicio) ? `${c.datos.inicio}T15:00:00.000Z` : null;
-    /* Una extensión (el MID con 2 meses más) suma mentoría a quien ya cursa: no cambia cuándo empezó. */
-    if (inicio && !delPrograma?.sumaTiempo) await db.from("alumnos").update({ inicio }).eq("id", alumnoId);
+    /* Una extensión (el MID con 2 meses más) suma mentoría a quien ya cursa: no cambia cuándo empezó. Tampoco quien pasó a Downsell por falta de
+       pago (lib/baja-a-downsell.ts): su plazo sigue contando desde el inicio del programa que pagó (Lili, 20/11). */
+    const baja = await bajaDeLaVenta(db, c, alumnoId);
+    if (inicio && !delPrograma?.sumaTiempo && !baja) await db.from("alumnos").update({ inicio }).eq("id", alumnoId);
   }
 
   if (c.accesosEn) return { accesos: null };
@@ -500,6 +503,17 @@ export async function alFirmar(db: SupabaseClient, c: Contrato, opciones: { quie
   await evento(db, c.id, "accesos", opciones.quien ?? "Apicanta", "app", { dados: r.dados, fallaron: r.fallaron, yaEstaban: r.yaEstaban, ...(r.extendidos ? { extendidos: r.extendidos } : {}) });
   return { accesos: r };
 }
+
+/** La marca de «pasó a Downsell por falta de pago» de la venta del contrato (o la del servicio, si el contrato no la trae), o null. */
+async function bajaDeLaVenta(db: SupabaseClient, c: Pick<Contrato, "ventaId">, alumnoId: string): Promise<MarcaDeBaja | null> {
+  try {
+    let ventaId = c.ventaId ?? null;
+    if (!ventaId) ventaId = ((await db.from("alumnos").select("ventaId").eq("id", alumnoId).maybeSingle()).data as { ventaId?: string | null } | null)?.ventaId ?? null;
+    if (!ventaId) return null;
+    return marcaDeBaja((await db.from("ventas").select("extra").eq("id", ventaId).maybeSingle()).data as { extra: Record<string, unknown> } | null);
+  } catch { return null; }
+}
+
 
 /** La venta del contrato (la del contrato o, si no la trae, la del servicio) y por qué los accesos todavía no: sólo pagó la reserva. */
 export async function faltaPagoDelPrograma(db: SupabaseClient, c: Pick<Contrato, "ventaId">, alumnoId: string): Promise<string | null> {

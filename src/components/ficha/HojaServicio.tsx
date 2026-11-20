@@ -496,7 +496,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
         </>
       )}
 
-      {solapa === "pagos" && venta && <PagosServicio e={e} venta={venta} />}
+      {solapa === "pagos" && venta && <PagosServicio e={e} venta={venta} alumno={alumno} puedeEditar={puedeAlumno} />}
 
       {/* El contrato de PandaDoc y los accesos (Wisboo, Telegram, Zoom), cada uno en su solapa y con las mismas filas
           (Juan Cruz, 21/10): lo que hizo la app y, donde todavía no hizo nada, lo marcado a mano en la ficha (con su

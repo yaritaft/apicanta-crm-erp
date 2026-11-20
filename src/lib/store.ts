@@ -2850,6 +2850,26 @@ export const acciones = {
     });
   },
 
+  /* Vuelve a traer de la base una venta y sus cuotas: el servidor acaba de cambiarlas (pasó a Downsell por falta de pago,
+     lib/baja-a-downsell-servidor.ts) y así se ve sin recargar. Antes espera a que no quede nada suyo por escribir. */
+  async traerVentaDe(ventaId: ID): Promise<void> {
+    if (!nube) return;
+    const pendiente = () => cola.some((op) => op.tabla === "ventas" || op.tabla === "cuotas");
+    for (let i = 0; i < 40 && pendiente(); i++) await new Promise((r) => setTimeout(r, 150));
+    if (pendiente()) return;
+    const [v, c] = await Promise.all([
+      nube.from("ventas").select("*").eq("id", ventaId).maybeSingle(),
+      nube.from("cuotas").select("*").eq("ventaId", ventaId),
+    ]);
+    if (v.error || c.error || !v.data || pendiente()) return;
+    const e = snapshot();
+    guardar({
+      ...e,
+      ventas: e.ventas.map((x) => (x.id === ventaId ? (v.data as Venta) : x)),
+      cuotas: [...e.cuotas.filter((x) => x.ventaId !== ventaId), ...((c.data ?? []) as Cuota[])],
+    });
+  },
+
   /* ---------- Gastos fijos (lib/gastos-recurrentes.ts) ----------
      La plantilla de lo que se paga todos los meses. Nada se carga sin
      aprobar: aprobar es lo único que crea el gasto. */

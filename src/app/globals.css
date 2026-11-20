@@ -4639,3 +4639,11 @@ html, body { overscroll-behavior-x: none; }
 }
 .desde-cuando__cerrado svg { flex: none; color: var(--ink-subtle); }
 .reglas__cambio { display: flex; flex-direction: column; gap: 6px; padding-top: var(--space-3); border-top: 1px solid var(--border); }
+
+/* Pasar a Downsell por falta de pago (components/ficha/PasarADownsell.tsx): el resumen antes de confirmar. */
+.downsell-resumen { display: flex; flex-direction: column; gap: var(--space-3); }
+.downsell-resumen__bloque { display: flex; flex-direction: column; gap: 6px; padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-100); }
+.downsell-resumen__bloque[data-tono="alerta"] { border-left: 3px solid var(--warning); }
+.downsell-resumen__bloque[data-tono="bien"] { border-left: 3px solid var(--success); }
+.downsell-resumen__titulo { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink-muted); }
+.downsell-resumen__bloque ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; line-height: 20px; color: var(--ink); }

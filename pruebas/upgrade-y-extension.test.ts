@@ -170,7 +170,8 @@ test("la ficha al firmar: quien sube de un downsell al programa completo suma el
 
 test("al firmar la extensión no se mueve el inicio del alumno ni se manda a otro lado: el código lo dice", () => {
   const f = readFileSync(new URL("../src/lib/contratos-servidor.ts", import.meta.url), "utf8");
-  assert.match(f, /if \(inicio && !delPrograma\?\.sumaTiempo\) await db\.from\("alumnos"\)\.update\(\{ inicio \}\)/);
+  /* 20/11: tampoco quien pasó a Downsell por falta de pago (`!baja`, pruebas/baja-a-downsell-20-11.test.ts). */
+  assert.match(f, /if \(inicio && !delPrograma\?\.sumaTiempo && !baja\) await db\.from\("alumnos"\)\.update\(\{ inicio \}\)/);
   assert.match(f, /extendidos: r\.extendidos/);
 });
 

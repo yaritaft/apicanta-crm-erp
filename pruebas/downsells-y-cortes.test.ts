@@ -246,7 +246,7 @@ test("el cron de cada hora corre la pasada de cortes, después de los contratos 
   const ruta = readFileSync(new URL("../src/app/api/cron/contratos/route.ts", import.meta.url), "utf8");
   assert.match(ruta, /pasarCortes\(db\)/);
   assert.ok(ruta.indexOf("pasarOutboardings(db)") < ruta.indexOf("pasarCortes(db)"), "primero el outboarding");
-  assert.match(ruta, /cortes, \.\.\.\(sueltos/);
+  assert.match(ruta, /cortes, finesDeBaja, \.\.\.\(sueltos/, "y devuelve lo que hizo (también el aviso de fin de quien pasó a Downsell, 20/11)");
 });
 
 /* ---------- la migración, en un Postgres de verdad ---------- */

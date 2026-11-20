@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { partirNombre } from "./contratos";
 import { PRODUCTOS_WISBOO } from "./accesos-alumnos";
-import { cambiarGrupoEnProgramas, esProgramaDownsell, mesesDeCorte, sumarMeses, type Programa } from "./programas";
+import { PROGRAMAS_DOWNSELL, cambiarGrupoEnProgramas, esProgramaDownsell, mesesDeCorte, sumarMeses, type Programa } from "./programas";
+import { marcaDeBaja } from "./baja-a-downsell";
 import { idSeguimiento } from "./seguimiento";
 
 /* ==================================================================
@@ -554,8 +555,23 @@ export async function darAccesos(db: SupabaseClient, a: {
       }
     }
   }
+  /* Pasó a Downsell por falta de pago (lib/baja-a-downsell.ts): lo que se le dé de un downsell, por el contrato o a mano, no pasa del fin del programa
+     que pagó. Va acá para que ningún camino se lo saltee: dar un downsell le levantaría el corte a lo que conservó (`sinCorte`). */
+  if (esProgramaDownsell(a.programa.id)) await topeDeLaBaja(db, a.alumnoId);
   await marcarEnLaFicha(db, a.alumnoId);
   return salida;
+}
+
+/** Si la venta del alumno pasó a Downsell por falta de pago, lo vigente de un downsell que no se corta, o se corta después del fin, se corta el día
+    después del fin (como lo que conservó al pasar). Lo de otro programa que tenga (Hackear Biz) no se toca. */
+export async function topeDeLaBaja(db: SupabaseClient, alumnoId: string): Promise<void> {
+  try {
+    const ventaId = ((await db.from("alumnos").select("ventaId").eq("id", alumnoId).maybeSingle()).data as { ventaId?: string | null } | null)?.ventaId;
+    const baja = ventaId ? marcaDeBaja((await db.from("ventas").select("extra").eq("id", ventaId).maybeSingle()).data as { extra: Record<string, unknown> } | null) : null;
+    if (!baja) return;
+    await db.from("accesos_alumno").update({ venceEn: baja.venceEn, actualizadoEn: new Date().toISOString() })
+      .eq("alumnoId", alumnoId).in("estado", ["dado", "entro"]).in("programa", [...PROGRAMAS_DOWNSELL]).or(`venceEn.is.null,venceEn.gt.${baja.venceEn}`);
+  } catch (e) { console.error("[accesos] no se le puso el tope del downsell", alumnoId, e instanceof Error ? e.message : String(e)); }
 }
 
 /* ---------- Quitar ---------- */

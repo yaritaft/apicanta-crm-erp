@@ -4,6 +4,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type Fila = Record<string, unknown>;
 
+/* «extra->clave»: el filtro de PostgREST sobre una clave de un jsonb. */
+const valor = (f: Fila, c: string): unknown => {
+  const [col, ...camino] = c.split("->");
+  return camino.reduce<unknown>((x, k) => (x && typeof x === "object" ? (x as Fila)[k] : undefined), f[col]);
+};
+
 export function baseEnMemoria(inicial: Record<string, Fila[]> = {}) {
   const tablas: Record<string, Fila[]> = { ...inicial };
   const escritos: { tabla: string; tipo: string; filas: Fila[] }[] = [];
@@ -15,7 +21,7 @@ export function baseEnMemoria(inicial: Record<string, Fila[]> = {}) {
       select: () => q,
       eq: (c: string, v: unknown) => { sel = sel.filter((f) => f[c] === v); return q; },
       in: (c: string, vs: unknown[]) => { sel = sel.filter((f) => vs.includes(f[c])); return q; },
-      not: (c: string, _op: string, v: unknown) => { sel = sel.filter((f) => (v === null ? f[c] !== null && f[c] !== undefined : f[c] !== v)); return q; },
+      not: (c: string, _op: string, v: unknown) => { sel = sel.filter((f) => { const x = valor(f, c); return v === null ? x !== null && x !== undefined : x !== v; }); return q; },
       lte: (c: string, v: string) => { sel = sel.filter((f) => String(f[c]) <= v); return q; },
       or: () => q,
       order: () => q,

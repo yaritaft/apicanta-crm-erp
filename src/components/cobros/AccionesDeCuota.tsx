@@ -11,6 +11,11 @@ import { fechaLarga, money } from "@/lib/format";
 import { montoDe } from "@/lib/monto";
 import { esIncobrable, motivoIncobrable } from "@/lib/cuota-incobrable";
 import type { Cuota } from "@/lib/types";
+import { useAcceso } from "@/lib/acceso";
+import { puedeEditar } from "@/lib/permisos";
+import { PasarADownsell } from "@/components/ficha/PasarADownsell";
+import { MOTIVO_DE_BAJA, marcaDeBaja } from "@/lib/baja-a-downsell";
+import { puedePasarADownsell } from "@/components/ficha/PagosServicio";
 
 /* ==================================================================
    Qué se puede hacer con una cuota que no se cobró en fecha (reunión del
@@ -29,15 +34,17 @@ export function AccionesDeCuota({ cuota }: { cuota: Cuota }) {
   const cobrado = e.pagos.filter((p) => p.cuotaId === cuota.id).reduce((t, p) => t + p.monto, 0);
 
   if (esIncobrable(cuota)) {
+    /* La dejó así el pase a Downsell (la venta vale lo que pagó): volver a cobrarla dejaría la venta pidiendo una cuota que ya no vale. */
+    const delDownsell = motivoIncobrable(cuota).startsWith(MOTIVO_DE_BAJA) && Boolean(marcaDeBaja(e.ventas.find((v) => v.id === cuota.ventaId)));
     return (
       <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 6 }}>
         <span className="t-sm t-subtle">No se va a cobrar{motivoIncobrable(cuota) ? `: ${motivoIncobrable(cuota)}` : ""}</span>
-        <Button
+        {!delDownsell && <Button
           sm variante="ghost" icono={<RotateCcw size={14} />}
           onClick={() => { acciones.reactivarCuota(cuota.id); toast(`Volvió a quedar por cobrar ${nombreDe(cuota)}.`); }}
         >
           Volver a cobrar
-        </Button>
+        </Button>}
       </div>
     );
   }
@@ -89,6 +96,15 @@ function ModalFecha({ cuota, onCerrar }: { cuota: Cuota; onCerrar: () => void })
 function ModalIncobrable({ cuota, onCerrar }: { cuota: Cuota; onCerrar: () => void }) {
   const toast = useToast();
   const [motivo, setMotivo] = useState("");
+  /* Lili, 20/11: si no la paga porque no puede seguir, muchas veces se queda con el downsell con lo que pagó. Eso es otro camino, que además le
+     cambia el programa y los accesos sin correr el plazo (lib/baja-a-downsell.ts): se ofrece desde acá. */
+  const e = useEstado();
+  const { acceso } = useAcceso();
+  const venta = e.ventas.find((v) => v.id === cuota.ventaId);
+  const alumno = e.alumnos.find((a) => a.ventaId === cuota.ventaId);
+  const ofreceDownsell = Boolean(venta && alumno && puedeEditar(acceso, "alumnos") && puedePasarADownsell(e, venta));
+  const [bajando, setBajando] = useState(false);
+  if (bajando && alumno && venta) return <PasarADownsell alumnoId={alumno.id} ventaId={venta.id} nombre={alumno.nombre} onCerrar={onCerrar} />;
   return (
     <Modal
       abierto onCerrar={onCerrar} titulo={`Dar por incobrable ${nombreDe(cuota)}`}
@@ -99,6 +115,13 @@ function ModalIncobrable({ cuota, onCerrar }: { cuota: Cuota; onCerrar: () => vo
       <Field label="¿Por qué no se va a cobrar?" ayuda="Es obligatorio: queda anotado en la cuota y en la actividad.">
         <Textarea rows={3} value={motivo} onChange={(ev) => setMotivo(ev.target.value)} placeholder="Ej.: se dio de baja, no le gustó la mentoría" />
       </Field>
+      {ofreceDownsell && (
+        <p className="t-sm t-muted" style={{ margin: 0 }}>
+          ¿Se queda con el downsell con lo que ya pagó?{" "}
+          <button type="button" className="link" onClick={() => setBajando(true)}>Pasalo a Downsell</button>: le cambia el programa y los accesos sin correr el
+          plazo, y las cuotas que faltan quedan como incobrables solas.
+        </p>
+      )}
     </Modal>
   );
 }

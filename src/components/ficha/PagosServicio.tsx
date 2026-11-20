@@ -1,15 +1,18 @@
 "use client";
 
-import React from "react";
-import { AlertTriangle, ArrowRight, Check, Receipt } from "lucide-react";
+import React, { useState } from "react";
+import { AlertTriangle, ArrowDownRight, ArrowRight, Check, Receipt } from "lucide-react";
 import { Badge, Button } from "@/components/ui/ui";
 import { Avance } from "@/components/finanzas/visual/visual";
 import { saldoVenta } from "@/lib/finanzas";
 import { cobroDeCuota, type CobroDeCuota } from "@/lib/estado-cuota";
 import { motivoIncobrable } from "@/lib/cuota-incobrable";
 import { fechaLarga, money } from "@/lib/format";
-import type { EstadoApp, Venta } from "@/lib/types";
+import type { Alumno, EstadoApp, Venta } from "@/lib/types";
+import { marcaDeBaja } from "@/lib/baja-a-downsell";
+import { esProgramaDownsell, programaDeProducto, programasDe } from "@/lib/programas";
 import { AccionesServicio, BloqueServicio, FilaServicio } from "./FilaServicio";
+import { PasarADownsell } from "./PasarADownsell";
 import { useVerVentaEnFicha } from "./abrir";
 
 /* ==================================================================
@@ -33,8 +36,20 @@ export function cuotasVencidas(e: EstadoApp, venta: Venta | undefined): number {
   return e.cuotas.filter((c) => c.ventaId === venta.id && cobroDeCuota(c, e.pagos).estado === "vencida").length;
 }
 
-export function PagosServicio({ e, venta }: { e: EstadoApp; venta: Venta }) {
+/** ¿Se le ofrece «Pasar a Downsell»? Venta activa de un programa completo que todavía no pagó entero (lib/baja-a-downsell.ts decide el resto). */
+export function puedePasarADownsell(e: EstadoApp, venta: Venta): boolean {
+  if (venta.estado !== "activa" || marcaDeBaja(venta)) return false;
+  const programa = programaDeProducto(programasDe(e.ajustes), venta.productoId);
+  if (!programa || esProgramaDownsell(programa.id)) return false;
+  const { cobrado } = saldoVenta(e, venta.id);
+  return cobrado > 0.009 && cobrado < venta.precioAcordado - 0.009;
+}
+
+export function PagosServicio({ e, venta, alumno, puedeEditar = false }: { e: EstadoApp; venta: Venta; alumno?: Alumno; puedeEditar?: boolean }) {
   const verEnVentas = useVerVentaEnFicha();
+  const [bajando, setBajando] = useState(false);
+  const baja = marcaDeBaja(venta);
+  const fecha = (d: string) => fechaLarga(`${d.slice(0, 10)}T15:00:00.000Z`);
   const M = (n: number, d = 0) => money(n, venta.moneda, d);
   const saldo = saldoVenta(e, venta.id);
   const filas = saldo.cuotas.map((c) => ({ c, ...cobroDeCuota(c, e.pagos) }));
@@ -52,7 +67,27 @@ export function PagosServicio({ e, venta }: { e: EstadoApp; venta: Venta }) {
           title="Abre esta venta en la vista Ventas: ahí se registra un pago, se cambia una fecha o se da una cuota por saldada">
           Ver y registrar pagos
         </Button>
+        {/* Lili, 20/11: no puede seguir pagando → se queda con el downsell con lo que pagó, sin correr el plazo. */}
+        {alumno && puedeEditar && puedePasarADownsell(e, venta) && (
+          <Button sm variante="ghost" icono={<ArrowDownRight size={14} />} onClick={() => setBajando(true)}
+            title="Pasa la venta al downsell con lo que ya pagó, le saca la mentoría y deja el contenido hasta el fin de su programa">
+            Pasar a Downsell · no puede pagar
+          </Button>
+        )}
       </AccionesServicio>
+      {bajando && alumno && (
+        <PasarADownsell alumnoId={alumno.id} ventaId={venta.id} nombre={alumno.nombre} onCerrar={() => setBajando(false)} />
+      )}
+      {baja && (
+        <BloqueServicio titulo="Pasó a Downsell por falta de pago" extra={<span className="hs-chip hs-chip--ambar">{baja.programa}</span>}>
+          <FilaServicio icono={<ArrowDownRight size={15} />} rotulo={`El ${fecha(baja.dia)}`}
+            detalle={`Era ${baja.desdePrograma} de ${M(baja.precioAnterior)}${baja.motivo ? ` · ${baja.motivo}` : ""}`}>
+            <span className="t-sm t-subtle">{e.equipo.find((x) => x.email && x.email.trim().toLowerCase() === baja.quien.trim().toLowerCase())?.nombre ?? baja.quien}</span>
+          </FilaServicio>
+          <FilaServicio icono={<Check size={15} />} rotulo={`Sigue hasta el ${fecha(baja.fin)}`}
+            detalle="El inicio no cambió: ese día se le corta lo que conserva" />
+        </BloqueServicio>
+      )}
       <BloqueServicio titulo="Lo que lleva pagado" extra={resumen}>
         <div className="hs-fila">
           <div style={{ flex: 1, minWidth: 0 }}>
