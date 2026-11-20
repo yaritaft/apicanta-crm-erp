@@ -18,7 +18,7 @@ import {
 import { devolucionesDelMes, liquidadaEn, mesDeLiquidacion, reversasDeComision, type OpcionesDeReversas, type ParteReversa, type Reversa } from "./devoluciones";
 import { descuentaPorCierre, descuentoDesde, diaSinCierreDe, reglaDeCierre, ventasSinCierre } from "./cierre-del-dia";
 import { instanteDeAgenda } from "./resells-agendados";
-import { diaAnterior, diaSiguiente } from "./versiones-regla";
+import { diaAnterior, diaSiguiente, reglasConHistoria } from "./versiones-regla";
 
 /* ==================================================================
    Honorarios: lo que cobra cada uno y la liquidación de cada mes.
@@ -256,6 +256,12 @@ const TRAMOS_DE: Record<BaseMedicion, string> = {
  *  cash", "15% del cash post pasarelas", "5 tarifas por pieza". */
 export function resumenEsquema(esq: EsquemaPago | undefined): string {
   if (!esq || esq.conceptos.length === 0) return esq?.pendiente?.trim() ? "A definir" : "Sin cargar";
+  /* Una regla por renglón, la que vale hoy: las versiones de antes son historia (lib/versiones-regla.ts). */
+  return resumenDe(reglasConHistoria(esq.conceptos, hoyIso()).map((r) => r.actual));
+}
+
+function resumenDe(conceptos: ConceptoPago[]): string {
+  const esq = { conceptos };
   const porMoneda = new Map<Moneda, number>();
   for (const c of esq.conceptos) {
     if (c.tipo === "fijo") porMoneda.set(c.moneda, (porMoneda.get(c.moneda) ?? 0) + (c.monto ?? 0));

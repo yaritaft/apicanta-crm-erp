@@ -280,3 +280,13 @@ test("diaAnterior cruza meses y años", () => {
   assert.equal(diaAnterior("2026-03-01"), "2026-02-28");
   assert.equal(diaAnterior("2027-01-01"), "2026-12-31");
 });
+
+test("el resumen de lo que cobra (la tabla del equipo) muestra sólo lo que vale hoy, no las versiones de antes", async () => {
+  const { resumenEsquema } = await import("@/lib/honorarios");
+  const base = concepto({ id: "b", tipo: "fijo", nombre: "Base", monto: 250 });
+  const com = concepto({ id: "s", tipo: "porcentaje", nombre: "Comisión de setter", tasa: 0.05, base: "cash-neto", alcance: "setter" });
+  const conceptos = conVersiones([base, com], [base, { ...com, tasa: 0.02 }], desde("2026-11-18"), ids);
+  const r = resumenEsquema({ id: "hon_x", miembroId: "x", conceptos, categoriaGasto: "Setters", actualizadoEn: "" });
+  assert.match(r, /2% del cash post pasarelas/);
+  assert.doesNotMatch(r, /5%/);
+});
