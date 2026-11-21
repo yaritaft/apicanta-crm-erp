@@ -24,7 +24,7 @@ import { conAdelantoEnExtra, conExtraEnMes, historialParaFinanzas, mismasTasas, 
 import { sinConfirmarSiCambio } from "./reglas";
 import { diaDeNegocio } from "./dia-negocio";
 import {
-  alumnoDeVenta, alumnoRenovadoPor, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
+  alumnoConLaCompra, alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
   personaDeVenta, planDeVenta, sinVentaPendiente,
 } from "./alumnos";
 import { pagoDesdeMovimiento, tasaEstimada } from "./conciliacion";
@@ -3070,8 +3070,9 @@ export const acciones = {
     /* Quien compra pasa a ser alumno (o se enlaza al que ya era), y eso
        también queda en la actividad: si no, el alumno aparecía de la nada. */
     const desdeVenta = alumnoDesdeVenta(e, venta, cuotas);
-    /* Si ya era alumno y esta compra renueva, su inicio pasa a esta fecha (lib/alumnos.ts → alumnoRenovadoPor). */
-    const renovado = desdeVenta.tocado ? null : alumnoRenovadoPor(e, venta);
+    /* Si ya era alumno, es el mismo: la compra nueva pasa a ser su servicio y, si renueva, su inicio pasa a esta fecha
+       (lib/alumnos.ts → alumnoConLaCompra; la base hace lo mismo para quien no lo ve). */
+    const renovado = desdeVenta.tocado ? null : alumnoConLaCompra(e, venta);
     const conAlumno = renovado
       ? { alumnos: e.alumnos.map((a) => (a.id === renovado.id ? renovado : a)), tocado: renovado }
       : desdeVenta;
@@ -3086,15 +3087,8 @@ export const acciones = {
       actividad = r.lista;
       registros.push(r.nuevo);
     }
-    if (renovado) {
-      const antes = e.alumnos.find((a) => a.id === renovado.id);
-      const r = registrar(
-        { ...e, actividad }, "alumno", renovado.id, renovado.nombre, "actualizo",
-        `${renovado.nombre} renovó: su programa arranca el ${diaDeNegocio(renovado.inicio)} (antes ${antes ? diaDeNegocio(antes.inicio) : "—"}).`,
-      );
-      actividad = r.lista;
-      registros.push(r.nuevo);
-    }
+    /* Lo que la compra le cambió al alumno (su servicio, su inicio) lo anota la base al guardar la venta (compra_al_alumno en
+       supabase/compra-nueva-mismo-alumno-20-11.sql), también cuando lo carga alguien que no ve al alumno: así queda una sola vez. */
 
     /* El CRM se entera: la llamada de la que salió la venta toma el estado
        de compra que corresponde (si nadie le había puesto uno, o si había

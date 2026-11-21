@@ -484,6 +484,38 @@ export function fichaAlFirmar(datos: Partial<DatosContrato>, programa: string, p
   };
 }
 
+/* ---------- ¿Ya se le mandó el contrato de ESTA compra? (lanzamiento interno, 20/11) ----------
+   Al cargar la venta, si a la persona ya se le mandó un contrato desde la app, el asistente deja elegido «Ya se le mandó» para que no le
+   llegue otro sin querer (Lili lo mandó desde PandaDoc antes de que el closer cargara la venta). Pero contaba CUALQUIER contrato: al que
+   tenía firmado el del Downsell y compraba Hackear AI no le salía el del programa, y sin contrato no se le daban los accesos. Cuenta sólo
+   uno del mismo programa que sea de esta compra: sin venta atada todavía, o de las últimas semanas (el de la reserva, el que se mandó
+   antes de cargarla). El de una compra anterior —otro programa, o el mismo hace meses: una renovación— no cuenta. */
+export const DIAS_CONTRATO_DE_ESTA_COMPRA = 31;
+const vivo = (c: Pick<Contrato, "estado">) => c.estado !== "anulado" && c.estado !== "error" && c.estado !== "rechazado";
+
+type OpcionesDeCompra = { completando?: boolean; ahora?: Date; ventaId?: string | null };
+
+export function contratoDeEstaCompra<C extends Pick<Contrato, "estado" | "programa" | "ventaId" | "creadoEn" | "datos">>(
+  contratos: readonly C[], programaId: string | null | undefined, opciones: OpcionesDeCompra = {},
+): C | null {
+  const ahora = (opciones.ahora ?? new Date()).getTime();
+  const reciente = (c: C) => ahora - Date.parse(c.creadoEn) <= DIAS_CONTRATO_DE_ESTA_COMPRA * 86_400_000;
+  return contratos.find((c) => vivo(c)
+    && (!programaId || c.programa === programaId)
+    /* De esta compra: atado a esta misma venta (la que se completa), sin venta todavía o de las últimas semanas. */
+    && ((opciones.ventaId && c.ventaId === opciones.ventaId) || !c.ventaId || reciente(c))
+    /* Completando una reserva, el de la reserva no cuenta como «ya se le mandó»: el que falta es el del programa. */
+    && !(opciones.completando && c.datos?.reserva)) ?? null;
+}
+
+/** El contrato vigente de una compra anterior (el del Downsell de quien ahora pasa al programa), para contárselo al closer. */
+export function contratoDeOtraCompra<C extends Pick<Contrato, "estado" | "programa" | "ventaId" | "creadoEn" | "datos">>(
+  contratos: readonly C[], programaId: string | null | undefined, opciones: OpcionesDeCompra = {},
+): C | null {
+  const deEsta = contratoDeEstaCompra(contratos, programaId, opciones);
+  return contratos.find((c) => vivo(c) && c !== deEsta && !c.datos?.reserva && c.estado === "firmado") ?? null;
+}
+
 /** «Downsell», «Downsell Plus+», «Hackear IA MID» (y su extensión): lo que no es el programa completo. */
 const esDeDownsell = (nombre: string): boolean => /downsell|\bmid\b/i.test(nombre);
 

@@ -411,6 +411,15 @@ export async function darAccesos(db: SupabaseClient, a: {
     await db.from("accesos_alumno").update({ venceEn: null, actualizadoEn: new Date().toISOString() }).eq("id", ya.id);
   };
 
+  /* Lo que ya tenía de un downsell y este programa (el completo) también da pasa a ser de este programa (lanzamiento interno, 20/11: los de
+     Downsell pasan a Hackear AI). Así la ficha muestra todo como de Hackear AI y lo que se haga con los accesos de un downsell (el tope de
+     quien pasó a Downsell por falta de pago, un corte del contenido) no le toca lo que ahora es del programa. */
+  const pasaAlPrograma = async (ya: Acceso) => {
+    if (ya.programa === a.programa.id || !esProgramaDownsell(ya.programa) || esProgramaDownsell(a.programa.id)) return;
+    await db.from("accesos_alumno").update({ programa: a.programa.id, actualizadoEn: new Date().toISOString() }).eq("id", ya.id);
+    ya.programa = a.programa.id;
+  };
+
   /* Un programa de extensión (el MID con 2 meses más): lo que ya tiene vigente CON corte no se vuelve a dar, se le suma el tiempo al corte que
      tiene (o desde hoy / el inicio, si ya venció). Una vez por contrato: «Dar los accesos» dos veces no suma dos veces. Sin contrato (a mano
      desde la ficha) no suma nada. Lo que no tiene corte (el programa completo) ya lo tiene para siempre. */
@@ -439,7 +448,7 @@ export async function darAccesos(db: SupabaseClient, a: {
     for (const producto of cursos) {
       const nombre = PRODUCTOS_WISBOO.find((p) => p.id === producto)?.nombre ?? producto;
       const ya = previo("wisboo", producto);
-      if (ya && (ya.estado === "dado" || ya.estado === "entro")) { salida.yaEstaban++; salida.accesos.push(ya); await sinCorte(ya, "wisboo"); await extiende(ya, "wisboo"); continue; }
+      if (ya && (ya.estado === "dado" || ya.estado === "entro")) { salida.yaEstaban++; salida.accesos.push(ya); await sinCorte(ya, "wisboo"); await extiende(ya, "wisboo"); await pasaAlPrograma(ya); continue; }
       if (!usuarioId) { await anotar({ plataforma: "wisboo", recurso: producto, recursoNombre: nombre, estado: "fallo", externo: {}, error: errorUsuario, dadoEn: null, quitadoEn: null }); continue; }
       try {
         const r = await darCursoWisboo(usuarioId, producto);
@@ -465,6 +474,7 @@ export async function darAccesos(db: SupabaseClient, a: {
       salida.yaEstaban++; salida.accesos.push(ya);
       await sinCorte(ya, "telegram");
       await extiende(ya, "telegram");
+      await pasaAlPrograma(ya);
       const link = typeof ya.externo.link === "string" ? ya.externo.link : null;
       if (link && ya.estado === "dado") salida.links.push({ plataforma: "telegram", nombre, url: link });
       continue;
@@ -497,6 +507,7 @@ export async function darAccesos(db: SupabaseClient, a: {
         salida.yaEstaban++; salida.accesos.push(ya);
         await sinCorte(ya, "zoom");
         await extiende(ya, "zoom");
+        await pasaAlPrograma(ya);
         let joinUrl = typeof ya.externo.joinUrl === "string" ? ya.externo.joinUrl : null;
         /* Dado pero sin su link (se perdió en una reactivación): se lo busca en la lista de aprobados. */
         if (!joinUrl && token) {

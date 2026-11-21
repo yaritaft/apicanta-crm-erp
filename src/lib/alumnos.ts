@@ -2,6 +2,7 @@ import type { Alumno, Cuota, EstadoApp, EtapaServicio, ID, Venta } from "./types
 import { claveEmail } from "./contactos";
 import { esLaMismaPersona } from "./duplicados";
 import { diaDeNegocio } from "./dia-negocio";
+import { programaDeProducto, programasDe } from "./programas";
 
 /* ------------------------------------------------------------------
    Reglas del alumno.
@@ -87,14 +88,58 @@ export function alumnoDeVenta(e: EstadoApp, v: Venta): Alumno | undefined {
    `inicio` del alumno es el del programa en curso, así que una compra que renueva lo corre a su fecha. Renuevan las de un
    producto principal o upsell (Hackear IT/AI/Biz, Resell Mentoría, Upsell, Upgrade AI); no las de un evento (Mastermind,
    cenas) ni un downsell. */
-export function renuevaElPrograma(e: Pick<EstadoApp, "productos">, v: Pick<Venta, "estado" | "productoId">): boolean {
+export function renuevaElPrograma(e: Pick<EstadoApp, "productos"> & Partial<Pick<EstadoApp, "ajustes">>, v: Pick<Venta, "estado" | "productoId">): boolean {
   if (v.estado !== "activa") return false;
   const tipo = e.productos.find((p) => p.id === v.productoId)?.tipo;
-  return tipo === "principal" || tipo === "upsell";
+  /* La extensión del MID (2 meses más de mentoría) suma tiempo a lo que ya cursa: no arranca otro programa. */
+  return (tipo === "principal" || tipo === "upsell") && !esExtension(e, v.productoId);
+}
+
+/* ¿El producto es de un programa de extensión (lib/programas.ts → sumaTiempo)? */
+const esExtension = (e: Partial<Pick<EstadoApp, "ajustes">>, productoId: ID | undefined): boolean =>
+  Boolean(programaDeProducto(programasDe(e.ajustes), productoId)?.sumaTiempo);
+
+/* ---------- Una compra nueva de quien ya es alumno pasa a ser su servicio (Manuel y Juan Cruz, 20/11) ----------
+   Lanzamiento interno: a los de Downsell se les ofrece pasar al programa completo (Hackear AI) y a los de Hackear AI la renovación
+   con Principals. No se toca nada a mano: el closer carga la venta nueva como siempre y el alumno —el mismo, nunca otro— pasa a ese
+   servicio: su venta (la que dicen Pagos, el closer y el plan en Servicio), su plan y, si renueva, su inicio. La venta anterior queda
+   anotada en `extra.ventasAnteriores`. Hasta hoy la venta nueva no le cambiaba nada (seguía «Downsell») y, si la cargaba un closer que
+   no ve a ese alumno, nacía OTRO alumno con la venta nueva (Josue Alvarado, Upgrade AI del 04/11): el contrato y los accesos iban a
+   parar a la copia. La base hace lo mismo para quien no lo ve (supabase/compra-nueva-mismo-alumno-20-11.sql).
+
+   Toma el servicio una compra activa de un programa (principal, upsell o downsell). No lo toman un evento (Mastermind, una cena) ni la
+   extensión del MID, que suman algo a lo que ya cursa; tampoco una venta con fecha anterior a la que ya tiene (cargada tarde). */
+export function tomaElServicio(e: Pick<EstadoApp, "productos" | "ventas"> & Partial<Pick<EstadoApp, "ajustes">>, v: Pick<Venta, "id" | "estado" | "productoId" | "fecha">, actual?: ID): boolean {
+  if (v.estado !== "activa") return false;
+  const tipo = e.productos.find((p) => p.id === v.productoId)?.tipo;
+  if (tipo !== "principal" && tipo !== "upsell" && tipo !== "downsell") return false;
+  if (esExtension(e, v.productoId)) return false;
+  const anterior = actual ? e.ventas.find((x) => x.id === actual) : undefined;
+  return !anterior || anterior.estado !== "activa" || Date.parse(anterior.fecha) <= Date.parse(v.fecha);
+}
+
+/* El alumno tal como queda con esta compra, o null si no le cambia nada: sigue siendo el mismo alumno; si la compra toma el servicio,
+   pasa a esa venta y a ese plan (y vuelve a activo si estaba de baja o egresado); si renueva, su inicio pasa a la fecha de la compra
+   (sólo si es posterior: una venta cargada tarde no lo atrasa). */
+export function alumnoConLaCompra(e: EstadoApp, v: Venta): Alumno | null {
+  const a = alumnoDeVenta(e, v);
+  if (!a || !a.ventaId || a.ventaId === v.id) return null;
+  let nuevo: Alumno = a;
+  if (tomaElServicio(e, v, a.ventaId)) {
+    const anteriores = Array.isArray(a.extra?.ventasAnteriores) ? (a.extra.ventasAnteriores as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    nuevo = {
+      ...nuevo, ventaId: v.id, plan: planDeVenta(e, v) || a.plan, moneda: v.moneda || a.moneda,
+      ...(a.estado === "baja" || a.estado === "graduado" ? { estado: "activo" as const } : {}),
+      extra: { ...(a.extra ?? {}), ventasAnteriores: [...anteriores.filter((x) => x !== a.ventaId), a.ventaId] },
+    };
+  }
+  if (renuevaElPrograma(e, v) && diaDeNegocio(v.fecha) > diaDeNegocio(a.inicio)) nuevo = { ...nuevo, inicio: v.fecha };
+  return nuevo === a ? null : nuevo;
 }
 
 /* El alumno con el inicio corrido a la fecha de esta compra, o null si no corresponde: la compra no renueva, es la primera del
-   alumno (nace con su fecha) o no es posterior a su inicio (una venta cargada tarde no lo atrasa). */
+   alumno (nace con su fecha) o no es posterior a su inicio (una venta cargada tarde no lo atrasa). Sólo el inicio: lo demás que
+   cambia con la compra está en `alumnoConLaCompra`. */
 export function alumnoRenovadoPor(e: EstadoApp, v: Venta): Alumno | null {
   if (!renuevaElPrograma(e, v)) return null;
   const a = alumnoDeVenta(e, v);

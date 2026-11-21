@@ -33,7 +33,7 @@ import { avisoDeVentaRechazada, rechazoDe } from "@/lib/rechazos";
 import { paisCon } from "@/lib/pais-de-telefono";
 import { useAcceso } from "@/lib/acceso";
 import { useToast } from "@/components/ui/Toast";
-import { modalidadDeCuotas, modalidadDeReserva, problemaDeDatos, ROTULO_ESTADO, type Contrato, type DatosContrato } from "@/lib/contratos";
+import { contratoDeEstaCompra, contratoDeOtraCompra, modalidadDeCuotas, modalidadDeReserva, problemaDeDatos, ROTULO_ESTADO, type Contrato, type DatosContrato } from "@/lib/contratos";
 import { plantillaDelContrato, programaDeProducto, programasDe } from "@/lib/programas";
 import { contratosPrendidos, leerContratos, pedirContrato } from "@/components/contratos/cliente";
 import { useAbrirFicha } from "@/components/ficha/abrir";
@@ -607,7 +607,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
           {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} moneda={e.ajustes.monedaBase || "USD"} completando={completando} />}
           {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
           {paso.id === "contrato" && (
-            <PasoContrato b={b} setB={setB} e={e} esDueno={esDueno} modo={modoContrato} encendido={configContratos?.estado === "encendido" || configContratos?.estado === "duenos"} completando={completando} />
+            <PasoContrato b={b} setB={setB} e={e} esDueno={esDueno} modo={modoContrato} encendido={configContratos?.estado === "encendido" || configContratos?.estado === "duenos"} completando={completando} ventaCompletando={completarId} />
           )}
           {paso.id === "resumen" && (
             <PasoResumen
@@ -1573,16 +1573,20 @@ function PasoCobros({ b, setB, e, M, onSubiendo }: {
    plantilla del programa (los del alumno, la modalidad, las sesiones 1 a 1 y los bonos). Si a esa persona ya se
    le mandó un contrato desde la app, queda elegido «Ya se le mandó»: no se le manda otro sin querer. */
 
-function PasoContrato({ b, setB, e, esDueno, modo, encendido, completando }: {
+function PasoContrato({ b, setB, e, esDueno, modo, encendido, completando, ventaCompletando }: {
   b: Borrador; setB: React.Dispatch<React.SetStateAction<Borrador>>; e: EstadoApp;
   esDueno: boolean; modo: "produccion" | "prueba"; encendido: boolean;
   /* Completando una reserva: el contrato de la reserva ya salió; el que falta es el del programa. */
   completando?: boolean;
+  /* La venta que se completa: un contrato del programa atado a ella cuenta como «ya se le mandó», sea de cuando sea. */
+  ventaCompletando?: string;
 }) {
   const programas = useMemo(() => programasDe(e.ajustes), [e.ajustes]);
   const [previo, setPrevio] = useState<Contrato | null | undefined>(undefined);
   /* El contrato de la reserva que ya tiene (sólo al completar): se le cuenta al closer que ahora sale el otro. */
   const [deReservaPrevio, setDeReservaPrevio] = useState<Contrato | null>(null);
+  /* El contrato firmado de otra compra (el del Downsell de quien ahora sube al programa): se le cuenta al closer que sale el nuevo. */
+  const [deOtraCompra, setDeOtraCompra] = useState<Contrato | null>(null);
   const ct = b.contrato;
   const setCt = useCallback((cambios: Partial<Borrador["contrato"]>) => setB((x) => ({ ...x, contrato: { ...x.contrato, ...cambios } })), [setB]);
 
@@ -1621,16 +1625,18 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido, completando }: {
     setCt({ datos, programaId: programa?.id ?? "", decision: !plantillaDelContrato(programa, deReserva).id ? sinPlantilla : sinPagoNuevo ? "despues" : ct.decision });
   }, [ct.datos, ct.decision, b, e, programas, setCt, completando]);
 
-  /* ¿Ya se le mandó uno desde la app? */
+  /* ¿Ya se le mandó el de esta compra desde la app? El de una compra anterior (el Downsell de quien ahora pasa a Hackear AI) no cuenta:
+     sale el del programa nuevo, que al firmarse le suma los accesos que le faltan (lib/contratos.ts → contratoDeEstaCompra). */
+  const programaDeLaVenta = programaDeProducto(programas, b.productoId)?.id ?? "";
   useEffect(() => {
     let vivo = true;
-    if (!b.contactoId) { setPrevio(null); return; }
+    if (!b.contactoId) { setPrevio(null); setDeOtraCompra(null); return; }
     void leerContratos({ leadId: b.contactoId }).then((r) => {
       if (!vivo) return;
       const vivos = r.contratos.filter((c) => c.estado !== "anulado" && c.estado !== "error" && c.estado !== "rechazado");
-      /* Completando una reserva, el contrato de la reserva no cuenta como «ya se le mandó»: el que falta es el del programa. */
-      const vigente = (completando ? vivos.find((c) => !c.datos?.reserva) : vivos[0]) ?? null;
+      const vigente = contratoDeEstaCompra(r.contratos, programaDeLaVenta, { completando, ventaId: ventaCompletando });
       setPrevio(vigente);
+      setDeOtraCompra(contratoDeOtraCompra(r.contratos, programaDeLaVenta, { completando, ventaId: ventaCompletando }));
       const deReserva = completando ? vivos.find((c) => c.datos?.reserva) ?? null : null;
       setDeReservaPrevio(deReserva);
       /* Lo que ya puso para el contrato de la reserva (documento, domicilio, nacimiento) no se le vuelve a pedir: completa lo vacío. */
@@ -1651,9 +1657,9 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido, completando }: {
         });
       }
       if (vigente) setCt({ decision: "ya" });
-    }).catch(() => { if (vivo) setPrevio(null); });
+    }).catch(() => { if (vivo) { setPrevio(null); setDeOtraCompra(null); } });
     return () => { vivo = false; };
-  }, [b.contactoId, setCt, setB, completando]);
+  }, [b.contactoId, programaDeLaVenta, setCt, setB, completando, ventaCompletando]);
 
   const programa = programas.find((p) => p.id === ct.programaId);
   /* Lo que se manda es el contrato de la reserva si así quedó elegido en «Programa» (aunque la venta sea con plan de cuotas). */
@@ -1688,6 +1694,12 @@ function PasoContrato({ b, setB, e, esDueno, modo, encendido, completando }: {
             ? `Ya tiene el contrato de la reserva (${ROTULO_ESTADO[deReservaPrevio.estado].texto.toLowerCase()}), que no da accesos. `
             : ""}
           El del programa es el que da los accesos al firmar{b.cuotas.some((l) => !l.fija && l.cobros.length > 0) ? "." : ": como todavía no cargaste ningún pago nuevo, quedó en «Todavía no»; si lo mandás igual, los accesos esperan al primer pago."}
+        </p>
+      )}
+      {!previo && deOtraCompra && !completando && (
+        <p className="t-sm t-muted" role="note">
+          Ya tiene firmado el contrato de {programas.find((p) => p.id === deOtraCompra.programa)?.nombre ?? deOtraCompra.plantillaNombre}, de su compra anterior.
+          Este es otro: {programa ? `el de ${programa.nombre}` : "el del servicio nuevo"}. Al firmarlo se le suman los accesos que le faltan y se le mantienen los que ya tiene.
         </p>
       )}
       {previo && (
