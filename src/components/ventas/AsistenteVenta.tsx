@@ -21,8 +21,9 @@ import { compararTelefonos } from "@/lib/telefonos";
 import { palabrasEnComun } from "@/lib/duplicados";
 import { nube } from "@/lib/supabase";
 import { descartarComprobante } from "@/lib/comprobantes";
-import type { Cuota, EstadoApp, MiembroEquipo, Movimiento, Sesion, Venta } from "@/lib/types";
+import type { Cuota, EstadoApp, Movimiento, Sesion, Venta } from "@/lib/types";
 import { closerDeLlamada, paseDeLaVenta } from "@/lib/pasar-llamadas";
+import { vende, vendedores } from "@/lib/vendedores";
 import { PAISES, planDePago, webinarDeProyecto } from "@/lib/angelo";
 import { EMBUDO_LANZAMIENTO_INTERNO, esServicioDelLanzamientoInterno, estrategiaDeLaVenta, FALTA_ESTRATEGIA } from "@/lib/estrategia-de-venta";
 import { origenDeUtm, textoUtm } from "@/lib/utms";
@@ -271,7 +272,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
 
   useEffect(() => {
     const m = yo.miembro;
-    if (completando || preelegido.current || !m || !m.activo || (m.rol !== "closer" && m.rol !== "ceo")) return;
+    if (completando || preelegido.current || !m || !m.activo || !vende(m)) return;
     preelegido.current = true;
     setB((x) => (x.closerId ? x : { ...x, closerId: m.id }));
   }, [yo.miembro, completando]);
@@ -602,7 +603,7 @@ export function AsistenteVenta({ onCerrar, onListo, desdeMovimiento, cliente, cl
               <AvisoVentaIdentica e={e} identicas={identicas} />
             </>
           )}
-          {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} yo={yo.miembro} setterMarcado={setterMarcado}
+          {paso.id === "equipo" && <PasoEquipo b={b} set={set} e={e} sinComision={sinComision} setterMarcado={setterMarcado}
             llamada={sesionId ? e.sesiones.find((x) => x.id === sesionId) : undefined} />}
           {paso.id === "plan" && <PasoPlan b={b} setB={setB} M={M} diferencia={diferenciaPlan} moneda={e.ajustes.monedaBase || "USD"} completando={completando} />}
           {paso.id === "cobros" && <PasoCobros b={b} setB={setB} e={e} M={M} onSubiendo={onSubiendo} />}
@@ -1169,18 +1170,16 @@ function PasoPrecio({ b, set, e, M, pagado = 0 }: {
 
 /* ---------- Paso 4: vendedor, director, setter y referido ---------- */
 
-function PasoEquipo({ b, set, e, sinComision, yo, setterMarcado, llamada }: {
+function PasoEquipo({ b, set, e, sinComision, setterMarcado, llamada }: {
   b: Borrador; set: (c: Partial<Borrador>) => void; e: EstadoApp; sinComision: boolean;
-  yo?: MiembroEquipo;
   /* La llamada desde la que se carga la venta: si figura a nombre de otro closer, al guardar pasa al vendedor. */
   llamada?: Sesion;
   /* El setter que marcó la agenda de esta persona (lib/setter-agendas.ts). */
   setterMarcado?: string;
 }) {
-  /* Yari (CEO) como closer sólo le aparece a Yari. Si la app no sabe quién
-     está cargando (sin email en Equipo y honorarios), se muestran todos. */
-  const veCeo = !yo || yo.rol === "ceo" || b.closerId === e.equipo.find((x) => x.rol === "ceo")?.id;
-  const closers = e.equipo.filter((x) => x.activo && (x.rol === "closer" || (x.rol === "ceo" && veCeo)));
+  /* Los mismos vendedores para todos, carguen quien cargue (lib/vendedores.ts): Aldana carga las ventas que cierra Yari (22/11). */
+  const closers = vendedores(e.equipo, b.closerId);
+  const vendedor = closers.find((x) => x.id === b.closerId);
   /* El director es siempre el que está activo (Santi): quien ya no está (Noelia) no se ofrece. */
   const directores = e.equipo.filter((x) => x.rol === "director" && x.activo);
   const setters = e.equipo.filter((x) => x.activo && x.rol === "setter");
@@ -1204,6 +1203,7 @@ function PasoEquipo({ b, set, e, sinComision, yo, setterMarcado, llamada }: {
               : `La llamada no tiene closer. Al guardar la venta queda a nombre de ${pase.a}.`}
           </span>
         )}
+        {sinComision && vendedor && <span className="hk-help">Con {vendedor.nombre} como vendedor no comisiona nadie.</span>}
       </div>
 
       <div className="form-grid">

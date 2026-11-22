@@ -11,6 +11,7 @@ import { fechaLarga, isoDia, money } from "@/lib/format";
 import type { Cuota, EstadoVenta, Moneda, Venta } from "@/lib/types";
 import { proyectoDeWebinar, webinarDeProyecto } from "@/lib/angelo";
 import { rearmarPlan } from "@/lib/cambio-de-plan";
+import { vendedores } from "@/lib/vendedores";
 
 /* Editar una venta ya cargada (y el alta vieja, en un solo formulario).
    Vive aparte porque lo usan la pantalla de Ventas y la ficha de la
@@ -209,7 +210,7 @@ export function FormularioVenta({ borrador, onCerrar, onGuardado }: {
         <Field label="Vendedor" ayuda={sinComision ? "Con Yari como vendedor no comisiona nadie." : undefined}>
           <Select value={f.closerId} placeholder="Sin asignar"
             onChange={(ev) => setF({ ...f, closerId: ev.target.value })}
-            opciones={e.equipo.filter((x) => x.activo && (x.rol === "closer" || x.rol === "ceo")).map((x) => ({ valor: x.id, texto: x.nombre }))} />
+            opciones={vendedores(e.equipo, f.closerId).map((x) => ({ valor: x.id, texto: x.nombre }))} />
         </Field>
         <Field label="Director">
           <Select value={sinComision ? "" : f.directorId} disabled={sinComision} placeholder={sinComision ? "No aplica" : "Sin asignar"}

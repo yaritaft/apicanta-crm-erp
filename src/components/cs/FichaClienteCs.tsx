@@ -7,6 +7,7 @@ import { EnlaceDeReporte } from "./EnlaceDeReporte";
 import { ReportesDelCliente } from "./ReportesDelCliente";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
+import { nombresDeVendedores } from "@/lib/vendedores";
 import { PAISES } from "@/lib/crm-tabla";
 import { configSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
 import { diaAInstante } from "@/lib/dia-negocio";
@@ -86,7 +87,7 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
   const puedeGuardar = !Object.values(errores).some(Boolean);
 
   const duracionSugerida = fila.duracionSugerida ? fila.duracion : null;
-  const closers = e.equipo.filter((m) => m.rol === "closer" && m.activo).map((m) => m.nombre);
+  const closers = nombresDeVendedores(e.equipo);
 
   function guardar() {
     const cuando = new Date().toISOString();

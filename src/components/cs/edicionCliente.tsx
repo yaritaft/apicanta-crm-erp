@@ -6,6 +6,7 @@ import { acciones, useEstado } from "@/lib/store";
 import { nube } from "@/lib/supabase";
 import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
+import { nombresDeVendedores } from "@/lib/vendedores";
 import { corregirPersonaDesdeServicio } from "@/components/ficha/unificar-cliente";
 import { PAISES } from "@/lib/crm-tabla";
 import { formatoDia, textoDeAtraso } from "@/lib/seguimiento";
@@ -52,7 +53,7 @@ export function useEdicionCliente(filas: readonly FilaCliente[], hoy: string) {
     if (clave === "pais") return PAISES;
     if (clave === "plan") return unicos(["Pago único", ...filas.map((f) => f.plan)]);
     if (clave === "garantia") return unicos([...listas.garantias, ...filas.map((f) => f.garantia)]);
-    if (clave === "closer") return unicos(e.equipo.filter((m) => m.rol === "closer" && m.activo).map((m) => m.nombre));
+    if (clave === "closer") return unicos(nombresDeVendedores(e.equipo));
     if (clave === "responsableCv") return unicos([...e.equipo.map((m) => m.nombre), ...filas.map((f) => f.responsableCv)]);
     return undefined;
   };

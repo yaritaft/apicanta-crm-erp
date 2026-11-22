@@ -28,6 +28,7 @@ import { leerMontoCs } from "@/lib/importar-cs";
 import { destinoDeResell } from "@/lib/resell-ficha";
 import { recordarResell } from "@/lib/recordar-testimonio";
 import { money } from "@/lib/format";
+import { nombresDeVendedores } from "@/lib/vendedores";
 import type { ColorCrm, OpcionCrm, Resell } from "@/lib/types";
 import { Pastilla, tonoDeResell } from "./pastillas";
 import { NADA, Recorte, TablaCs } from "./TablaCs";
@@ -384,7 +385,7 @@ export function FormResell({ resell, onCerrar }: { resell?: Resell; onCerrar: ()
   const cash = b.cash.trim() ? leerMontoCs(b.cash) : null;
   const mailOk = !b.email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(b.email.trim());
   const cashOk = !b.cash.trim() || (cash !== null && cash >= 0);
-  const closers = e.equipo.filter((m) => m.rol === "closer" && m.activo).map((m) => m.nombre);
+  const closers = nombresDeVendedores(e.equipo);
   const puedeGuardar = Boolean(b.dia) && (deCalendly || Boolean(b.nombre.trim())) && mailOk && cashOk;
 
   return (
