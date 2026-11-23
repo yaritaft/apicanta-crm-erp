@@ -181,7 +181,8 @@ const t = (iso: string) => { const n = Date.parse(iso); return Number.isFinite(n
 /** Una lista de cobros que ya vienen armados (los de otro renglón), sin volver a medirlos: los LIMITE_LISTA más grandes y lo que falta. */
 export function listaDeItems(items: ItemDesglose[], moneda: Moneda, titulo: string, tituloRecortado = titulo): ListaDesglose | undefined {
   if (items.length === 0) return undefined;
-  const porTamano = [...items].sort((a, b) => b.monto - a.monto || t(a.fecha) - t(b.fecha));
+  /* Por tamaño sin el signo: en la lista de un ajuste, lo que salió va en negativo y cuenta igual que lo que entró. */
+  const porTamano = [...items].sort((a, b) => Math.abs(b.monto) - Math.abs(a.monto) || t(a.fecha) - t(b.fecha));
   const quedan = porTamano.slice(0, LIMITE_LISTA).sort((a, b) => t(a.fecha) - t(b.fecha));
   const resto = porTamano.slice(LIMITE_LISTA);
   return {

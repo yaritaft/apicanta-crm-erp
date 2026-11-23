@@ -1,7 +1,7 @@
 import type {
   PagadoPorFuera,
   AlcanceVentas, BaseMedicion, ConceptoPago, Devolucion, DesgloseLinea, EntradaLiquidacion, EsquemaPago, EstadoApp, ExtraLiquidacion,
-  Gasto, ID, ItemDesglose, LineaLiquidada, Liquidacion, MiembroEquipo, Moneda, Pago, PersonaLiquidada,
+  Gasto, ID, ItemDesglose, LineaLiquidada, Liquidacion, ListaDesglose, MiembroEquipo, Moneda, Pago, PersonaLiquidada,
   PasoDesglose, ResultadoLiquidacion, TasaVigente, TipoConcepto, Venta,
 } from "./types";
 import type { RangoMes } from "./metricas";
@@ -1248,8 +1248,145 @@ export interface RestoDeCorte {
   despues: ItemDesglose[];
 }
 
-/** Un renglón de una persona: lo que se cerró y lo que da hoy con todo el mes. */
-export interface CambioDeRenglon { clave: string; nombre: string; cerrado: number; hoy: number }
+/** Un renglón de una persona: lo que se cerró y lo que da hoy con todo el mes, y de dónde sale la diferencia (23/11: el ajuste sólo
+ *  decía «Comisión: antes → hoy» y nadie sabía por qué; eran ventas que después del cierre pasaron a una estrategia que no le cuenta, y
+ *  costos del mes que bajaron). */
+export interface CambioDeRenglon {
+  clave: string; nombre: string; cerrado: number; hoy: number;
+  /* Los pasos de la cuenta (en plata) que se movieron: «Costos del mes que se le imputan: 70.000 → 68.733». */
+  pasos?: PasoQueCambio[];
+  /* Los cobros que contaban al cerrar y hoy no (con el motivo de hoy) y los que hoy cuentan y al cerrar no. Sólo si el renglón existe en
+     los dos y las dos listas están completas: con un recorte no se sabe qué salió. */
+  salieron?: ItemDesglose[];
+  entraron?: ItemDesglose[];
+}
+export interface PasoQueCambio {
+  texto: string; cerrado: number; hoy: number;
+  /* De qué está hecho el paso (los costos del mes: gastos operativos, pagos al equipo marcados…): las partes que se movieron. */
+  partes?: { texto: string; cerrado: number; hoy: number }[];
+}
+
+/* Un cobro se reconoce por el instante, el monto y la cuenta: el nombre del cliente puede haberse corregido después. */
+const claveDeCobro = (it: ItemDesglose) => `${it.fecha}|${r2(it.monto)}|${it.procesador ?? ""}`;
+
+/* La lista completa de cobros de un renglón; null si guardó un recorte (o nada): no se puede comparar. */
+function cobrosDe(l: LineaLiquidada): ItemDesglose[] | null {
+  const lista = l.desglose?.lista;
+  if (!lista || lista.tipo !== "cobros") return null;
+  if (lista.todos) return lista.todos;
+  return lista.items.length === lista.total ? lista.items : null;
+}
+
+/* Lo que se le resta a una lista (una bolsa: dos cobros iguales cuentan dos veces). */
+function sinLosDe(a: readonly ItemDesglose[], b: readonly ItemDesglose[]): ItemDesglose[] {
+  const quedan = new Map<string, number>();
+  for (const it of b) quedan.set(claveDeCobro(it), (quedan.get(claveDeCobro(it)) ?? 0) + 1);
+  return a.filter((it) => {
+    const k = claveDeCobro(it), n = quedan.get(k) ?? 0;
+    if (n > 0) { quedan.set(k, n - 1); return false; }
+    return true;
+  });
+}
+
+const minuscula = (s: string) => (s ? s[0].toLowerCase() + s.slice(1) : s);
+
+/** De dónde sale lo que cambió en un renglón entre el cierre y hoy: los pasos de la cuenta que se movieron y los cobros que salieron o
+ *  entraron, cada uno con su motivo (el de la regla que hoy lo deja afuera, o el que lo dejaba afuera al cerrar). */
+export function porQueCambioElRenglon(antes: LineaLiquidada, hoy: LineaLiquidada, corteDia = ""): Pick<CambioDeRenglon, "pasos" | "salieron" | "entraron"> {
+  const out: Pick<CambioDeRenglon, "pasos" | "salieron" | "entraron"> = {};
+  const pasosAntes = antes.desglose?.pasos ?? [], pasosHoy = hoy.desglose?.pasos ?? [];
+  const ultimo = pasosHoy.length - 1;
+  const pasos: PasoQueCambio[] = [];
+  pasosHoy.forEach((p, i) => {
+    /* El último «igual» es el renglón mismo; los subtotales y los porcentajes salen de los demás. */
+    if (p.formato !== "plata" || p.op === "igual" || i === ultimo) return;
+    const a = pasosAntes.find((x) => x.texto === p.texto && x.op === p.op && x.formato === "plata");
+    if (!a || Math.abs(r2(p.valor) - r2(a.valor)) < 0.01) return;
+    /* Los subtotales de grupo se repiten en sus partes: van las partes. */
+    const partes = (p.partes ?? []).filter((x) => !x.grupo).flatMap((x) => {
+      const y = (a.partes ?? []).find((z) => z.texto === x.texto && !z.grupo);
+      return y && Math.abs(r2(x.valor) - r2(y.valor)) >= 0.01 ? [{ texto: x.texto, cerrado: r2(y.valor), hoy: r2(x.valor) }] : [];
+    });
+    pasos.push({ texto: p.texto, cerrado: r2(a.valor), hoy: r2(p.valor), ...(partes.length ? { partes } : {}) });
+  });
+  if (pasos.length) out.pasos = pasos;
+  const ca = cobrosDe(antes), ch = cobrosDe(hoy);
+  if (!ca || !ch) return out;
+  /* El mismo cobro en la lista de los que no cuentan del otro lado: su motivo, y su estrategia y closer de ese momento. */
+  const excluidosDe = (l: LineaLiquidada) => {
+    const m = new Map<string, ItemDesglose>();
+    for (const x of l.desglose?.lista?.excluidos ?? []) if (x.motivo && !m.has(claveDeCobro(x))) m.set(claveDeCobro(x), x);
+    return m;
+  };
+  const exHoy = excluidosDe(hoy), exAntes = excluidosDe(antes);
+  /* «Webinar → VSL YOUTUBE»: lo que era al cerrar y lo que es hoy, si cambió. */
+  const deA = (a?: string, b?: string) => (a && b && a !== b ? `${a} → ${b}` : a ?? b);
+  const conLoDeHoy = (it: ItemDesglose, otro: ItemDesglose | undefined, alReves: boolean): Partial<ItemDesglose> => {
+    if (!otro) return {};
+    const [a, b] = alReves ? [otro, it] : [it, otro];
+    const estrategia = deA(a.estrategia, b.estrategia), closer = deA(a.closer, b.closer);
+    return { ...(estrategia ? { estrategia } : {}), ...(closer ? { closer } : {}) };
+  };
+  const salieron = sinLosDe(ca, ch).map((it) => {
+    const x = exHoy.get(claveDeCobro(it));
+    return {
+      ...it, ...conLoDeHoy(it, x, false),
+      monto: -it.monto, ...(it.fee !== undefined ? { fee: -it.fee } : {}), ...(it.neto !== undefined ? { neto: -it.neto } : {}),
+      motivo: x ? `Salió: ${minuscula(x.motivo!)}` : "Salió: hoy ya no está entre sus cobros del mes (se borró, cambió de fecha o de venta)",
+    };
+  });
+  /* Lo que entró después del corte ya va en su propia lista. */
+  const entraron = sinLosDe(ch, ca).filter((it) => !corteDia || diaDe(it.fecha) <= corteDia).map((it) => {
+    const x = exAntes.get(claveDeCobro(it));
+    return {
+      ...it, ...conLoDeHoy(it, x, true),
+      motivo: x ? `Entró: al cerrar no contaba (${minuscula(x.motivo!)})` : "Entró: se cargó o se concilió después de cerrar",
+    };
+  });
+  if (salieron.length) out.salieron = salieron;
+  if (entraron.length) out.entraron = entraron;
+  return out;
+}
+
+/* «Salieron 5 cobros (US$ 9.900): es de la estrategia X, que no cuenta». Con motivos distintos, cuántos de cada uno. */
+function resumenDeCobros(items: readonly ItemDesglose[], verbo: [string, string], moneda: Moneda): string {
+  const porMotivo = new Map<string, number>();
+  for (const it of items) {
+    const m = (it.motivo ?? "").replace(/^(Salió|Entró): /, "");
+    porMotivo.set(m, (porMotivo.get(m) ?? 0) + 1);
+  }
+  const suma = r2(items.reduce((a, it) => a + Math.abs(it.monto), 0));
+  const motivos = [...porMotivo].filter(([m]) => m).map(([m, n]) => (porMotivo.size === 1 ? m : `${m} (${n})`)).join("; ");
+  return `${items.length === 1 ? verbo[0] : verbo[1]} ${cant(items.length, "cobro", "cobros")} (${plata(suma, moneda)})${motivos ? `: ${motivos}` : ""}`;
+}
+
+/* «costos del mes que se le imputan US$ 70.000 → US$ 68.733 (gastos operativos US$ 29.000 → US$ 27.733)». */
+function textoDePasos(pasos: readonly PasoQueCambio[], moneda: Moneda): string {
+  const de = (x: { texto: string; cerrado: number; hoy: number }) => `${minuscula(x.texto)} ${plata(x.cerrado, moneda)} → ${plata(x.hoy, moneda)}`;
+  return pasos.map((p) => `${de(p)}${p.partes?.length ? ` (${p.partes.map(de).join("; ")})` : ""}`).join("; ");
+}
+
+/** Por qué cambió lo de una persona, corto (sin los montos de cada renglón): para la lista del mes cerrado. Vacío si no se sabe. */
+export function porQueCambio(renglones: readonly CambioDeRenglon[], moneda: Moneda): string {
+  const varios = renglones.length > 1;
+  return renglones.map((x) => {
+    const frases: string[] = [];
+    if (x.salieron?.length) frases.push(resumenDeCobros(x.salieron, ["Salió", "Salieron"], moneda));
+    if (x.entraron?.length) frases.push(resumenDeCobros(x.entraron, ["Entró", "Entraron"], moneda));
+    if (x.pasos?.length) frases.push(`En la cuenta: ${textoDePasos(x.pasos, moneda)}`);
+    return frases.length ? `${varios ? `${x.nombre} · ` : ""}${frases.join(". ")}` : "";
+  }).filter(Boolean).join(" · ");
+}
+
+/** Lo que cambió en un renglón, dicho en pocas frases: el monto, los cobros que salieron o entraron y los pasos de la cuenta que se movieron. */
+export function textoDelCambio(x: CambioDeRenglon, moneda: Moneda): string {
+  const d = r2(x.hoy - x.cerrado);
+  const frases = [`${x.nombre}: ${plata(r2(x.cerrado), moneda)} → ${plata(r2(x.hoy), moneda)} (${d > 0 ? "+" : ""}${plata(d, moneda)})`];
+  if (x.salieron?.length) frases.push(resumenDeCobros(x.salieron, ["Salió", "Salieron"], moneda));
+  if (x.entraron?.length) frases.push(resumenDeCobros(x.entraron, ["Entró", "Entraron"], moneda));
+  if (x.pasos?.length) frases.push(`En la cuenta: ${textoDePasos(x.pasos, moneda)}`);
+  return `${frases.join(". ")}.`;
+}
 
 /* Con o sin fecha de corte: lo que cambió después de cerrar el mes anterior pasa solo a este, a cada uno lo suyo. Antes, cerrado sin corte, había
    que sumarlo a mano, y a mano se pierde la cadena (05/11: al corregir 5 ventas de YouTube de octubre, a Agustín le tocaban US$ 495 menos y a
@@ -1274,6 +1411,29 @@ function restoDelMesAnterior(e: EstadoApp, mesAnterior: string): Map<ID, RestoDe
   return out;
 }
 
+/* La lista del renglón de ajuste: los cobros que salieron (en negativo) o entraron desde el cierre, con su motivo, y los que entraron después
+   del corte. Un cobro que cambió en dos renglones de la misma persona va una vez. */
+function listaDelResto(r: RestoDeCorte, dia: string, mon: Moneda): { lista: ListaDesglose } | undefined {
+  const vistos = new Set<string>();
+  const cambiados: ItemDesglose[] = [];
+  for (const x of r.renglones) {
+    for (const it of [...(x.salieron ?? []), ...(x.entraron ?? [])]) {
+      const k = `${claveDeCobro({ ...it, monto: Math.abs(it.monto) })}|${it.monto < 0 ? "-" : "+"}`;
+      if (vistos.has(k)) continue;
+      vistos.add(k);
+      cambiados.push(it);
+    }
+  }
+  if (!cambiados.length) {
+    if (!r.despues.length) return undefined;
+    const lista = listaDeItems(r.despues, mon, `Los cobros después del ${dia} que cuentan en lo suyo`, `Los ${LIMITE_LISTA} cobros más grandes después del ${dia} que cuentan en lo suyo`);
+    return lista ? { lista } : undefined;
+  }
+  const todos = [...cambiados, ...r.despues.map((it) => ({ ...it, motivo: `Entró: después del corte del ${dia}` }))];
+  const lista = listaDeItems(todos, mon, "Los cobros que cambiaron desde el cierre", `Los ${LIMITE_LISTA} cobros más grandes que cambiaron desde el cierre`);
+  return lista ? { lista } : undefined;
+}
+
 function lineaDeResto(cx: Contexto, m: MiembroEquipo, r: RestoDeCorte, entrada: EntradaLiquidacion | undefined): LineaLiquidada {
   const mesAnterior = moverPeriodo(cx.rango.clave, -1);
   const clave = claveDeResto(mesAnterior);
@@ -1293,13 +1453,10 @@ function lineaDeResto(cx: Contexto, m: MiembroEquipo, r: RestoDeCorte, entrada: 
       plataPaso("igual", "Lo que falta pagar", monto, mon),
     ],
     avisos: [
-      ...(r.renglones.length ? [`Qué cambió, renglón por renglón: ${r.renglones.map((x) => {
-        const d = r2(x.hoy - x.cerrado);
-        return `${x.nombre}: ${plata(r2(x.cerrado), mon)} → ${plata(r2(x.hoy), mon)} (${d > 0 ? "+" : ""}${plata(d, mon)})`;
-      }).join(" · ")}.`] : []),
+      ...r.renglones.map((x) => `Qué cambió · ${textoDelCambio(x, mon)}`),
       "Si se reabre el mes anterior y se cierra entero, esta diferencia queda en cero. Si no corresponde, se puede corregir el monto a mano.",
     ],
-    ...(r.despues.length ? { lista: listaDeItems(r.despues, mon, `Los cobros después del ${dia} que cuentan en lo suyo`, `Los ${LIMITE_LISTA} cobros más grandes después del ${dia} que cuentan en lo suyo`) } : {}),
+    ...(listaDelResto(r, dia, mon) ?? {}),
   };
   let detalle = r.corte
     ? `Con todo ${nombreMes} da ${plata(r.hoy, mon)} y se pagaron ${plata(r.cerrado, mon)} al cerrar hasta el ${dia}`
@@ -1697,7 +1854,8 @@ export function diferenciasDesdeElCierre(e: EstadoApp, liq: Liquidacion) {
       const claves = new Set([...(a?.lineas ?? []).map((l) => l.clave), ...p.lineas.map((l) => l.clave)]);
       const renglones: CambioDeRenglon[] = [...claves].filter((c) => !c.startsWith(PREFIJO_DE_RESTO)).map((clave) => {
         const x = a?.lineas.find((l) => l.clave === clave), y = p.lineas.find((l) => l.clave === clave);
-        return { clave, nombre: y?.nombre ?? x?.nombre ?? clave, cerrado: x?.montoBase ?? 0, hoy: y?.montoBase ?? 0 };
+        const cambio: CambioDeRenglon = { clave, nombre: y?.nombre ?? x?.nombre ?? clave, cerrado: x?.montoBase ?? 0, hoy: y?.montoBase ?? 0 };
+        return x && y && Math.abs(cambio.hoy - cambio.cerrado) >= 0.01 ? { ...cambio, ...porQueCambioElRenglon(x, y, corteDia) } : cambio;
       }).filter((c) => Math.abs(c.hoy - c.cerrado) >= 0.01);
       /* Los cobros que entraron después del corte y cuentan en algún renglón suyo: salen de las listas de sus renglones de hoy. */
       const vistos = new Set<string>();

@@ -126,5 +126,5 @@ test("el resto dice qué renglones cambiaron y qué cobros entraron después del
   assert.ok(resto.desglose?.lista, "el renglón del resto trae la lista de cobros");
   assert.equal(resto.desglose!.lista!.items[0].cliente, "Belén Godoy");
   assert.match(resto.desglose!.lista!.titulo, /cobros después del 16\/09/);
-  assert.match(resto.desglose!.avisos!.join(" "), /Qué cambió, renglón por renglón: Comisión de closer/);
+  assert.match(resto.desglose!.avisos!.join(" "), /Qué cambió · Comisión de closer/);
 });

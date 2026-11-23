@@ -22,7 +22,7 @@ import { fechaLarga, money, num } from "@/lib/format";
 import { escribirMonto, infoGrupo, categoriaDe, leerMonto } from "@/lib/gastos";
 import { pedirBlue } from "@/lib/dolar";
 import {
-  calcularLiquidacion, claveEntrada, diferenciasDesdeElCierre, esPeriodo, pasaAlMesQueSigue, extrasPorVenir, faltantes, gastosDeLiquidacion,
+  calcularLiquidacion, claveEntrada, diferenciasDesdeElCierre, esPeriodo, pasaAlMesQueSigue, porQueCambio, extrasPorVenir, faltantes, gastosDeLiquidacion,
   infoBase, informeParaEnviar, liquidacionCsv, liquidacionVacia, mesesParaExtra, moverPeriodo, nombrePeriodo, periodoDe, plata, rangoDePeriodo, textoParaEnviar,
 } from "@/lib/honorarios";
 import type {
@@ -400,16 +400,21 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
               der={<span className="t-sm t-muted">{cambios.length} {cambios.length === 1 ? "persona" : "personas"}</span>}
             >
               <ul className="liq-difs">
-                {cambios.map((x) => (
-                  <li key={x.miembroId} className="liq-difs__fila">
-                    <span className="truncate">{x.nombre}</span>
-                    <span className="liq-difs__barra" aria-hidden>
-                      <i style={{ width: `${(x.cerrado / topeCambios) * 100}%` }} /><i data-suma style={{ width: `${(Math.max(x.hoy - x.cerrado, 0) / topeCambios) * 100}%` }} />
-                    </span>
-                    <span className="t-num t-sm t-subtle">{plata(x.cerrado, base)}</span>
-                    <span className="t-num t-sm t-strong">{x.hoy >= x.cerrado ? "+" : "−"}{plata(Math.abs(x.hoy - x.cerrado), base)}</span>
-                  </li>
-                ))}
+                {cambios.map((x) => {
+                  /* Por qué cambió: los cobros que salieron o entraron (con el motivo) y lo que se movió en la cuenta. */
+                  const porque = porQueCambio(x.renglones, base);
+                  return (
+                    <li key={x.miembroId} className="liq-difs__fila">
+                      <span className="truncate">{x.nombre}</span>
+                      <span className="liq-difs__barra" aria-hidden>
+                        <i style={{ width: `${(x.cerrado / topeCambios) * 100}%` }} /><i data-suma style={{ width: `${(Math.max(x.hoy - x.cerrado, 0) / topeCambios) * 100}%` }} />
+                      </span>
+                      <span className="t-num t-sm t-subtle">{plata(x.cerrado, base)}</span>
+                      <span className="t-num t-sm t-strong">{x.hoy >= x.cerrado ? "+" : "−"}{plata(Math.abs(x.hoy - x.cerrado), base)}</span>
+                      {porque && <span className="liq-difs__porque" title={porque}>{porque}</span>}
+                    </li>
+                  );
+                })}
               </ul>
             </Senal>
           )}

@@ -92,6 +92,10 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
   /* Quién cerró y por qué estrategia entró cada cobro: para chequear que no haya ventas de Yari ni lanzamientos internos. Lo guardado antes no lo trae. */
   const conQuien = cobros && filas.some((x) => x.closer || x.estrategia);
   const exConQuien = excluidos.some((x) => x.closer || x.estrategia);
+  /* La lista de un ajuste dice qué le pasó a cada cobro desde el cierre («Salió: es de la estrategia…»), debajo del cliente. */
+  const conMotivo = filas.some((x) => x.motivo);
+  /* Lo que se quedó el procesador resta; en un cobro que salió (en negativo) vuelve. */
+  const feeTexto = (v?: number) => (v ? `${v < 0 ? "+" : "−"}${plata(Math.abs(v), moneda)}` : "—");
   const fila = (x: ItemDesglose, i: number) => (
     <tr key={i}>
       <td className="liq-lista__fecha">{fecha(x.fecha)}</td>
@@ -102,20 +106,21 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
             {[x.servicio, cobros ? x.procesador : undefined, x.cuota, completa && x.ventaFecha ? `venta del ${fecha(x.ventaFecha)}` : undefined].filter(Boolean).join(" · ")}
           </span>
         )}
+        {x.motivo && <span className="liq-lista__cambio" data-sale={x.monto < 0 ? true : undefined}>{x.motivo}</span>}
       </td>
       {conQuien && <td className="liq-lista__txt">{x.closer ?? "—"}</td>}
       {conQuien && <td className="liq-lista__txt">{x.estrategia ?? "—"}</td>}
       <td className="liq-lista__num">{plata(x.monto, moneda)}</td>
-      {cobros && <td className="liq-lista__num liq-lista__num--chico">{x.fee ? `−${plata(x.fee, moneda)}` : "—"}</td>}
+      {cobros && <td className="liq-lista__num liq-lista__num--chico">{feeTexto(x.fee)}</td>}
       {cobros && <td className="liq-lista__num">{plata(x.neto ?? x.monto, moneda)}</td>}
     </tr>
   );
   /* Para pegar en una planilla o mandárselo al closer: una línea por cobro, separado por tabulaciones, con los números sin formato. */
   async function copiar() {
     const n2 = (v?: number) => (v ?? 0).toFixed(2);
-    const lineas = [["Fecha", "Cliente", "Servicio", "Closer", "Estrategia", "Procesador", "Cuota", "Fecha de la venta", "Cobrado", "Lo que se quedó el procesador", "Neto"].join("\t")];
+    const lineas = [["Fecha", "Cliente", "Servicio", "Closer", "Estrategia", "Procesador", "Cuota", "Fecha de la venta", "Cobrado", "Lo que se quedó el procesador", "Neto", ...(conMotivo ? ["Qué cambió"] : [])].join("\t")];
     for (const x of filas) {
-      lineas.push([x.fecha.slice(0, 10), x.cliente, x.servicio ?? "", x.closer ?? "", x.estrategia ?? "", x.procesador ?? "", x.cuota ?? "", x.ventaFecha?.slice(0, 10) ?? "", n2(x.monto), n2(x.fee), n2(x.neto ?? x.monto)].join("\t"));
+      lineas.push([x.fecha.slice(0, 10), x.cliente, x.servicio ?? "", x.closer ?? "", x.estrategia ?? "", x.procesador ?? "", x.cuota ?? "", x.ventaFecha?.slice(0, 10) ?? "", n2(x.monto), n2(x.fee), n2(x.neto ?? x.monto), ...(conMotivo ? [x.motivo ?? ""] : [])].join("\t"));
     }
     try { await navigator.clipboard.writeText(lineas.join("\n")); toast(`Copiados los ${filas.length} cobros: pegalos en una planilla.`); }
     catch { toast("No pude copiar. Probá de nuevo.", "err"); }
@@ -160,7 +165,7 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
                 {conQuien && <td />}
                 {conQuien && <td />}
                 <td className="liq-lista__num">{plata(lista.resto.monto, moneda)}</td>
-                {cobros && <td className="liq-lista__num liq-lista__num--chico">{lista.resto.fee ? `−${plata(lista.resto.fee, moneda)}` : "—"}</td>}
+                {cobros && <td className="liq-lista__num liq-lista__num--chico">{feeTexto(lista.resto.fee)}</td>}
                 {cobros && <td className="liq-lista__num">{plata(lista.resto.neto ?? lista.resto.monto, moneda)}</td>}
               </tr>
             )}
@@ -171,7 +176,7 @@ function ListaDeLoQueEntro({ lista }: { lista: ListaDesglose }) {
                 {conQuien && <td />}
                 {conQuien && <td />}
                 <td className="liq-lista__num">{plata(total("monto"), moneda)}</td>
-                {cobros && <td className="liq-lista__num liq-lista__num--chico">{total("fee") ? `−${plata(total("fee"), moneda)}` : "—"}</td>}
+                {cobros && <td className="liq-lista__num liq-lista__num--chico">{feeTexto(total("fee"))}</td>}
                 {cobros && <td className="liq-lista__num">{plata(total("neto"), moneda)}</td>}
               </tr>
             )}

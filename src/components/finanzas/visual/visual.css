@@ -182,6 +182,8 @@ button.liq-check[data-hecho]:hover { color: var(--surface-000); opacity: .85; }
 .liq-difs__fila { display: grid; grid-template-columns: minmax(120px, 170px) minmax(0, 1fr) 96px 96px; align-items: center; column-gap: var(--space-3); min-height: 28px; font-size: 13px; color: var(--ink-muted); }
 .liq-difs__fila > :nth-child(3), .liq-difs__fila > :nth-child(4) { text-align: right; }
 .liq-difs__barra { display: flex; gap: 2px; height: 6px; min-width: 0; }
+/* Por qué cambió (los cobros que salieron o entraron, lo que se movió en la cuenta): debajo de la fila, a todo el ancho, hasta dos líneas. */
+.liq-difs__porque { grid-column: 1 / -1; margin: -2px 0 var(--space-2); font-size: 12px; line-height: 1.4; color: var(--ink-subtle); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .liq-difs__barra i { display: block; height: 100%; border-radius: 3px; background: var(--viz-4); }
 .liq-difs__barra i[data-suma] { background: var(--viz-1); }
 .liq-ajustes { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); align-items: center; padding: var(--space-3) var(--space-5); background: var(--surface-100); border: 1px solid var(--border); border-radius: var(--radius-lg); }
