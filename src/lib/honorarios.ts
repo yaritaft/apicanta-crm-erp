@@ -1,4 +1,5 @@
 import type {
+  PagadoPorFuera,
   AlcanceVentas, BaseMedicion, ConceptoPago, Devolucion, DesgloseLinea, EntradaLiquidacion, EsquemaPago, EstadoApp, ExtraLiquidacion,
   Gasto, ID, ItemDesglose, LineaLiquidada, Liquidacion, MiembroEquipo, Moneda, Pago, PersonaLiquidada,
   PasoDesglose, ResultadoLiquidacion, TasaVigente, TipoConcepto, Venta,
@@ -1391,6 +1392,58 @@ const CATEGORIAS_DE_EQUIPO = new Set(["Equipo / Salarios", "Edición de contenid
  *  resto) y nadie más. */
 export interface OpcionesDeLiquidacion { sinResto?: boolean }
 
+/* ---------- Lo que se pagó por fuera de la app ----------
+   Julio, agosto y septiembre de 2026 se liquidaron y pagaron con la planilla de Angelo. La app los recalcula con las reglas y los datos de
+   hoy (reglas que cambiaron después, comisiones de procesador reales, cuotas que pasaron de un closer a otro) y no da lo que se pagó
+   (Aldana, 23/11). Con lo pagado cargado (Liquidacion.porFuera), la persona cobra eso: los
+   renglones de la cuenta quedan a la vista y este renglón es la diferencia. No es «en Finanzas»: al cerrar entra en los costos, así el mes
+   cuesta lo que se pagó. */
+export const CLAVE_PAGADO = "pagado-por-fuera";
+
+const diaDeFecha = (f?: string) => (f && /^\d{4}-\d{2}-\d{2}/.test(f) ? `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}` : "");
+
+function lineaDePagadoPorFuera(cx: Contexto, p: PagadoPorFuera, cuentaDaba: number, variable: boolean): LineaLiquidada {
+  const base = cx.base;
+  const monto = r2(p.monto);
+  const dif = r2(monto - cuentaDaba);
+  const dia = diaDeFecha(p.fecha);
+  const nota = p.nota?.trim();
+  return {
+    clave: CLAVE_PAGADO, tipo: "pagado", nombre: "Diferencia con lo que se pagó",
+    detalle: `Se le pagó ${plata(monto, base)}${dia ? ` el ${dia}` : ""} por fuera de la app; la cuenta de la app da ${plata(cuentaDaba, base)}`,
+    moneda: base, monto: dif, montoBase: dif, variable, enFinanzas: false,
+    ...(p.cargadoPor || p.cargadoEn ? { cargado: `Lo cargó${p.cargadoPor ? ` ${p.cargadoPor}` : ""}${p.cargadoEn ? ` el ${fechaLarga(p.cargadoEn)}` : ""}.` } : {}),
+    desglose: {
+      regla: "Lo que se le pagó por fuera de la app manda sobre la cuenta: este renglón completa lo que se pagó.",
+      moneda: base,
+      pasos: [
+        { op: "base", texto: `Se le pagó por fuera de la app${dia ? ` (${dia})` : ""}`, valor: monto, formato: "plata", moneda: base },
+        { op: "menos", texto: "Lo que da la cuenta de la app con las reglas y los datos de hoy", valor: cuentaDaba, formato: "plata", moneda: base },
+        { op: "igual", texto: "Diferencia", valor: dif, formato: "plata", moneda: base },
+      ],
+      avisos: [nota ? `De dónde sale lo pagado: ${nota}.` : "Lo pagado se cargó a mano."],
+    },
+  };
+}
+
+/** Lo que se le pagó por fuera de la app a cada uno en esa liquidación (vacío si no hay nada cargado). */
+export function pagadosPorFuera(liq?: Pick<Liquidacion, "porFuera"> | null): Record<ID, PagadoPorFuera> {
+  return liq?.porFuera?.personas ?? {};
+}
+
+/** La liquidación con lo pagado a una persona cargado (o sacado, con null). Lo cerrado no cambia: devuelve null. */
+export function conPagadoPorFuera(liq: Liquidacion, miembroId: ID, pagado: PagadoPorFuera | null, fuente?: string): Liquidacion | null {
+  if (liq.estado === "cerrada") return null;
+  const personas = { ...pagadosPorFuera(liq) };
+  if (pagado && Number.isFinite(pagado.monto)) personas[miembroId] = { ...pagado, monto: r2(pagado.monto) };
+  else delete personas[miembroId];
+  const hay = Object.keys(personas).length > 0;
+  return {
+    ...liq,
+    porFuera: hay ? { ...(liq.porFuera ?? {}), ...(fuente ? { fuente } : {}), personas } : null,
+  };
+}
+
 export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquidacion | null, opciones: OpcionesDeLiquidacion = {}): ResultadoLiquidacion {
   const rango = rangoDePeriodo(periodo);
   /* Con fecha de corte, el profit y las devoluciones también llegan sólo hasta ese día. */
@@ -1413,7 +1466,9 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
      silencio. De ésos, sólo sale lo cargado a mano. */
   const aLiquidar = miembrosALiquidar(e, periodo.slice(0, 7) + "-01");
   const yaSalen = new Set(aLiquidar.map((m) => m.id));
-  const soloMontos = new Set(e.equipo.filter((m) => !yaSalen.has(m.id) && extras.some((x) => x.miembroId === m.id)).map((m) => m.id));
+  /* Y quien tiene cargado lo que se le pagó por fuera de la app aunque ya no esté: cobra lo que se le pagó. */
+  const porFuera = pagadosPorFuera(liq);
+  const soloMontos = new Set(e.equipo.filter((m) => !yaSalen.has(m.id) && (extras.some((x) => x.miembroId === m.id) || porFuera[m.id])).map((m) => m.id));
 
   /* Las devoluciones que se le descuentan a alguien este mes: las de la fecha
      de este mes y las que llegaron tarde (con su mes ya cerrado), que entran
@@ -1559,6 +1614,16 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
       const adelanto = concepto ? lineaDeAdelanto(cx, x, concepto) : null;
       if (adelanto) ls.push(adelanto);
     }
+    /* Si se le pagó por fuera de la app, cobra eso: la diferencia con la cuenta va en un renglón aparte. */
+    const pagado = porFuera[persona.miembroId];
+    let pagadoPorFuera: PersonaLiquidada["pagadoPorFuera"];
+    if (pagado && Number.isFinite(pagado.monto)) {
+      const cuentaDaba = r2(ls.reduce((a, l) => a + l.montoBase, 0));
+      /* Variable si algo de lo que cobra es variable (una comisión); si sólo tiene fijo (o nada cargado), fijo. */
+      const variable = ls.some((l) => l.variable);
+      if (Math.abs(r2(pagado.monto) - cuentaDaba) >= 0.005) ls.push(lineaDePagadoPorFuera(cx, pagado, cuentaDaba, variable));
+      pagadoPorFuera = { ...pagado, monto: r2(pagado.monto), cuentaDaba };
+    }
     const sumas: Partial<Record<Moneda, number>> = {};
     for (const l of ls) sumas[l.moneda] = r2((sumas[l.moneda] ?? 0) + l.monto);
     const deuda: Partial<Record<Moneda, number>> = {};
@@ -1573,8 +1638,17 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
     for (const l of ls) aPagar[l.moneda] = r2((aPagar[l.moneda] ?? 0) + l.monto);
     const fijo = r2(ls.filter((l) => !l.variable).reduce((a, l) => a + l.montoBase, 0));
     const variable = r2(ls.filter((l) => l.variable).reduce((a, l) => a + l.montoBase, 0));
-    return { ...persona, lineas: ls, aPagar, fijo, variable, total: r2(fijo + variable), ...(Object.keys(deuda).length ? { deuda } : {}) };
-  }).filter((p) => !p.inactivo || Math.abs(p.total) >= 0.005 || p.lineas.some((l) => l.corregido) || Boolean(p.deuda));
+    return {
+      ...persona, lineas: ls, aPagar, fijo, variable, total: r2(fijo + variable), ...(Object.keys(deuda).length ? { deuda } : {}),
+      ...(pagadoPorFuera ? { pagadoPorFuera } : {}),
+    };
+  }).filter((p) => !p.inactivo || Math.abs(p.total) >= 0.005 || p.lineas.some((l) => l.corregido) || Boolean(p.deuda) || Boolean(p.pagadoPorFuera));
+
+  /* Lo que se pagó por fuera de la app y la cuenta no tenía también entra en los costos al cerrar: el profit del mes lo resta. */
+  const difPagado = r2(personas.reduce((a, p) => {
+    if ((categoriaDe(e, p.categoriaGasto)?.grupo ?? "operativo") === "dueno") return a;
+    return a + p.lineas.filter((l) => l.tipo === "pagado").reduce((x, l) => x + l.montoBase, 0);
+  }, 0));
 
   const aPagar: Partial<Record<Moneda, number>> = {};
   for (const p of personas) {
@@ -1585,7 +1659,7 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
     total: r2(personas.reduce((a, p) => a + p.total, 0)),
     fijo: r2(personas.reduce((a, p) => a + p.fijo, 0)),
     variable: r2(personas.reduce((a, p) => a + p.variable, 0)),
-    aPagar, tipoCambio: tc, profit, calculadoEn: new Date().toISOString(),
+    aPagar, tipoCambio: tc, profit: r2(profit - difPagado), calculadoEn: new Date().toISOString(),
     ...(corte && liq?.corte ? { corte: liq.corte } : {}),
   };
 }
@@ -1593,8 +1667,9 @@ export function calcularLiquidacion(e: EstadoApp, periodo: string, liq?: Liquida
 /** Lo que hay que mirar antes de cerrar: renglones sin cargar, arreglos a
  *  definir y lo que se paga en pesos sin tipo de cambio. */
 export function faltantes(r: ResultadoLiquidacion) {
-  const lineas = r.personas.flatMap((p) => p.lineas.filter((l) => l.falta).map((l) => ({ persona: p, linea: l })));
-  const pendientes = r.personas.filter((p) => !p.inactivo && (p.pendiente || p.sinCargar));
+  /* A quien se le pagó por fuera de la app no le falta nada: ya cobró lo que se le pagó. */
+  const lineas = r.personas.filter((p) => !p.pagadoPorFuera).flatMap((p) => p.lineas.filter((l) => l.falta).map((l) => ({ persona: p, linea: l })));
+  const pendientes = r.personas.filter((p) => !p.inactivo && !p.pagadoPorFuera && (p.pendiente || p.sinCargar));
   const sinCambio = !(r.tipoCambio > 0) && r.personas.some((p) => p.lineas.some((l) => l.moneda !== "USD" && l.monto !== 0));
   return { lineas, pendientes, sinCambio };
 }

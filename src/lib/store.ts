@@ -12,6 +12,8 @@ import { lecturaAlLeer, recibidosAlLlegar } from "./chat-equipo";
 import { configSeguimiento, seguimientoVacio } from "./seguimiento";
 import { resellNormal, retiroDelTestimonioAgendado, seguimientoCompleto, siguienteNumero, testimonioNormal } from "./clientes-cs";
 import { revisionCvNormal } from "./revision-cv";
+import type { PagadoPorFuera } from "./types";
+import { cierrePorFuera, tienePagadoPorFuera } from "./pagado-por-fuera";
 import type { EsquemaPago, EstadoSeguimientoCobro, SeguimientoCobro, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { alDesmarcar, gastoDelPago, type PagoARegistrar } from "./pagos-liquidacion";
 import { conciliarPuntas, llegadaDeCobro, motivoDelMovimiento, paseDelCobro, rutaDe, type Punta } from "./traspasos";
@@ -20,7 +22,7 @@ import { cobrosAnulados, NOTA_ANULADO } from "./mercury";
 import { MOTIVO_ANULADO } from "./motivos";
 import { categoriaDe } from "./gastos";
 import { esPagoDeTarjeta, problemaDelReparto, type CompraDeTarjeta } from "./reparto-tarjeta";
-import { conAdelantoEnExtra, conExtraEnMes, historialParaFinanzas, mismasTasas, mismoHistorial, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
+import { conAdelantoEnExtra, conExtraEnMes, conPagadoPorFuera, historialParaFinanzas, mismasTasas, mismoHistorial, nombrePeriodo, sinExtraEnLiquidacion, tasaParaFinanzas, tasasPorServicio } from "./honorarios";
 import { sinConfirmarSiCambio } from "./reglas";
 import { diaDeNegocio } from "./dia-negocio";
 import {
@@ -4871,28 +4873,47 @@ export const acciones = {
   cerrarLiquidacion(liq: Liquidacion, resultado: ResultadoLiquidacion, gastos: Gasto[], por: string) {
     const e = snapshot();
     const cuando = ahora();
+    /* Un mes que se pagó por fuera de la app (lib/pagado-por-fuera.ts): quien tiene lo pagado cargado queda pagado, y los gastos de la
+       planilla vieja que eran esos mismos pagos se marcan como pago al equipo para que el sueldo no cuente dos veces. */
+    const fuera = tienePagadoPorFuera(liq) ? cierrePorFuera(e, liq, resultado, cuando) : null;
+    const marcar = new Set(fuera?.marcar ?? []);
     const cerrada: Liquidacion = {
       ...liq, estado: "cerrada", resultado, gastoIds: gastos.map((g) => g.id),
       cerradaEn: cuando, cerradaPor: por, actualizadoEn: cuando,
+      ...(fuera ? {
+        pagos: fuera.pagos,
+        porFuera: { ...liq.porFuera!, marcados: [...new Set([...(liq.porFuera?.marcados ?? []), ...marcar])] },
+      } : {}),
     };
+    const tocados: Gasto[] = [];
+    const gastosDeAntes = e.gastos.map((g): Gasto => {
+      if (!marcar.has(g.id)) return g;
+      const marcado: Gasto = { ...g, extra: { ...(g.extra ?? {}), pagoDeEquipo: true } };
+      tocados.push(marcado);
+      return marcado;
+    });
     const nuevos = new Set(gastos.map((g) => g.id));
     const viejos = e.gastos.filter((g) => g.extra?.liquidacionId === liq.id && !nuevos.has(g.id)).map((g) => g.id);
     const nombre = nombrePeriodo(liq.periodo);
+    const conFuera = fuera ? Object.values(fuera.pagos).filter((x) => x.fuera).length : 0;
     const { lista, nuevo } = registrar(
       e, "transaccion", liq.id, `Sueldos de ${nombre}`, "creo",
-      gastos.length
+      (gastos.length
         ? `Se cerró la liquidación de ${nombre}: los sueldos entraron a Finanzas en ${gastos.length === 1 ? "un gasto" : `${gastos.length} gastos`}.`
-        : `Se cerró la liquidación de ${nombre}.`,
+        : `Se cerró la liquidación de ${nombre}.`)
+      + (conFuera ? ` ${conFuera === 1 ? "Una persona quedó pagada" : `${conFuera} personas quedaron pagadas`} por fuera de la app.` : "")
+      + (marcar.size ? ` ${marcar.size === 1 ? "Un gasto de la planilla vieja era" : `${marcar.size} gastos de la planilla vieja eran`} esos mismos pagos: ${marcar.size === 1 ? "quedó marcado" : "quedaron marcados"} como pago al equipo.` : ""),
     );
     const existe = e.liquidaciones.some((x) => x.id === liq.id);
     guardar({
       ...e,
       liquidaciones: existe ? e.liquidaciones.map((x) => (x.id === liq.id ? cerrada : x)) : [...e.liquidaciones, cerrada],
-      gastos: [...gastos, ...e.gastos.filter((g) => g.extra?.liquidacionId !== liq.id)],
+      gastos: [...gastos, ...gastosDeAntes.filter((g) => g.extra?.liquidacionId !== liq.id)],
       actividad: lista,
     });
     if (viejos.length) empujar({ tipo: "delete", tabla: "gastos", ids: viejos });
     if (gastos.length) empujar({ tipo: "upsert", tabla: "gastos", filas: gastos });
+    if (tocados.length) empujar({ tipo: "upsert", tabla: "gastos", filas: tocados });
     empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [cerrada] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
@@ -4902,10 +4923,22 @@ export const acciones = {
      lo que dé al volver a cerrar. */
   reabrirLiquidacion(liq: Liquidacion) {
     const e = snapshot();
+    /* Los gastos de la planilla vieja que se marcaron al cerrar (eran los mismos pagos) vuelven a como estaban: la liquidación ya no los cubre. */
+    const desmarcar = new Set(liq.porFuera?.marcados ?? []);
     const abierta: Liquidacion = {
       ...liq, estado: "abierta", resultado: null, pagos: {}, gastoIds: [],
       cerradaEn: null, cerradaPor: null, actualizadoEn: ahora(),
+      ...(liq.porFuera ? { porFuera: { ...liq.porFuera, marcados: [] } } : {}),
     };
+    const sueltos: Gasto[] = [];
+    const gastosDeAntes = e.gastos.map((g): Gasto => {
+      if (!desmarcar.has(g.id) || g.extra?.pagoDeEquipo !== true) return g;
+      const { pagoDeEquipo: _quitar, ...resto } = g.extra ?? {};
+      void _quitar;
+      const suelto: Gasto = { ...g, extra: resto };
+      sueltos.push(suelto);
+      return suelto;
+    });
     const sacar = e.gastos.filter((g) => g.extra?.liquidacionId === liq.id).map((g) => g.id);
     const nombre = nombrePeriodo(liq.periodo);
     const { lista, nuevo } = registrar(
@@ -4915,10 +4948,11 @@ export const acciones = {
     guardar({
       ...e,
       liquidaciones: e.liquidaciones.map((x) => (x.id === liq.id ? abierta : x)),
-      gastos: e.gastos.filter((g) => g.extra?.liquidacionId !== liq.id),
+      gastos: gastosDeAntes.filter((g) => g.extra?.liquidacionId !== liq.id),
       actividad: lista,
     });
     if (sacar.length) empujar({ tipo: "delete", tabla: "gastos", ids: sacar });
+    if (sueltos.length) empujar({ tipo: "upsert", tabla: "gastos", filas: sueltos });
     empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [abierta] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
@@ -5000,6 +5034,38 @@ export const acciones = {
     if (borrar.length) empujar({ tipo: "delete", tabla: "gastos", ids: borrar });
     for (let i = 0; i < tocados.length; i += 100) empujar({ tipo: "upsert", tabla: "gastos", filas: tocados.slice(i, i + 100) });
     empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [actualizada] });
+    return true;
+  },
+
+  /* Lo que se le pagó por fuera de la app a una o varias personas (lib/pagado-por-fuera.ts): manda sobre la cuenta. Sólo en una liquidación
+     abierta; si el mes todavía no tiene liquidación, se crea. Devuelve false si está cerrada. */
+  cargarPagadosPorFuera(liq: Liquidacion, cambios: readonly { miembroId: ID; pagado: PagadoPorFuera | null }[], por: string, fuente?: string): boolean {
+    if (liq.estado === "cerrada" || cambios.length === 0) return false;
+    const e = snapshot();
+    const cuando = ahora();
+    let nueva: Liquidacion | null = liq;
+    for (const c of cambios) {
+      if (!nueva) break;
+      nueva = conPagadoPorFuera(nueva, c.miembroId, c.pagado ? { ...c.pagado, cargadoPor: por, cargadoEn: cuando } : null, fuente);
+    }
+    if (!nueva) return false;
+    const actualizada: Liquidacion = { ...nueva, actualizadoEn: cuando };
+    const nombre = nombrePeriodo(liq.periodo);
+    const cargados = cambios.filter((c) => c.pagado);
+    const { lista, nuevo } = registrar(
+      e, "transaccion", liq.id, `Sueldos de ${nombre}`, "actualizo",
+      cargados.length
+        ? `Se cargó lo que se le pagó por fuera de la app a ${cargados.length === 1 ? "una persona" : `${cargados.length} personas`} en ${nombre}: manda sobre la cuenta.`
+        : `Se sacó lo pagado por fuera de la app de ${cambios.length === 1 ? "una persona" : `${cambios.length} personas`} en ${nombre}: vuelve a la cuenta.`,
+    );
+    const existe = e.liquidaciones.some((x) => x.id === liq.id);
+    guardar({
+      ...e,
+      liquidaciones: existe ? e.liquidaciones.map((x) => (x.id === liq.id ? actualizada : x)) : [...e.liquidaciones, actualizada],
+      actividad: lista,
+    });
+    empujar({ tipo: "upsert", tabla: "liquidaciones", filas: [actualizada] });
+    empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return true;
   },
 

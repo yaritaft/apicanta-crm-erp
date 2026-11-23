@@ -4,6 +4,7 @@ import { diaDeNegocio } from "./dia-negocio";
 import { ultimoArqueo } from "./caja";
 import { arqueoVivo } from "./arqueo";
 import { nombrePeriodo, periodoDe } from "./periodos";
+import { sePagoConLaPlanilla, tienePagadoPorFuera } from "./pagado-por-fuera";
 import { resumenConciliacion, restoDeMovimiento } from "./conciliacion";
 import { controlDeCobro, pasaControl } from "./control-cobros";
 import { esIncobrable } from "./cuota-incobrable";
@@ -363,13 +364,24 @@ export function pasosDelTramo(e: EstadoApp, tramo: Tramo, { ahora = Date.now(), 
   const hrefLiq = `/equipo?seccion=liquidacion&mes=${mes}`;
   const deLosDuenos = (p: Parameters<typeof paso>[0]) => paso(esDueno ? p : { ...p, estado: "bloqueado", soloDuenos: true, pendientes: [], faltan: 0, detalle: "Lo ven y lo hacen los dueños: no cuenta para tu cierre." });
 
+  /* Hasta septiembre de 2026 se liquidó y pagó con la planilla de Angelo (lib/pagado-por-fuera.ts): la liquidación de la app es la cuenta
+     con las reglas de hoy, no lo que se pagó. Se pide cargar lo pagado; una cerrada sin eso queda pendiente. */
+  const conLaPlanilla = sePagoConLaPlanilla(mes);
+  const conPagado = tienePagadoPorFuera(liq);
+  const cerradaSinLoPagado = cerrada && conLaPlanilla && !conPagado && Boolean(liq?.resultado?.personas.some((p) => p.total > 0));
   deLosDuenos({
     id: "liq-revisar", area: "equipo", titulo: "Revisar la liquidación del mes", soloDuenos: true,
     detalle: !terminado && !liq ? `El mes sigue en curso: la liquidación se revisa cuando termine ${nombre}.`
-      : cerrada ? "La liquidación está cerrada: ya no se reescribe."
-        : liq ? "La liquidación está abierta: revisá lo que cobra cada persona, los descuentos por cierre del día y las disputas antes de cerrarla."
-          : `Todavía no se abrió la liquidación de ${nombre}.`,
-    pendientes: cerrada || (!terminado && !liq) ? [] : [{ clave: "liq", titulo: liq ? "Liquidación abierta" : "Sin abrir", destino: { href: hrefLiq } }],
+      : cerradaSinLoPagado ? "Está cerrada con la cuenta de la app, no con lo que se pagó: este mes se pagó con la planilla de Angelo. Reabrila y cargá lo que se le pagó a cada uno."
+        : cerrada ? "La liquidación está cerrada: ya no se reescribe."
+          : liq && conLaPlanilla ? (conPagado
+            ? "Este mes se pagó por fuera de la app: lo que se le pagó a cada uno ya está cargado en la liquidación. Revisalo y cerrala."
+            : "Este mes se pagó con la planilla de Angelo: en la liquidación, cargá lo que se le pagó a cada uno antes de cerrarla (la cuenta de la app con las reglas de hoy no da lo mismo).")
+            : liq ? "La liquidación está abierta: revisá lo que cobra cada persona, los descuentos por cierre del día y las disputas antes de cerrarla."
+              : conLaPlanilla ? `${nombre[0].toUpperCase()}${nombre.slice(1)} se pagó con la planilla de Angelo. Si abrís la liquidación, cargá lo que se le pagó a cada uno: la cuenta de la app con las reglas de hoy no da lo mismo.`
+                : `Todavía no se abrió la liquidación de ${nombre}.`,
+    pendientes: (cerrada && !cerradaSinLoPagado) || (!terminado && !liq) ? []
+      : [{ clave: "liq", titulo: cerradaSinLoPagado ? "Cerrada sin lo pagado" : liq ? "Liquidación abierta" : "Sin abrir", destino: { href: hrefLiq } }],
     estado: !terminado && !liq && !cerrada ? "bloqueado" : undefined,
     ir: { href: hrefLiq, texto: "Ir a la liquidación" },
   });

@@ -1876,8 +1876,9 @@ export interface LineaLiquidada {
   devolucionId?: ID;
   /* «devolucion»: lo que se le comisionó y se revierte. «arrastre»: lo que
      queda debiendo (en el mes que lo genera pasa al siguiente; en el que
-     sigue se descuenta). «descuento»: el descuento por cierre del día. */
-  tipo: TipoConcepto | "extra" | "descuento" | "devolucion" | "arrastre";
+     sigue se descuenta). «descuento»: el descuento por cierre del día.
+     «pagado»: la diferencia entre la cuenta de la app y lo que se le pagó por fuera (Liquidacion.porFuera). */
+  tipo: TipoConcepto | "extra" | "descuento" | "devolucion" | "arrastre" | "pagado";
   nombre: string;
   /* Cómo se llegó al monto, dicho en castellano. */
   detalle: string;
@@ -1932,6 +1933,9 @@ export interface PersonaLiquidada {
   /* Ya no está en el equipo, pero Finanzas le calcula comisión por cuotas de
      ventas suyas que entraron en el mes. */
   inactivo?: boolean;
+  /* Se le pagó por fuera de la app (Liquidacion.porFuera): lo que se pagó manda sobre la cuenta. `cuentaDaba` es lo que daba la cuenta
+     de la app sin eso, para compararlo. */
+  pagadoPorFuera?: PagadoPorFuera & { cuentaDaba: number };
 }
 
 export interface ResultadoLiquidacion {
@@ -1958,6 +1962,31 @@ export interface PagoLiquidacion {
   /* De esos, los que creó el registro (se borran si se desmarca) y los que ya existían y el registro marcó como pago al equipo (se desmarcan). */
   creados?: ID[];
   marcados?: ID[];
+  /* Se le pagó por fuera de la app (la planilla de Angelo, otro banco): ya está pagado y la caja no tiene nada que registrar. */
+  fuera?: boolean;
+}
+
+/* Lo que se le pagó a una persona por fuera de la app, en la moneda base (Aldana, 23/11: la liquidación de agosto no daba lo que se le
+   pagó a cada uno). Julio, agosto y septiembre de 2026 se liquidaron y pagaron con la planilla de Angelo; la app los recalcula con las
+   reglas y los datos de hoy y no da lo mismo. Cargado esto, la persona cobra lo que se pagó: la cuenta queda al lado, para comparar. */
+export interface PagadoPorFuera {
+  monto: number;
+  /* El día que salió la plata ("2026-09-04"). */
+  fecha?: string;
+  /* De dónde sale el dato: «Transacciones del Finance CFO, por Mercury». */
+  nota?: string;
+  /* Quién lo cargó y cuándo. */
+  cargadoPor?: string;
+  cargadoEn?: string;
+}
+
+export interface PorFueraDeLaApp {
+  /* De dónde salen los montos, para todo el mes: «Planilla Finance CFO de Angelo (Payroll y Transacciones)». */
+  fuente?: string;
+  /* Por miembroId. */
+  personas: Record<ID, PagadoPorFuera>;
+  /* Los gastos de la planilla vieja que eran estos mismos pagos y se marcaron al cerrar (pagoDeEquipo), para desmarcarlos si se reabre. */
+  marcados?: ID[];
 }
 
 export interface Liquidacion {
@@ -1973,6 +2002,8 @@ export interface Liquidacion {
   /* Hasta qué día cuenta lo que se mide ("2026-10-25"): para pagar a mitad de mes o sin un día que todavía no cerró.
      Sin esto (o un día de fin de mes), cuenta el mes entero. Lo fijo no se recorta. */
   corte?: string | null;
+  /* Lo que se le pagó a cada uno por fuera de la app (los meses que se pagaron con la planilla de Angelo). Quien está acá cobra eso. */
+  porFuera?: PorFueraDeLaApp | null;
   /* Al cerrar, la foto de lo que se paga: cerrada no se recalcula aunque
      después entre un cobro atrasado. */
   resultado?: ResultadoLiquidacion | null;

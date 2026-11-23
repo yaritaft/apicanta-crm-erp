@@ -97,7 +97,8 @@ export function pagosSinRegistrar(e: Pick<EstadoApp, "gastos">, liq: Liquidacion
   if (liq.estado !== "cerrada" || !liq.resultado) return [];
   return liq.resultado.personas.filter((p) => {
     const pago = liq.pagos?.[p.miembroId];
-    if (!pago || !(p.total > 0)) return false;
+    /* Lo pagado por fuera de la app (la planilla de Angelo) ya está en los libros: la caja no tiene nada que registrar. */
+    if (!pago || pago.fuera || !(p.total > 0)) return false;
     const ids = new Set(pago.gastoIds ?? []);
     const registrado = r2(e.gastos.filter((g) => ids.has(g.id)).reduce((a, g) => a + g.monto, 0));
     return registrado < p.total - 0.5;

@@ -2,11 +2,11 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, Calculator, Check, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Copy, Download,
+  AlertTriangle, Banknote, Calculator, Check, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, ClipboardPaste, Copy, Download,
   Lock, LockOpen, Plus, RefreshCw, StickyNote, Trash2, UserRound,
 } from "lucide-react";
 import {
-  Avatar, Ayuda, Badge, Button, Card, Chip, Empty, IconButton, Input, Select, Switch,
+  Avatar, Ayuda, Badge, Button, Card, Chip, Empty, IconButton, Input, Select, Switch, Textarea,
 } from "@/components/ui/ui";
 import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { InputMonto } from "@/components/ui/InputMonto";
@@ -26,8 +26,11 @@ import {
   infoBase, informeParaEnviar, liquidacionCsv, liquidacionVacia, mesesParaExtra, moverPeriodo, nombrePeriodo, periodoDe, plata, rangoDePeriodo, textoParaEnviar,
 } from "@/lib/honorarios";
 import type {
-  EntradaLiquidacion, EstadoApp, ExtraLiquidacion, LineaLiquidada, Liquidacion, Moneda, PersonaLiquidada, ResultadoLiquidacion,
+  EntradaLiquidacion, EstadoApp, ExtraLiquidacion, LineaLiquidada, Liquidacion, Moneda, PagadoPorFuera, PersonaLiquidada, ResultadoLiquidacion,
 } from "@/lib/types";
+import {
+  diferenciaConLaCuenta, leerPagosPegados, pagosYaCargados, sePagoConLaPlanilla, tienePagadoPorFuera,
+} from "@/lib/pagado-por-fuera";
 import { DesgloseRenglon } from "./DesgloseRenglon";
 import { GastosQueCuentan } from "./GastosQueCuentan";
 import Link from "next/link";
@@ -93,7 +96,11 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
   const falta = useMemo(() => faltantes(r), [r]);
   const corte = r.corte;
   /* Las reglas de comisión de este mes que nadie confirmó: se avisa antes de pagar (lib/reglas.ts). */
-  const sinConfirmar = useMemo(() => (cerrada ? [] : reglasSinConfirmar(e, periodo)), [cerrada, e, periodo]);
+  /* A quien se le pagó por fuera de la app no se le aplica la regla: cobra lo que se le pagó. */
+  const sinConfirmar = useMemo(
+    () => (cerrada ? [] : reglasSinConfirmar(e, periodo).filter((x) => !r.personas.some((p) => p.miembroId === x.miembro.id && p.pagadoPorFuera))),
+    [cerrada, e, periodo, r],
+  );
   const cambios = useMemo(() => (cerrada ? diferenciasDesdeElCierre(e, liq) : []), [cerrada, e, liq]);
   /* Un setter que cobra mucho más que su mejor mes: se mira antes de pagar (Aldana, 31/10). */
   const settersInusuales = useMemo(() => settersConComisionInusual(e, periodo), [e, periodo]);
@@ -129,6 +136,20 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
 
   const [cerrando, setCerrando] = useState(false);
   const [reabriendo, setReabriendo] = useState(false);
+  /* Lo que se pagó por fuera de la app (lib/pagado-por-fuera.ts): pegar el mes entero de la planilla. */
+  const [pegando, setPegando] = useState(false);
+  const conPagado = tienePagadoPorFuera(liq);
+  const pagadosFuera = r.personas.filter((x) => x.pagadoPorFuera);
+  const difFuera = diferenciaConLaCuenta(r.personas);
+  /* Un mes que se pagó con la planilla de Angelo y todavía no tiene lo pagado: la cuenta de la app no es lo que se pagó. */
+  const faltaLoPagado = sePagoConLaPlanilla(periodo) && !conPagado && r.personas.some((x) => x.total > 0);
+  const cargarPagado = (persona: PersonaLiquidada, pagado: PagadoPorFuera | null) => {
+    if (!acciones.cargarPagadosPorFuera(liq, [{ miembroId: persona.miembroId, pagado }], yo.nombre)) {
+      toast("Esta liquidación ya está cerrada: reabrila para cambiar lo pagado.", "err");
+      return;
+    }
+    toast(pagado ? `Listo: ${persona.nombre.split(" ")[0]} cobra lo que se le pagó (${plata(pagado.monto, e.ajustes.monedaBase)}).` : `Listo: ${persona.nombre.split(" ")[0]} vuelve a la cuenta de la app.`);
+  };
   /* Marcar como pagado deja el pago registrado en la caja: con qué cuenta salió (lib/pagos-liquidacion.ts). `pagando` son las personas del diálogo. */
   const [pagando, setPagando] = useState<PersonaLiquidada[] | null>(null);
   const [desmarcando, setDesmarcando] = useState<PersonaLiquidada | null>(null);
@@ -182,7 +203,7 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
   const sumaCambios = cambios.reduce((a, x) => a + (x.hoy - x.cerrado), 0);
   const topeCambios = Math.max(1, ...cambios.map((x) => Math.max(x.hoy, x.cerrado)));
   /* Lo que hay que hacer primero, arriba: lo que falta pagar o cargar y, dentro de eso, lo más grande. Quien no cobra nada queda aparte. */
-  const quedaAparte = (x: PersonaLiquidada) => Math.abs(x.total) < 0.005 && (cerrada || (!x.lineas.some((l) => l.falta) && !x.pendiente && !x.sinCargar));
+  const quedaAparte = (x: PersonaLiquidada) => Math.abs(x.total) < 0.005 && (cerrada || Boolean(x.pagadoPorFuera) || (!x.lineas.some((l) => l.falta) && !x.pendiente && !x.sinCargar));
   const porMonto = (a: PersonaLiquidada, b: PersonaLiquidada) => b.total - a.total || a.nombre.localeCompare(b.nombre, "es");
   const conMonto = r.personas.filter((x) => !quedaAparte(x));
   const sinNada = r.personas.filter(quedaAparte);
@@ -202,6 +223,7 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
       onAgregarExtra={(x) => agregarExtra(persona, x)} onQuitarExtra={quitarExtra} onMarcarAdelanto={marcarAdelanto}
       onVerDesglose={(clave) => setVerDesglose({ miembroId: persona.miembroId, clave })}
       onPagado={(v) => { if (v) setPagando([persona]); else setDesmarcando(persona); }}
+      onPagadoPorFuera={(x) => cargarPagado(persona, x)}
       sinRegistrar={sinRegistrar.some((x) => x.miembroId === persona.miembroId)}
       onVerPersona={onVerPersona ? () => onVerPersona(persona.miembroId) : undefined}
       onCopiarDetalle={async () => {
@@ -235,7 +257,8 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
       : <Badge variante="brand" icono={<Lock size={12} />}>Cerrada</Badge>
     : <Badge variante="neutral">Abierta</Badge>;
   const mesQueSigue = nombrePeriodo(moverPeriodo(periodo, 1));
-  const haySenales = cambios.length > 0 || settersInusuales.length > 0 || sinConfirmar.length > 0 || notas.length > 0 || sinRegistrar.length > 0;
+  const haySenales = cambios.length > 0 || settersInusuales.length > 0 || sinConfirmar.length > 0 || notas.length > 0 || sinRegistrar.length > 0
+    || conPagado || faltaLoPagado;
 
   return (
     <div className="stack-4">
@@ -308,6 +331,24 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
 
       {haySenales && (
         <Senales titulo={cerrada && pagados < aCobrar.length ? "Antes de pagar" : "Para tener en cuenta"}>
+          {faltaLoPagado && (
+            <Senal
+              tono="urgente" icono={<Banknote size={16} />}
+              titulo={<>{nombrePeriodo(periodo).replace(/^./, (c) => c.toUpperCase())} se pagó por fuera de la app: <b>esto es la cuenta, no lo que se pagó</b></>}
+              sub={`Hasta septiembre se liquidó y pagó con la planilla de Angelo. La app recalcula con las reglas y los datos de hoy y no da lo mismo. ${cerrada ? "Reabrila y cargá" : "Cargá"} lo que se le pagó a cada uno: eso es lo que queda.`}
+              der={!cerrada && !soloMirar && <Button sm variante="primary" icono={<ClipboardPaste size={15} />} onClick={() => setPegando(true)}>Cargar lo pagado</Button>}
+            />
+          )}
+          {conPagado && (
+            <Senal
+              tono="bien" icono={<Banknote size={16} />}
+              titulo={<>{pagadosFuera.length === 1 ? "Una persona cobra" : `${pagadosFuera.length} personas cobran`} <b>lo que se les pagó por fuera de la app</b></>}
+              sub={`${liq.porFuera?.fuente ? `${liq.porFuera.fuente}. ` : ""}${Math.abs(difFuera) < 0.005
+                ? "Coincide con la cuenta de la app."
+                : `Con las reglas y los datos de hoy la cuenta daba ${money(r.total - difFuera, base)}: se pagó ${money(Math.abs(difFuera), base)} ${difFuera > 0 ? "más" : "menos"}. En cada persona, «Diferencia con lo que se pagó» lo completa.`}`}
+              der={!cerrada && !soloMirar && <Button sm variante="secondary" icono={<ClipboardPaste size={15} />} onClick={() => setPegando(true)}>Pegar más</Button>}
+            />
+          )}
           {notas.map(({ persona, linea }) => (
             <Senal
               key={`${persona.miembroId}:${linea.clave}`} tono="atencion" icono={<StickyNote size={16} />}
@@ -379,6 +420,12 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
         <div className="liq-ajustes">
           <CorteDeLiquidacion periodo={periodo} valor={liq.corte ?? ""} activo={Boolean(corte)} onCambiar={(c) => guardar({ corte: c })} />
           {hayPesos && <TipoCambio valor={liq.tipoCambio ?? e.ajustes.tipoCambio} onCambiar={(tipoCambio) => guardar({ tipoCambio })} />}
+          {!conPagado && !faltaLoPagado && (
+            <div className="liq-ajuste">
+              <span className="liq-ajuste__nombre" title="Si este mes ya se le pagó a alguien por fuera de la app (otra planilla, otro banco), cargá lo que se pagó: manda sobre la cuenta.">¿Ya se pagó por fuera?</span>
+              <Button variante="ghost" sm icono={<ClipboardPaste size={15} />} onClick={() => setPegando(true)}>Cargar lo pagado</Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -472,6 +519,19 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
         />
       )}
 
+      {pegando && (
+        <PegarPagados
+          e={e} liq={liq} r={vivo} onCerrar={() => setPegando(false)}
+          onCargar={(filas, fuente) => {
+            const ok = acciones.cargarPagadosPorFuera(liq, filas.map((f) => ({
+              miembroId: f.miembroId, pagado: { monto: f.monto, ...(f.fecha ? { fecha: f.fecha } : {}), ...(fuente ? { nota: fuente } : {}) },
+            })), yo.nombre, fuente || undefined);
+            setPegando(false);
+            toast(ok ? `Listo: ${filas.length === 1 ? "una persona cobra" : `${filas.length} personas cobran`} lo que se les pagó.` : "Esta liquidación ya está cerrada: reabrila para cargar lo pagado.", ok ? undefined : "err");
+          }}
+        />
+      )}
+
       {pagando && (
         <PagarEquipo
           e={e} liq={liq} personas={pagando} onCerrar={() => setPagando(null)}
@@ -517,6 +577,111 @@ export function LiquidacionMes({ onVerPersona, soloMirar = false, onVerReglas }:
 
 /* «2026-10-25» → «25/10». */
 const diaCorto = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+/* El día que salió la plata de un gasto («2026-09-02»). */
+const fechaISO = (g: { fecha: string; fechaPago?: string | null }) => aISO(new Date(g.fechaPago ?? g.fecha));
+/* «2026-09-04» → «04/09/2026». */
+const diaLargo = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
+
+/* ---------- Lo que se le pagó por fuera de la app ----------
+   Aldana (23/11): la liquidación de agosto no daba lo que se le pagó a cada uno. Lo pagado manda sobre la cuenta. */
+function CargarPagado({ inicial, cuentaDaba, moneda, onCancelar, onGuardar }: {
+  inicial?: PagadoPorFuera; cuentaDaba: number; moneda: Moneda; onCancelar: () => void; onGuardar: (x: PagadoPorFuera) => void;
+}) {
+  const [monto, setMonto] = useState(inicial ? escribirMonto(inicial.monto) : "");
+  const [fecha, setFecha] = useState(inicial?.fecha ?? "");
+  const [nota, setNota] = useState(inicial?.nota ?? "");
+  const n = leerMonto(monto);
+  const ok = monto.trim() !== "" && Number.isFinite(n) && n >= 0;
+  return (
+    <div role="row" className="liq__fila liq__fila--form">
+      <div role="cell" className="liq__form">
+        <div className="hk-field">
+          <label className="hk-label">Se le pagó ({moneda === "USD" ? "US$" : moneda})</label>
+          <InputMonto value={monto} onChange={(ev) => setMonto(ev.target.value)} autoFocus aria-label="Lo que se le pagó" placeholder={escribirMonto(cuentaDaba)} />
+        </div>
+        <div className="hk-field" style={{ width: 170 }}>
+          <label className="hk-label">El día</label>
+          <Input type="date" value={fecha} onChange={(ev) => setFecha(ev.target.value)} aria-label="El día que se le pagó" />
+        </div>
+        <div className="hk-field" style={{ flex: "2 1 240px" }}>
+          <label className="hk-label">De dónde sale (opcional)</label>
+          <Input value={nota} onChange={(ev) => setNota(ev.target.value)} placeholder="Payroll de la planilla de Angelo, Mercury…" aria-label="De dónde sale lo pagado" />
+        </div>
+        <Button sm variante="ghost" onClick={onCancelar}>Cancelar</Button>
+        <Button sm variante="secondary" disabled={!ok} onClick={() => onGuardar({ monto: n, ...(fecha ? { fecha } : {}), ...(nota.trim() ? { nota: nota.trim() } : {}) })}>Guardar</Button>
+      </div>
+    </div>
+  );
+}
+
+/* Pegar el mes entero: de la planilla se copian el nombre y el monto de cada uno (y el día, si está). */
+function PegarPagados({ e, liq, r, onCerrar, onCargar }: {
+  e: EstadoApp; liq: Liquidacion; r: ResultadoLiquidacion; onCerrar: () => void;
+  onCargar: (filas: { miembroId: string; monto: number; fecha?: string }[], fuente: string) => void;
+}) {
+  const base = e.ajustes.monedaBase;
+  const [texto, setTexto] = useState("");
+  const [fuente, setFuente] = useState(liq.porFuera?.fuente ?? "");
+  const equipo = useMemo(() => e.equipo.map((m) => ({ id: m.id, nombre: m.nombre })), [e.equipo]);
+  const filas = useMemo(() => leerPagosPegados(texto, equipo), [texto, equipo]);
+  const buenas = filas.filter((f): f is typeof f & { miembroId: string; monto: number } => !f.problema && Boolean(f.miembroId) && f.monto !== undefined);
+  const cuenta = (id: string) => {
+    const p = r.personas.find((x) => x.miembroId === id);
+    return p ? p.pagadoPorFuera?.cuentaDaba ?? p.total : 0;
+  };
+  return (
+    <Modal
+      abierto onCerrar={onCerrar} ancho titulo={`Lo que se pagó en ${nombrePeriodo(liq.periodo)}`}
+      sub="Cada persona cobra lo que se le pagó: la cuenta de la app queda al lado, para comparar."
+      pie={
+        <>
+          <Button variante="ghost" onClick={onCerrar}>Cancelar</Button>
+          <span className="spacer" />
+          <Button variante="primary" icono={<Banknote size={16} />} disabled={buenas.length === 0} onClick={() => onCargar(buenas, fuente.trim())}>
+            {buenas.length === 0 ? "Cargar lo pagado" : `Cargar lo pagado de ${buenas.length === 1 ? "una persona" : `${buenas.length} personas`}`}
+          </Button>
+        </>
+      }
+    >
+      <div className="stack-4">
+        <div className="hk-field">
+          <label className="hk-label">Pegá de la planilla el nombre y el monto de cada uno</label>
+          <Textarea
+            rows={7} value={texto} onChange={(ev) => setTexto(ev.target.value)} autoFocus aria-label="Lo pagado, copiado de la planilla"
+            placeholder={"Ana María Gómez\t3.200\t04/09/2026\nLuis Pérez Soto\t1.850,50\t02/09/2026"}
+          />
+          <span className="t-sm t-subtle">Un renglón por persona, copiado del Excel (el Payroll de Angelo sirve): nombre, monto y, si está, el día. Si alguien tiene el sueldo y el bono en dos renglones, se suman.</span>
+        </div>
+        <div className="hk-field">
+          <label className="hk-label">De dónde sale (opcional)</label>
+          <Input value={fuente} onChange={(ev) => setFuente(ev.target.value)} placeholder="Planilla Finance CFO de Angelo, hoja Payroll" aria-label="De dónde sale lo pagado" />
+        </div>
+        {filas.length > 0 && (
+          <div className="liq-pegado" role="table" aria-label="Lo que se va a cargar">
+            <div role="row" className="liq-pegado__fila liq-pegado__fila--cab">
+              <span role="columnheader">Persona</span><span role="columnheader">Se pagó</span><span role="columnheader">La cuenta da</span><span role="columnheader">Diferencia</span>
+            </div>
+            {filas.map((f, i) => {
+              const dif = f.miembroId && f.monto !== undefined ? f.monto - cuenta(f.miembroId) : 0;
+              return (
+                <div role="row" key={i} className="liq-pegado__fila" data-problema={f.problema ? true : undefined}>
+                  <span role="cell" className="truncate">
+                    {f.problema ? <><AlertTriangle size={13} aria-hidden /> {f.problema}</> : <>{f.nombre}{f.fecha ? <span className="t-subtle"> · {diaLargo(f.fecha)}</span> : null}</>}
+                  </span>
+                  <span role="cell" className="t-num">{f.monto !== undefined ? plata(f.monto, base) : "—"}</span>
+                  <span role="cell" className="t-num t-subtle">{f.miembroId ? plata(cuenta(f.miembroId), base) : "—"}</span>
+                  <span role="cell" className="t-num" data-signo={Math.abs(dif) < 0.005 ? "igual" : dif > 0 ? "mas" : "menos"}>
+                    {f.miembroId && f.monto !== undefined ? (Math.abs(dif) < 0.005 ? "Igual" : `${dif > 0 ? "+" : "−"}${plata(Math.abs(dif), base)}`) : ""}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
 const aISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /* ---------- Hasta qué día cuenta ----------
@@ -613,7 +778,7 @@ function CampoNumero({ valor, onCambiar, etiqueta, placeholder, autoFocus }: {
 
 function FilaPersona({
   persona, liq, cerrada, soloMirar, tope, abierta, onAlternar, onEntrada, meses, porVenir, onAgregarExtra, onQuitarExtra, onMarcarAdelanto, onVerDesglose,
-  onPagado, sinRegistrar, onVerPersona, onCopiar, onCopiarDetalle,
+  onPagado, onPagadoPorFuera, sinRegistrar, onVerPersona, onCopiar, onCopiarDetalle,
 }: {
   persona: PersonaLiquidada; liq: Liquidacion; cerrada: boolean; soloMirar: boolean;
   /* Lo que cobra el que más cobra: de ahí sale el largo de la barra de cada uno. */
@@ -628,6 +793,8 @@ function FilaPersona({
   onMarcarAdelanto: (liquidacionId: string, extraId: string, conceptoId: string | null) => void;
   onVerDesglose: (clave: string) => void;
   onPagado: (v: boolean) => void; sinRegistrar?: boolean; onVerPersona?: () => void; onCopiar: () => void; onCopiarDetalle: () => void;
+  /* Cargar (o sacar, con null) lo que se le pagó por fuera de la app. */
+  onPagadoPorFuera: (x: PagadoPorFuera | null) => void;
 }) {
   const faltan = persona.lineas.filter((l) => l.falta).length;
   const conNota = persona.lineas.some((l) => l.nota);
@@ -636,7 +803,11 @@ function FilaPersona({
     .filter((l) => l.conceptoId && ["bono", "tramo", "porcentaje", "unidad"].includes(l.tipo))
     .map((l) => ({ id: l.conceptoId as string, nombre: l.nombre }));
   const pago = liq.pagos[persona.miembroId];
+  const fuera = persona.pagadoPorFuera;
   const [agregando, setAgregando] = useState(false);
+  const [cargandoPagado, setCargandoPagado] = useState(false);
+  const base = useEstado().ajustes.monedaBase;
+  const quienPago = (x: NonNullable<typeof pago>) => (x.fuera ? "por fuera de la app" : x.por ? `por ${x.por}` : "");
   const cuentas = useEstado().procesadores;
   const cuentaNombre = (id: string) => cuentas.find((x) => x.id === id)?.nombre ?? "otra cuenta";
 
@@ -655,10 +826,12 @@ function FilaPersona({
           <span className="liq__marcas">
             {persona.inactivo && <Badge variante="neutral">Ya no está</Badge>}
             {conNota && <Badge variante="warning" icono={<StickyNote size={12} />}>Con nota</Badge>}
-            {persona.pendiente
-              ? <Badge variante="warning">A definir</Badge>
-              : persona.sinCargar && !persona.inactivo && <Badge variante="neutral">Sin cargar</Badge>}
-            {!cerrada && faltan > 0 && <Badge variante="accent">Falta cargar {faltan}</Badge>}
+            {fuera
+              ? <Badge variante="success" icono={<Banknote size={12} />}>Pagado por fuera</Badge>
+              : persona.pendiente
+                ? <Badge variante="warning">A definir</Badge>
+                : persona.sinCargar && !persona.inactivo && <Badge variante="neutral">Sin cargar</Badge>}
+            {!cerrada && !fuera && faltan > 0 && <Badge variante="accent">Falta cargar {faltan}</Badge>}
           </span>
           {persona.total > 0 && (
             <span className="liq__prop" aria-hidden title={`Fijo ${plata(persona.fijo, "USD")} · Variable ${plata(persona.variable, "USD")}`}>
@@ -670,12 +843,12 @@ function FilaPersona({
         <div role="cell" className="liq__monto liq__monto--persona">{aPagarTexto(persona.aPagar)}</div>
         <div role="cell" className="liq__pagar" onClick={(ev) => ev.stopPropagation()}>
           {cerrada && persona.total > 0 && (soloMirar
-            ? (pago ? <span className="liq-check" data-hecho title={`Pagado el ${fechaLarga(pago.pagadoEn)}${pago.por ? ` por ${pago.por}` : ""}`}><Check size={15} strokeWidth={2.5} aria-label="Pagado" /></span> : <span className="liq-check" title="Por pagar" />)
+            ? (pago ? <span className="liq-check" data-hecho title={`Pagado el ${fechaLarga(pago.pagadoEn)} ${quienPago(pago)}`.trim()}><Check size={15} strokeWidth={2.5} aria-label="Pagado" /></span> : <span className="liq-check" title="Por pagar" />)
             : (
               <button
                 type="button" className="liq-check" data-hecho={pago ? true : undefined} aria-pressed={Boolean(pago)}
                 aria-label={`${persona.nombre}: ${pago ? "pagado, tocá para desmarcar" : "marcar como pagado"}`}
-                title={pago ? `Pagado el ${fechaLarga(pago.pagadoEn)}${pago.por ? ` por ${pago.por}` : ""}. Tocá para desmarcar.` : "Marcar como pagado"}
+                title={pago ? `Pagado el ${fechaLarga(pago.pagadoEn)} ${quienPago(pago)}`.trim() + ". Tocá para desmarcar." : "Marcar como pagado"}
                 onClick={() => onPagado(!pago)}
               >
                 <Check size={15} strokeWidth={2.5} aria-hidden />
@@ -686,7 +859,32 @@ function FilaPersona({
 
       {abierta && (
         <>
-          {(persona.pendiente || persona.sinCargar) && (
+          {fuera && (
+            <div role="row" className="liq__fila liq__fila--nota">
+              <div role="cell" className="liq__nota liq__pagadofuera">
+                <Banknote size={14} aria-hidden />
+                <span>
+                  <b>Se le pagó {plata(fuera.monto, base)}{fuera.fecha ? ` el ${diaLargo(fuera.fecha)}` : ""} por fuera de la app.</b>
+                  {" "}La cuenta de la app da {plata(fuera.cuentaDaba, base)}{Math.abs(fuera.monto - fuera.cuentaDaba) >= 0.005 ? `: la diferencia va en el último renglón` : ""}.
+                  {fuera.nota ? <span className="liq__sub"> {fuera.nota}</span> : null}
+                  {!cerrada && !soloMirar && !cargandoPagado && (
+                    <>
+                      {" "}<button type="button" className="link" onClick={() => setCargandoPagado(true)}>Corregir lo pagado</button>
+                      {" · "}<button type="button" className="link" onClick={() => onPagadoPorFuera(null)}>Volver a la cuenta</button>
+                    </>
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
+          {cargandoPagado && !cerrada && !soloMirar && (
+            <CargarPagado
+              inicial={fuera} cuentaDaba={fuera?.cuentaDaba ?? persona.total} moneda={base}
+              onCancelar={() => setCargandoPagado(false)}
+              onGuardar={(x) => { onPagadoPorFuera(x); setCargandoPagado(false); }}
+            />
+          )}
+          {!fuera && (persona.pendiente || persona.sinCargar) && (
             <div role="row" className="liq__fila liq__fila--nota">
               <div role="cell" className="liq__nota liq__nota--aviso">
                 <AlertTriangle size={14} />
@@ -757,12 +955,15 @@ function FilaPersona({
               {!soloMirar && !agregando && meses.length > 0 && (
                 <Button sm variante="ghost" icono={<Plus size={15} />} onClick={() => setAgregando(true)}>Sumar o descontar un monto</Button>
               )}
+              {!cerrada && !soloMirar && !fuera && !cargandoPagado && (
+                <Button sm variante="ghost" icono={<Banknote size={15} />} onClick={() => setCargandoPagado(true)} title="Si ya se le pagó por fuera de la app (la planilla de Angelo, otro banco): lo pagado manda sobre la cuenta.">Ya se le pagó por fuera</Button>
+              )}
               <Button sm variante="ghost" icono={<Copy size={15} />} onClick={onCopiar}>Copiar para mandarle</Button>
               <Button sm variante="ghost" icono={<Copy size={15} />} onClick={onCopiarDetalle} title="La cuenta de cada renglón, paso a paso, con los cobros que cuentan">Copiar el detalle</Button>
               {onVerPersona && <Button sm variante="ghost" icono={<UserRound size={15} />} onClick={onVerPersona}>Ver lo que cobra</Button>}
               {cerrada && pago && (
                 <span className="t-sm t-subtle liq__pagado">
-                  Pagado el {fechaLarga(pago.pagadoEn)}{pago.por ? ` por ${pago.por}` : ""}
+                  Pagado el {fechaLarga(pago.pagadoEn)} {quienPago(pago)}
                   {pago.cuentaId ? ` · salió de ${cuentaNombre(pago.cuentaId)}` : sinRegistrar ? " · sin cuenta registrada en la caja" : ""}
                 </span>
               )}
@@ -831,6 +1032,7 @@ function Linea({ l, cerrada, soloMirar, entrada, onEntrada, onBorrarExtra, adela
                 <IconButton etiqueta="Sacar este monto" onClick={onBorrarExtra}><Trash2 size={15} /></IconButton>
               ) : l.tipo === "descuento" ? null /* Lo calcula la app (el interruptor del cierre del día de Ajustes → CRM, o el % propio de una venta del setter): no se corrige acá. */
               : l.tipo === "devolucion" || l.tipo === "arrastre" ? null /* Lo calcula la devolución cargada (Finanzas → Devoluciones): se corrige allá. */
+              : l.tipo === "pagado" ? null /* Sale de lo pagado por fuera de la app: se corrige arriba, en «Corregir lo pagado». */
               : l.corregido ? (
                 <button type="button" className="link t-sm" onClick={() => onEntrada({ monto: undefined, nota: undefined })}>Volver a la cuenta</button>
               ) : (
@@ -984,11 +1186,17 @@ function ModalCerrar({ e, liq, r, onCerrar, onConfirmar }: {
 }) {
   const base = e.ajustes.monedaBase;
   const falta = faltantes(r);
-  const sinConfirmar = reglasSinConfirmar(e, liq.periodo);
+  const pagoFuera = new Set(r.personas.filter((p) => p.pagadoPorFuera).map((p) => p.miembroId));
+  const sinConfirmar = reglasSinConfirmar(e, liq.periodo).filter((x) => !pagoFuera.has(x.miembro.id));
+  /* Un mes que se pagó por fuera de la app: los gastos de la planilla vieja que son esos mismos pagos se marcan solos al cerrar. */
+  const yaCargados = pagosYaCargados(e, liq, r);
+  const seMarcanSolos = new Set(yaCargados.map((y) => y.gasto.id));
+  const pagadosFuera = r.personas.filter((p) => p.pagadoPorFuera && p.total > 0);
+  const faltaLoPagado = sePagoConLaPlanilla(liq.periodo) && !tienePagadoPorFuera(liq) && r.personas.some((p) => p.total > 0);
   /* Pagos al equipo cargados como gasto sin marcar: al cerrar, el mismo sueldo entra otra vez a Finanzas. */
-  const dobles = pagosSospechosos(e, r, rangoDePeriodo(liq.periodo));
+  const dobles = pagosSospechosos(e, r, rangoDePeriodo(liq.periodo)).filter((x) => !seMarcanSolos.has(x.gasto.id));
   const gastos = gastosDeLiquidacion(e, liq, r);
-  const bonos = r.personas.flatMap((p) => p.lineas.filter((l) => l.tipo === "bono" && l.monto > 0).map(() => p.nombre.split(" ")[0]));
+  const bonos = r.personas.filter((p) => !p.pagadoPorFuera).flatMap((p) => p.lineas.filter((l) => l.tipo === "bono" && l.monto > 0).map(() => p.nombre.split(" ")[0]));
   /* Lo que tiene que saber quien ejecuta los pagos. */
   const notas = r.personas.flatMap((p) => p.lineas.filter((l) => l.nota).map((l) => ({ p, l })));
   const enFinanzas = r.personas.reduce((a, p) => a + p.lineas.filter((l) => l.enFinanzas).reduce((x, l) => x + l.montoBase, 0), 0);
@@ -1014,6 +1222,22 @@ function ModalCerrar({ e, liq, r, onCerrar, onConfirmar }: {
           <span className="t-sm t-subtle">{r.personas.length} personas · {plata(r.total, base)} en total</span>
         </div>
 
+        {faltaLoPagado && (
+          <Ayuda titulo="Este mes se pagó por fuera de la app" icono={<AlertTriangle size={18} />}>
+            Hasta septiembre se liquidó y pagó con la planilla de Angelo. Si la cerrás así, queda la cuenta de la app con las reglas de hoy y no lo
+            que se le pagó a cada uno. Cancelá y cargá lo pagado primero («Cargar lo pagado», arriba de la liquidación).
+          </Ayuda>
+        )}
+        {pagadosFuera.length > 0 && (
+          <Ayuda titulo={`${pagadosFuera.length === 1 ? "Una persona cobra" : `${pagadosFuera.length} personas cobran`} lo que se les pagó por fuera`} icono={<Banknote size={18} />}>
+            Quedan marcadas como pagadas, con el día en que salió la plata: la caja no tiene nada que registrar.
+            {yaCargados.length > 0 && (
+              <> Y {yaCargados.length === 1 ? "este gasto ya cargado es" : `estos ${yaCargados.length} gastos ya cargados son`} esos
+                mismos pagos: se {yaCargados.length === 1 ? "enlaza y se marca" : "enlazan y se marcan"} como pago al equipo para que no cuenten dos veces
+                ({yaCargados.map((y) => `${y.motivo === "pago" && y.nombre ? `${y.nombre.split(" ")[0]}: ` : ""}${y.gasto.concepto} ${plata(y.gasto.monto, base)}${y.motivo === "pago" ? ` (${diaCorto(fechaISO(y.gasto))})` : ""}${y.yaMarcado ? ", ya estaba marcado" : ""}`).join(" · ")}).</>
+            )}
+          </Ayuda>
+        )}
         {falta.sinCambio && (
           <Ayuda titulo="Falta el tipo de cambio" icono={<AlertTriangle size={18} />}>
             Hay montos en pesos: poné el tipo de cambio arriba de la liquidación para poder cerrarla.
