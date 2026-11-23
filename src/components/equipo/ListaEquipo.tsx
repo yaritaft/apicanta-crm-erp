@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 import { acciones, hayNube, nuevoId, useEstado } from "@/lib/store";
 import { emailValido, useTiposCuenta, type useAccesos } from "@/lib/acceso";
 import { resumenEsquema } from "@/lib/honorarios";
+import { vende, vendePorRol } from "@/lib/vendedores";
 import type { MiembroEquipo, RolEquipo } from "@/lib/types";
 import { ROLES, textoRol } from "./FichaMiembro";
 
@@ -51,7 +52,20 @@ export function ListaEquipo({ accesos, onVer, conAccesos = true }: { accesos: Ac
       clave: "nombre", titulo: "Persona", orden: (f) => f.nombre,
       celda: (f) => <Persona nombre={f.nombre} sub={f.puesto || "Sin puesto"} />,
     },
-    { clave: "rol", titulo: "En ventas", orden: (f) => textoRol(f.rol), celda: (f) => (f.rol === "otro" ? <span className="t-subtle">—</span> : textoRol(f.rol)) },
+    {
+      clave: "rol", titulo: "En ventas", orden: (f) => textoRol(f.rol),
+      celda: (f) => {
+        const rol = f.rol === "otro" ? <span className="t-subtle">—</span> : textoRol(f.rol);
+        /* Sólo se marca lo que se prendió o apagó a mano en la ficha: lo demás lo dice el rol. */
+        if (!f.activo || vende(f) === vendePorRol(f)) return rol;
+        return (
+          <span className="row" style={{ gap: 8 }}>
+            {rol}
+            <Badge variante={vende(f) ? "success" : "neutral"}>{vende(f) ? "Aparece como vendedor" : "No aparece al cargar ventas"}</Badge>
+          </span>
+        );
+      },
+    },
     {
       clave: "cobra", titulo: "Qué cobra", orden: (f) => f.cobra,
       celda: (f) => (f.cobra === "A definir"

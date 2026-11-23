@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { nombresDeVendedores, vende, vendedores } from "@/lib/vendedores";
+import { datoAlPrender, nombresDeVendedores, vende, vendePorRol, vendedores } from "@/lib/vendedores";
 import type { MiembroEquipo } from "@/lib/types";
 
 /* ==================================================================
@@ -39,7 +39,7 @@ test("no venden: director, setter, socio ni el resto del equipo; tampoco el clos
   for (const id of ["eq_director", "eq_aldana", "eq_daniel", "eq_socio", "eq_valentin"]) {
     assert.ok(!vendedores(EQUIPO).some((x) => x.id === id), id);
   }
-  assert.equal(vende(m("x", "X", "closer", false)), true, "vende es el rol; activo lo mira vendedores()");
+  assert.equal(vende(m("x", "X", "closer", false)), true, "vende es el rol (o la ficha); activo lo mira vendedores()");
 });
 
 test("al editar una venta vieja, su vendedor que ya no está sigue en la lista", () => {
@@ -50,6 +50,50 @@ test("al editar una venta vieja, su vendedor que ya no está sigue en la lista",
 test("a quien entra como closer de Equipo (rol Closer) se lo ofrece sin tocar código", () => {
   const conManu = [...EQUIPO, m("eq_manu", "Manuel Pérez", "closer")];
   assert.ok(vendedores(conManu).some((x) => x.id === "eq_manu"));
+});
+
+/* ---------- Juan Cruz (22/11): «que haya manera de que ellos puedan editar eso para luego desactivarlo» ---------- */
+
+test("apagarle «Aparece como vendedor» a Yari la saca de la lista sin cambiarle el rol", () => {
+  const apagada = EQUIPO.map((x) => (x.id === "eq_yari" ? { ...x, apareceComoVendedor: false } : x));
+  assert.ok(!vendedores(apagada).some((x) => x.id === "eq_yari"));
+  assert.equal(apagada.find((x) => x.id === "eq_yari")?.rol, "ceo");
+  assert.ok(vendedores(apagada).some((x) => x.id === "eq_dante"), "los demás siguen");
+});
+
+test("prenderlo suma a alguien de otro rol (un director que cierra) sin cambiarle el rol", () => {
+  const conSanti = EQUIPO.map((x) => (x.id === "eq_director" ? { ...x, apareceComoVendedor: true } : x));
+  assert.ok(vendedores(conSanti).some((x) => x.id === "eq_director"));
+  const inactivo = conSanti.map((x) => (x.id === "eq_director" ? { ...x, activo: false } : x));
+  assert.ok(!vendedores(inactivo).some((x) => x.id === "eq_director"), "si se fue, no aparece aunque esté prendido");
+});
+
+test("al editar una venta de alguien apagado, su vendedor sigue en la lista de esa venta", () => {
+  const apagada = EQUIPO.map((x) => (x.id === "eq_yari" ? { ...x, apareceComoVendedor: false } : x));
+  assert.ok(vendedores(apagada, "eq_yari").some((x) => x.id === "eq_yari"));
+});
+
+test("lo que coincide con el rol no se guarda (null): un cambio de rol después vuelve a mandar", () => {
+  const yari = EQUIPO.find((x) => x.id === "eq_yari")!;
+  assert.equal(datoAlPrender(yari, false), false);
+  assert.equal(datoAlPrender(yari, true), null);
+  const aldana = EQUIPO.find((x) => x.id === "eq_aldana")!;
+  assert.equal(datoAlPrender(aldana, true), true);
+  assert.equal(datoAlPrender(aldana, false), null);
+  assert.equal(vende({ ...yari, apareceComoVendedor: null }), true);
+  const yariApagada: MiembroEquipo = { ...yari, apareceComoVendedor: false };
+  assert.equal(vendePorRol(yariApagada), true, "vendePorRol no mira lo de la ficha");
+  assert.equal(vende(yariApagada), false);
+});
+
+test("la ficha de Equipo tiene el interruptor, la lista marca lo que se cambió a mano y la base tiene la columna", () => {
+  const ficha = readFileSync(join(RAIZ, "components/equipo/FichaMiembro.tsx"), "utf8");
+  assert.match(ficha, /Aparece como vendedor al cargar una venta/);
+  assert.match(ficha, /checked=\{vende\(m\)\}/);
+  assert.match(ficha, /apareceComoVendedor: datoAlPrender\(m, v\)/);
+  assert.match(readFileSync(join(RAIZ, "components/equipo/ListaEquipo.tsx"), "utf8"), /vende\(f\) === vendePorRol\(f\)/);
+  const sql = readFileSync(join(process.cwd(), "supabase/equipo-aparece-como-vendedor.sql"), "utf8");
+  assert.match(sql, /alter table public\.equipo add column if not exists "apareceComoVendedor" boolean;/);
 });
 
 /* ---------- La guardia: ninguna pantalla arma su propia lista de vendedores ---------- */

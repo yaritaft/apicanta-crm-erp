@@ -1360,6 +1360,10 @@ export interface MiembroEquipo {
   desde?: string;
   /* Yari: si figura como closer, no comisiona nadie */
   sinComision: boolean;
+  /* Si aparece como vendedor al cargar una venta. Sin dato lo dice el rol (Closer y CEO sí; los demás no); con dato manda esto, sin
+     cambiarle el rol: así se apaga a quien vende (Yari, cuando deje de cerrar) o se suma a alguien de otro rol. Se prende y apaga en su
+     ficha de Equipo (lib/vendedores.ts). null vuelve a lo del rol. */
+  apareceComoVendedor?: boolean | null;
   notas?: string;
   /* El email con el que entra a la app: así se sabe quién está usándola
      (el closer que carga una venta queda elegido solo). */

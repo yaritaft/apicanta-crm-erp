@@ -8,6 +8,7 @@ import { Confirmar, Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, hayNube, nuevoId, useEstado } from "@/lib/store";
 import { useUsuarioActual } from "@/lib/usuario";
+import { datoAlPrender, vende } from "@/lib/vendedores";
 import { tasaDeComision } from "@/lib/comision";
 import { tasaDeTexto, textoDeTasa, textoParaEditar } from "@/lib/comision-setter";
 import { emailValido, generarClave, tipoSugerido, useAcceso, useTiposCuenta, type useAccesos } from "@/lib/acceso";
@@ -160,7 +161,20 @@ export function FichaMiembro({ miembroId, accesos, onCerrar }: {
                 </span>
               </label>
             )}
-            {(m.rol === "closer" || m.rol === "ceo") && (
+            {/* Quién aparece al cargar una venta: lo dice el rol, y acá se apaga o se prende a mano sin cambiarlo (lib/vendedores.ts). */}
+            {m.activo && (
+              <label className="row" style={{ gap: 10 }} title="Si aparece en la lista de vendedores al cargar o editar una venta. Las ventas que ya tiene no cambian.">
+                <Switch
+                  checked={vende(m)} etiqueta={`${m.nombre} aparece como vendedor al cargar una venta`}
+                  onChange={(v) => cambiar(
+                    { apareceComoVendedor: datoAlPrender(m, v) },
+                    v ? `${m.nombre} aparece como vendedor al cargar una venta.` : `${m.nombre} ya no aparece como vendedor al cargar una venta. Las ventas que ya tiene no cambian.`,
+                  )}
+                />
+                <span className="t-sm">Aparece como vendedor al cargar una venta</span>
+              </label>
+            )}
+            {(m.rol === "closer" || m.rol === "ceo" || vende(m)) && (
               <label className="row" style={{ gap: 10 }} title="Si cierra una venta, no comisiona nadie: ni closer, ni director, ni setter.">
                 <Switch checked={m.sinComision} onChange={(v) => cambiar({ sinComision: v })} etiqueta={`Con ${m.nombre} no comisiona nadie`} />
                 <span className="t-sm">Sus ventas no comisionan</span>
