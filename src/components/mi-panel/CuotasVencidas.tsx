@@ -53,7 +53,7 @@ export function CuotasVencidas({ e, miembro, viendoOtro, ahora }: { e: EstadoApp
         {vencidas.length > 0
           ? `${!miembro ? "Les deben a los closers" : viendoOtro ? "Deben" : "Te deben"} ${money(debe, "USD", 0)}${sinMarcar > 0 ? ` · ${sinMarcar} sin marcar cómo va el cobro` : " · todas con seguimiento"}. `
           : ""}
-        Marcá cómo va cada una: lo ve Finanzas. Cuando pagan, quedan un día como «Pagó».
+        Marcá cómo va cada una: lo ve Finanzas, y si pedís la baja le avisamos a Servicio para el outboarding. Cuando pagan, quedan un día como «Pagó».
       </span>
 
       <ul className="mp-cobranza__lista">
@@ -107,14 +107,21 @@ function FilaVencida({ f, puede, producto, ahora }: { f: FilaDeCobranza; puede: 
             {seg && (
               <input
                 key={`${f.cuota.id}|${seg.en}`} className="mp-cobranza__nota" defaultValue={seg.nota ?? ""} maxLength={160}
-                placeholder="Nota (opcional): qué dijo, cuándo paga…" aria-label="Nota sobre el cobro"
+                placeholder="Nota (opcional): qué dijo, cuándo paga… Con @nombre le avisás" aria-label="Nota sobre el cobro"
+                title="Con @ y el nombre (@Liliana, @Aldana) le llega un aviso a esa persona"
                 onBlur={(ev) => { if (ev.target.value.trim() !== (seg.nota ?? "")) acciones.seguirCobro(f.cuota.id, seg.estado, ev.target.value); }}
               />
             )}
           </>
         ) : seg ? <Badge variante={tonoDeSeguimiento(seg.estado) === "danger" ? "danger" : tonoDeSeguimiento(seg.estado) === "warning" ? "warning" : "info"}>{textoDeSeguimiento(seg.estado)}</Badge> : <span className="t-sm t-subtle">Sin marcar</span>}
       </div>
-      {seg && <span className="t-sm t-subtle mp-cobranza__marca">Marcado por {seg.por} {haceCuanto(Math.max(0, ahora - Date.parse(seg.en)) / 3_600_000)}{seg.nota && !puede ? ` · ${seg.nota}` : ""}</span>}
+      {seg && (
+        <span className="t-sm t-subtle mp-cobranza__marca">
+          Marcado por {seg.por} {haceCuanto(Math.max(0, ahora - Date.parse(seg.en)) / 3_600_000)}{seg.nota && !puede ? ` · ${seg.nota}` : ""}
+          {/* La base le avisa a Customer Success apenas se marca (supabase/baja-por-falta-de-pago.sql): que el closer sepa que llegó. */}
+          {seg.estado === "baja" && " · le avisamos a Servicio para el outboarding"}
+        </span>
+      )}
     </li>
   );
 }

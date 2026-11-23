@@ -10,7 +10,10 @@ import { useAcceso } from "@/lib/acceso";
 import { nivelEn } from "@/lib/permisos";
 import { nube } from "@/lib/supabase";
 import { cabeceras } from "@/components/webinars/useYoutube";
-import { fecha, relativo } from "@/lib/format";
+import { fecha, money, relativo } from "@/lib/format";
+import { alumnoDeVenta } from "@/lib/alumnos";
+import { bajaResuelta, pedidosDeBaja, queFaltaDeLaBaja } from "@/lib/bajas-falta-de-pago";
+import { diaDeNegocio } from "@/lib/dia-negocio";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { programaDeProducto, programasDe } from "@/lib/programas";
 import type { Alumno, Venta } from "@/lib/types";
@@ -150,6 +153,12 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
 
   const lista = accesos ?? [];
   const vigentes = lista.filter((x) => x.estado !== "quitado");
+  /* Un closer pidió la baja por falta de pago (lib/bajas-falta-de-pago.ts; Lili, 23/11): el aviso de la campanita abre acá. */
+  const baja = useMemo(() => {
+    const seg = (e.seguimientos ?? []).find((x) => x.alumnoId === alumno.id);
+    if (bajaResuelta(seg?.followUp, alumno.estado)) return null;
+    return pedidosDeBaja(e).find((p) => alumnoDeVenta(e, p.venta)?.id === alumno.id) ?? null;
+  }, [e, alumno]);
   const linksTelegram = lista.filter((x) => x.plataforma === "telegram" && x.estado === "dado" && typeof x.externo.link === "string");
   const linksZoom = lista.filter((x) => x.plataforma === "zoom" && x.estado === "dado" && typeof x.externo.joinUrl === "string");
 
@@ -226,6 +235,28 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
             {acciona && <Button sm variante="secondary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>}
           </AccionesServicio>
         )}
+        {baja && accesos !== null && (() => {
+          const cuotas = baja.cuotas.map((c) => (c.esReserva ? "la reserva" : `la cuota ${c.numero}`)).join(" y ");
+          const producto = e.productos.find((p) => p.id === baja.venta.productoId)?.nombre;
+          const falta = baja.hecho ? [...baja.hecho.aMano, ...baja.hecho.fallaron].length > 0 : vigentes.length === 0;
+          return (
+            <BloqueServicio titulo="Baja por falta de pago">
+              <FilaServicio icono={<UserMinus size={15} />} rotulo={`${baja.pidio} pidió la baja el ${formatoDia(diaDeNegocio(baja.en))}`}
+                detalle={`No pagó ${cuotas}${producto ? ` de ${producto}` : ""} (${money(baja.debe, baja.venta.moneda || "USD", 0)}).${baja.nota ? ` «${baja.nota}».` : ""} `
+                  + (baja.hecho ? `${queFaltaDeLaBaja(baja.hecho)}.`
+                    : vigentes.length > 0 ? "Los accesos que le dio la app se le sacan solos en la próxima pasada; lo de antes, si tiene, va a mano."
+                      : "Sus accesos no son de la app: sacáselos a mano.")
+                  + " Cuando esté, pasá su Follow Up a Outboarding."}>
+                {baja.hecho ? <Badge variante={falta ? "warning" : "success"}>{falta ? "Falta a mano" : "Hecho"}</Badge>
+                  : vigentes.length > 0 ? <Badge variante="warning">{`Hoy a las ${proximaPasada()}`}</Badge>
+                    : <Badge variante="neutral">A mano</Badge>}
+                {acciona && !baja.hecho && vigentes.length > 0 && (
+                  <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca ya el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom.", wisboo: true })}>Sacarlos ahora</Button>
+                )}
+              </FilaServicio>
+            </BloqueServicio>
+          );
+        })()}
         {/* El outboarding automático (Lili, 26/10): cuándo se le sacan solos los accesos de la app. */}
         {outboarding && accesos !== null && (
           <BloqueServicio titulo="Outboarding">

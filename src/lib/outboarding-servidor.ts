@@ -80,6 +80,13 @@ export async function pasarOutboardings(db: SupabaseClient, ahora = new Date(), 
   return salida;
 }
 
+/** Los mails de Customer Success, en minúsculas y sin repetir (como mails_de_servicio() de la base). */
+export async function mailsDeServicio(db: SupabaseClient): Promise<string[]> {
+  const r = await db.from("equipo").select("email").eq("activo", true)
+    .or("puesto.ilike.%customer success%,puesto.ilike.%servicio%,puesto.ilike.%csm%");
+  return [...new Set(((r.data ?? []) as { email: string | null }[]).map((x) => (x.email ?? "").trim().toLowerCase()).filter((x) => x.includes("@")))];
+}
+
 /* El aviso a Customer Success (como el del roadmap, lib/contratos-servidor.ts): uno por alumno y por día. */
 async function avisarAServicio(
   db: SupabaseClient, a: { id: string; nombre: string; leadId: string | null }, fin: string | null, quitados: number, fallaron: string[], otrosMails: readonly string[] = [],

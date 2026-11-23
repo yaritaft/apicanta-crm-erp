@@ -2,7 +2,9 @@ import type { EstadoApp, ID } from "./types";
 import { DIAS_PARA_CERRAR_RESELL, DURACION_POR_DEFECTO, esDeTestimonio, estadosDeResell, faltaDeLaLlamada, faltaDelTestimonio, familiasParaFiltrar, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, opcionesDePrograma, resellAbierto, sumarMeses, testimonioNoSeGraba } from "./clientes-cs";
 import { contactosDeIngreso, DIA_CONTACTO_SEMANAL, DIAS_DEL_INGRESO, diasEntre, formatoDia, sumarDias, terminoElServicio } from "./seguimiento";
 import { diasDe } from "./pausas";
-import { ventaPendienteDe } from "./alumnos";
+import { alumnoDeVenta, ventaPendienteDe } from "./alumnos";
+import { bajaResuelta, pedidosDeBaja, queFaltaDeLaBaja } from "./bajas-falta-de-pago";
+import { money } from "./format";
 import { diaDeNegocio } from "./dia-negocio";
 import { crearMotor, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
 
@@ -66,7 +68,7 @@ export interface ItemServicio {
 }
 
 export interface SeccionServicio {
-  id: "contactar" | "vuelven" | "nuevos" | "semanal" | "esperanVenta" | "renovar" | "resells" | "testimonios" | "reportes" | "contratos";
+  id: "bajas" | "contactar" | "vuelven" | "nuevos" | "semanal" | "esperanVenta" | "renovar" | "resells" | "testimonios" | "reportes" | "contratos";
   titulo: string;
   /* El nombre para la tarjeta chica de arriba, donde el título entero no entra. */
   corto: string;
@@ -291,6 +293,28 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
     }];
   });
 
+  /* ---------- Bajas por falta de pago (lib/bajas-falta-de-pago.ts; Liliana, 23/11) ----------
+     Un closer marcó «Pido la baja por falta de pago» en una cuota vencida. Queda acá hasta que Lili lo pasa a Outboarding (o el
+     alumno paga, o el closer saca la marca): con los accesos de la app ya sacados solos, o para hacer el outboarding a mano. */
+  const bajas = pedidosDeBaja(e).flatMap((b): ItemServicio[] => {
+    const alumno = alumnoDeVenta(e, b.venta);
+    const cliente = alumno ? clientes.find((c) => c.id === alumno.id) : undefined;
+    if (alumno && bajaResuelta(cliente?.followUp, alumno.estado)) return [];
+    const dia = diaDeNegocio(b.en);
+    const d = diasEntre(dia, hoy);
+    const producto = e.productos.find((p) => p.id === b.venta.productoId)?.nombre;
+    const cuotas = b.cuotas.map((c) => (c.esReserva ? "la reserva" : `la cuota ${c.numero}`));
+    const deQue = `${cuotas.length > 1 ? `${cuotas.slice(0, -1).join(", ")} y ${cuotas[cuotas.length - 1]}` : cuotas[0]}${producto ? ` de ${producto}` : ""}`;
+    return [{
+      clave: `baja|${b.venta.id}`, alumnoId: alumno?.id, nombre: cliente?.nombre || alumno?.nombre || b.venta.contactoNombre || "Sin nombre",
+      ...(cliente ? contactoDe(cliente) : {}), dias: d, cuando: cuandoEs(d),
+      /* Primero qué hay que hacer (el renglón se corta; el texto entero queda al pasar el mouse), después quién y por qué. */
+      detalle: `${alumno ? queFaltaDeLaBaja(b.hecho) : "Sin ficha de alumno: outboarding a mano"} · lo pidió ${b.pidio} el ${formatoDia(dia, hoy)} · no pagó ${deQue} (${money(b.debe, b.venta.moneda || "USD", 0)})${b.nota ? ` · «${b.nota}»` : ""}`,
+      /* El día que lo piden todavía está a tiempo; desde el segundo día, tarde. */
+      tono: d >= 2 ? "rojo" : "ambar",
+    }];
+  });
+
   /* ---------- El contrato por vencer (renovar o dar de baja) ---------- */
   /* La reserva no arrancó: no hay contrato que renovar (aunque tenga un egreso cargado a mano). */
   const renovar = activos.filter((c) => !c.enReserva && c.egreso && diasEntre(hoy, c.egreso) <= DIAS_PARA_RENOVAR).map((c): ItemServicio => {
@@ -391,6 +415,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
   });
 
   const secciones: SeccionServicio[] = [
+    seccion({ id: "bajas", titulo: "Bajas por falta de pago", corto: "Bajas", vacio: "Ningún closer pidió una baja por falta de pago.", regla: "Un closer marcó «Pido la baja por falta de pago» en una cuota vencida. Si tiene accesos que dio la app, se los sacamos solos en la pasada de cada hora; si no, el outboarding es a mano. Queda acá hasta que lo pases a Outboarding (o pague, o el closer saque la marca).", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, bajas, masViejoPrimero),
     seccion({ id: "nuevos", titulo: "Alumnos nuevos", corto: "Nuevos", vacio: "No entró nadie nuevo sin su bienvenida.", regla: `Día 1: el día que entra se le da la bienvenida y se hace el primer contacto (también las reservas). Queda acá hasta que se lo contacta, hasta ${DIAS_NUEVO} días después de entrar.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, nuevos, masViejoPrimero),
     seccion({ id: "semanal", titulo: "Contacto semanal", corto: "Semanal", vacio: "Nadie cumplió la primera semana sin su contacto.", regla: `Día ${DIA_CONTACTO_SEMANAL}: a los ${DIA_CONTACTO_SEMANAL} días de haber arrancado se le hace el seguimiento de la primera semana. Las reservas esperan a pagar lo que falta.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, semanal, masViejoPrimero),
     seccion({ id: "contactar", titulo: "Seguimiento 20D", corto: "20D", regla: "Después del día 1 y del día 7, se los contacta cada 20 días desde el último contacto: su próximo seguimiento ya venció o toca hoy.", vacio: "Nadie para el seguimiento de hoy. La lista se llena a medida que vencen los 20 días de cada alumno.", verTodos: { texto: "Ver la lista completa", href: "/alumnos?seccion=hoy" } }, contactar, masViejoPrimero),
