@@ -46,3 +46,16 @@ select
   (select relrowsecurity from pg_class where oid = 'public.pasarelas_estado'::regclass)                              as rls_activo,
   (select count(*) from pg_policies where schemaname = 'public' and tablename = 'pasarelas_estado')                  as politicas_de_1,
   (select count(*) from public.pasarelas_estado)                                                                     as filas;
+
+-- ---------- 24/11 (2.ª parte): el webhook de Whop ----------
+-- El cron de cada 5 minutos se fija si Whop tiene el aviso de pagos apuntando a la app y, si no, lo crea con la clave del servidor
+-- (lib/whop-webhook-servidor.ts). Acá queda el id del webhook en Whop, cuándo se intentó y, si Whop no dejó (la clave sin permiso
+-- developer:manage_webhook), por qué. Sin secretos: el secreto de firma que devuelve Whop no se guarda (la puerta es el token del link).
+alter table public.pasarelas_estado add column if not exists "webhookId" text;
+alter table public.pasarelas_estado add column if not exists "webhookEn" timestamptz;
+alter table public.pasarelas_estado add column if not exists "webhookError" text;
+
+select
+  (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'pasarelas_estado'
+     and column_name in ('webhookId', 'webhookEn', 'webhookError')) as columnas_de_3,
+  (select relrowsecurity from pg_class where oid = 'public.pasarelas_estado'::regclass) as rls_activo;

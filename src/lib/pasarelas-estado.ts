@@ -56,7 +56,7 @@ export interface Revision {
   /** La fecha del cobro más nuevo que trajo esta revisión (si trajo alguno). */
   ultimoCobro?: string;
   nuevos?: number;
-  fuente: "cron" | "rapido" | "pantalla";
+  fuente: "cron" | "rapido" | "pantalla" | "webhook";
 }
 
 const masNuevo = (a?: string | null, b?: string | null): string | null => {

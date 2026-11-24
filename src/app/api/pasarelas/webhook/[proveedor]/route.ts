@@ -1,10 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { guardarMovimientos, guardarReembolsos, hayServidor } from "@/lib/servidor";
 import {
-  dinero, moneda, procesadorDe, reembolsoDeHotmart, reembolsoDeStripe, reembolsoDeWhop, reembolsosDeHotmart,
+  dinero, hayClaves, moneda, procesadorDe, reembolsoDeHotmart, reembolsoDeStripe, reembolsoDeWhop, reembolsosDeHotmart,
   reembolsosDeStripePorId, traerUno, PROVEEDORES, type MovimientoApi,
 } from "@/lib/pasarelas-api";
+import { traerCobrosAhora } from "@/lib/cobros-al-dia-servidor";
 import type { ReembolsoCrudo } from "@/lib/reembolsos";
 import type { ProveedorPasarela } from "@/lib/types";
 
@@ -259,6 +260,19 @@ export async function POST(peticion: Request, ctx: { params: Promise<{ proveedor
     if (!hayServidor) return NextResponse.json({ ok: true, guardados: 0, aviso: "Falta SUPABASE_SERVICE_ROLE_KEY." });
     const g = await guardarReembolsos(reembolsos);
     return NextResponse.json({ ok: true, reembolsos: g.nuevas + g.atadas, propuestas: g.nuevas, atadas: g.atadas, sinTabla: g.sinTabla, error: g.error });
+  }
+
+  /* Whop: el aviso es sólo el pitido (24/11). Su cuerpo (API v1) no tiene la forma que lee delPayload —montos como objeto, fechas
+     escritas— y traerUno no sabe pedirle un pago a Whop: guardarlo tal cual metía montos o fechas mal. Con la clave, se contesta al
+     toque (Whop corta a los 5 segundos y reintenta 3 días) y después se traen los cobros de los últimos 2 días con el mismo código que
+     el cron de cada 5 minutos (lib/cobros-al-dia-servidor.ts): lo que se guarda lo dice la API de Whop, nunca el aviso. */
+  if (proveedor === "whop" && hayClaves("whop")) {
+    const traer = async () => {
+      const [r] = await traerCobrosAhora(["whop"], { dias: 2, fuente: "webhook" });
+      if (r && !r.ok) console.warn(`[webhook whop] ${r.error}`);
+    };
+    try { after(traer); } catch { await traer(); }
+    return NextResponse.json({ ok: true, enCamino: true });
   }
 
   const { id, movimiento: delAviso } = delPayload(proveedor, cuerpo);

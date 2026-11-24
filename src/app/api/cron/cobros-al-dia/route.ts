@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { hayServidor } from "@/lib/servidor";
+import { hayServidor, nubeServidor } from "@/lib/servidor";
+import { asegurarWebhookDeWhop } from "@/lib/whop-webhook-servidor";
 import { traerCobrosAhora } from "@/lib/cobros-al-dia-servidor";
 import { PASARELAS_RAPIDAS } from "@/lib/pasarelas-estado";
 
@@ -13,6 +14,9 @@ import { PASARELAS_RAPIDAS } from "@/lib/pasarelas-estado";
    sin pisar lo conciliado y anota cuándo se revisó cada una. Lo demás
    (devoluciones, pases entre cuentas, banco) sigue en api/pasarelas/sync.
    Contesta sólo cifras: ningún dato de clientes.
+   De paso se asegura de que Whop tenga el webhook de pagos apuntando acá
+   (lib/whop-webhook-servidor.ts): con eso el cobro entra al instante y
+   esta pasada queda de red de seguridad.
    ================================================================== */
 
 export const runtime = "nodejs";
@@ -27,5 +31,7 @@ export async function GET(req: Request) {
   if (!hayServidor) return NextResponse.json({ error: "Sin base." }, { status: 503 });
   const r = await traerCobrosAhora(PASARELAS_RAPIDAS, { dias: 3, fuente: "rapido" });
   for (const x of r) if (!x.ok) console.warn(`[cobros-al-dia] ${x.proveedor}: ${x.error}`);
-  return NextResponse.json({ pasarelas: r.map(({ proveedor, ok, nuevos, error }) => ({ proveedor, ok, nuevos, error })) });
+  const db = nubeServidor();
+  const webhookWhop = db ? await asegurarWebhookDeWhop(db) : "sin base";
+  return NextResponse.json({ pasarelas: r.map(({ proveedor, ok, nuevos, error }) => ({ proveedor, ok, nuevos, error })), webhookWhop });
 }
