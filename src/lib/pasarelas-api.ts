@@ -70,6 +70,9 @@ export interface OpcionesListar {
   reembolsos?: ReembolsoCrudo[];
   /* Mercury: lo que se dejó afuera y por qué (pending, internos, anulados). */
   mercury?: ResumenMercury;
+  /* La revisión de cada 5 minutos o la del botón «Buscar pagos nuevos» (lib/cobros-al-dia-servidor.ts): mira pocos días, así que «no trajo
+     cobros en 48 horas» no dice nada (un fin de semana sin ventas) y no se anota; lo sigue diciendo el cron completo de cada hora. */
+  revisionRapida?: boolean;
 }
 
 export const dinero = (n: number) => Math.round(n * 100) / 100;
@@ -619,7 +622,7 @@ export async function whop(desde: Date, opciones: OpcionesListar = {}): Promise<
   /* Whop cobra todos los días: si no trae nada de las últimas 48 horas, se dice (en la respuesta y en el registro del servidor) en vez
      de quedar callado. Pasó del 14 al 19/11/2026: la sincronización seguía «conectada», sin errores, y los cobros se cargaban a mano. */
   const masNuevo = cobros.reduce((m, x) => Math.max(m, Date.parse(x.fecha)), 0);
-  if (!masNuevo || Date.now() - masNuevo > 48 * 3600_000) {
+  if (!opciones.revisionRapida && (!masNuevo || Date.now() - masNuevo > 48 * 3600_000)) {
     const aviso = `Whop no trajo cobros ${masNuevo ? `desde el ${diaCorto(masNuevo)}` : "en la ventana pedida"}. ${resumenDeWhop(filas, { paginas: paginasPedidas, totalPaginas })}`;
     opciones.diagnosticos?.push(aviso);
     console.warn(`[whop] ${aviso}`);

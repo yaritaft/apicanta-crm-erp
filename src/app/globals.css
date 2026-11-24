@@ -1290,6 +1290,21 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 .pago-fila__caja[data-duda="true"] > .pago-fila { border-color: transparent; background: transparent; }
 .pago-fila__duda { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: 0 12px 10px; }
 .pago-fila__duda > svg { flex: none; color: var(--warning); }
+/* Si la pasarela está al día, en el selector de pagos: el casillero se pinta (verde al día, ámbar sin revisar, rojo no responde). Aldana, 24/11. */
+.pasarela-al-dia {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-100);
+  transition: border-color 150ms ease-out, background-color 150ms ease-out;
+}
+.pasarela-al-dia > svg { flex: none; }
+.pasarela-al-dia > .hk-btn { flex: none; }
+.pasarela-al-dia__texto { flex: 1 1 260px; min-width: 0; line-height: 19px; }
+.pasarela-al-dia[data-estado="ok"] { border-color: var(--success); background: var(--success-soft); }
+.pasarela-al-dia[data-estado="ok"] > svg { color: var(--success); }
+.pasarela-al-dia[data-estado="atrasada"] { border-color: var(--warning); background: var(--warning-soft); }
+.pasarela-al-dia[data-estado="atrasada"] > svg { color: var(--warning); }
+.pasarela-al-dia[data-estado="error"] { border-color: var(--danger); background: var(--danger-soft); }
+.pasarela-al-dia[data-estado="error"] > svg { color: var(--danger); }
 /* Editar una venta y cambiar lo que vale: el plan de lo que falta cobrar (Dante, 27/10). */
 .plan-rearmado { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--border-strong); border-radius: var(--radius-md); background: var(--surface-200); }
 /* Vista previa del reajuste de cuotas: nombre, antes → después. */

@@ -120,6 +120,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
     document.addEventListener("visibilitychange", pedir);
     return () => { window.clearInterval(cada); document.removeEventListener("visibilitychange", pedir); };
   }, [datosListos]);
+  /* Los cobros de las pasarelas los guardan el servidor (cron cada 5 minutos para Whop y Hotmart, cada hora el resto) y los webhooks:
+     sin volver a pedirlos, la pantalla se quedaba con los de cuando se abrió la app y parecía que la pasarela se había desconectado
+     (Aldana, 24/11). Quien carga ventas o ve Finanzas los vuelve a traer cada dos minutos mientras la app está a la vista, y al volver. */
+  const veCobros = datosListos && (nivelEn(acceso, "finanzas") >= 1 || nivelEn(acceso, "ventas") >= 2);
+  useEffect(() => {
+    if (!veCobros) return;
+    const pedir = () => { if (document.visibilityState === "visible") void acciones.traerMovimientos(); };
+    const cada = window.setInterval(pedir, 120_000);
+    document.addEventListener("visibilitychange", pedir);
+    return () => { window.clearInterval(cada); document.removeEventListener("visibilitychange", pedir); };
+  }, [veCobros]);
   function fotoDespues() {
     aplazarFoto(quienYo, hoyDelNegocio());
     setAplazo({ quien: quienYo, aplazada: true });

@@ -158,8 +158,9 @@ test("los crons: sólo el secreto exacto abre; «Bearer undefined» y variantes 
      /cron/zoom-asistencia (cada hora trae de Zoom quién asistió a cada clase), /cron/fathom (cada 5
      minutos trae la transcripción de las llamadas con el link de Fathom pegado) y /cron/reporte-semanal
      (los lunes le manda a cada alumno de Hackear Biz su link del formulario semanal). Once desde el 29/10:
-     /cron/cuotas-a-cobrar (todos los días le avisa a cada closer en la campanita las cuotas que vencen). */
-  assert.equal(crons.length, 11);
+     /cron/cuotas-a-cobrar (todos los días le avisa a cada closer en la campanita las cuotas que vencen). Doce desde el 24/11:
+     /cron/cobros-al-dia (cada 5 minutos trae los cobros nuevos de Whop y Hotmart, que no avisan por webhook). */
+  assert.equal(crons.length, 12);
   const antes = process.env.CRON_SECRET;
   try {
     await capturandoConsola(async () => {

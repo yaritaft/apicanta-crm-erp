@@ -1,13 +1,16 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, Search, Sparkles } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, RefreshCw, Search, Sparkles } from "lucide-react";
 import { Badge, Button, Chip, Empty, Input } from "@/components/ui/ui";
 import { Modal } from "@/components/ui/Modal";
+import { useToast } from "@/components/ui/Toast";
 import { useEstado } from "@/lib/store";
-import { fechaLarga, money } from "@/lib/format";
+import { fechaLarga, hora, money } from "@/lib/format";
 import { coincideConBusqueda, medioDeMovimiento, quienPagoVsCliente, resueltosQueCoinciden, ultimoCobroRecibido } from "@/lib/conciliacion";
 import { nombrePasarela } from "@/lib/pasarelas";
+import { comoEsta } from "@/lib/pasarelas-estado";
+import { usePasarelaAlDia } from "@/lib/pasarelas-al-dia-cliente";
 import type { ID, Movimiento, ProveedorPasarela } from "@/lib/types";
 
 /* ==================================================================
@@ -24,6 +27,12 @@ import type { ID, Movimiento, ProveedorPasarela } from "@/lib/types";
 
    Un pago puede repartirse entre dos cuotas (pagó la reserva y la
    primera cuota juntas): por eso se muestra lo que QUEDA de cada uno.
+
+   Arriba, si la pasarela está al día (Aldana, 24/11: «se volvió a
+   desconectar Whop» y no: el cobro ya estaba en la base y la pantalla no
+   lo había vuelto a pedir). Al abrirse trae de la base los cobros nuevos,
+   dice cuándo se revisó la pasarela (verde, ámbar o rojo) y «Buscar pagos
+   nuevos» le pregunta ahora (lib/pasarelas-al-dia-cliente.ts).
    ================================================================== */
 
 export interface PagoDisponible {
@@ -56,6 +65,7 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
   liberar?: { pagoId: ID; movimientoId?: ID };
 }) {
   const e = useEstado();
+  const toast = useToast();
   const [q, setQ] = useState("");
   const [todas, setTodas] = useState(!proveedor);
   const [tope, setTope] = useState(60);
@@ -85,6 +95,15 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
     () => ultimoCobroRecibido(e.movimientos, (m) => todas || !proveedor || m.proveedor === proveedor),
     [e.movimientos, proveedor, todas],
   );
+  /* Cuándo se le preguntó a la pasarela y qué contestó: el casillero se pinta según eso. */
+  const alDia = usePasarelaAlDia(todas ? undefined : proveedor, abierto);
+  const como = comoEsta(alDia.estado, nombre, alDia.ahora);
+  async function buscarAhora() {
+    const r = await alDia.buscar();
+    if (!r.ok) toast(`${nombre}: ${r.error ?? "no se pudo revisar."}`, "err");
+    else if (r.nuevos > 0) toast(r.nuevos === 1 ? `Entró un pago nuevo de ${nombre}: ya está en la lista.` : `Entraron ${r.nuevos} pagos nuevos de ${nombre}: ya están en la lista.`);
+    else toast(`${nombre} revisado recién: la lista ya está al día.`);
+  }
   const resueltos = useMemo(
     () => resueltosQueCoinciden(e, q, (m) => todas || !proveedor || m.proveedor === proveedor),
     [e, q, proveedor, todas],
@@ -108,11 +127,22 @@ export function SelectorMovimiento({ abierto, onCerrar, proveedor, cliente, mont
           </div>
         )}
 
-        {ultimo && (
-          <p className="t-sm t-subtle" data-testid="selector-ultimo-cobro">
-            Último cobro recibido{proveedor && !todas ? ` de ${nombre}` : ""}: {fechaLarga(ultimo.fecha)}.
-            Acá sólo figuran los que todavía no están conciliados: si no ves un pago, buscalo por nombre o monto.
-          </p>
+        {(como || ultimo || alDia.sePuedeBuscar) && (
+          <div className="pasarela-al-dia" data-estado={como?.tono ?? "sin-dato"} data-testid="selector-ultimo-cobro" title={como?.detalle ?? undefined}>
+            {como?.tono === "ok" ? <CheckCircle2 size={18} aria-hidden /> : como?.tono === "atrasada" ? <Clock size={18} aria-hidden /> : como?.tono === "error" ? <AlertTriangle size={18} aria-hidden /> : null}
+            <div className="pasarela-al-dia__texto">
+              {como && <span className="t-strong" style={{ display: "block" }}>{como.texto}</span>}
+              <span className="t-sm t-subtle" style={{ display: "block" }}>
+                {ultimo ? `Último cobro recibido${proveedor && !todas ? ` de ${nombre}` : ""}: ${fechaLarga(ultimo.fecha)}, ${hora(ultimo.fecha)}. ` : ""}
+                Acá sólo figuran los que todavía no están conciliados: si no ves un pago, buscalo por nombre o monto.
+              </span>
+            </div>
+            {alDia.sePuedeBuscar && (
+              <Button sm variante="secondary" icono={<RefreshCw size={14} />} cargando={alDia.buscando} onClick={() => { void buscarAhora(); }}>
+                Buscar pagos nuevos
+              </Button>
+            )}
+          </div>
         )}
 
         {lista.length === 0 && resueltos.length === 0 ? (

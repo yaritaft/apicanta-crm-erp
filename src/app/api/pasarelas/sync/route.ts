@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { nivelDelPedido } from "@/lib/permisos-servidor";
-import { descartarAnuladosMercury, guardarMovimientos, guardarPuntas, guardarReembolsos, hayServidor, referenciasCompletas } from "@/lib/servidor";
+import { descartarAnuladosMercury, guardarMovimientos, guardarPuntas, guardarReembolsos, hayServidor, nubeServidor, referenciasCompletas } from "@/lib/servidor";
 import { resumenVacio } from "@/lib/mercury";
 import { cargarGastosDelBanco, type ResultadoDeLaCarga } from "@/lib/plaid-servidor";
 import { hayClaves, listar, procesadorDe, PROVEEDORES, retirosDeStripe, type MovimientoApi } from "@/lib/pasarelas-api";
+import { anotarRevision, cobroMasNuevo } from "@/lib/cobros-al-dia-servidor";
 import type { ReembolsoCrudo } from "@/lib/reembolsos";
 import type { Punta } from "@/lib/traspasos";
 import type { ProveedorPasarela } from "@/lib/types";
@@ -102,6 +103,9 @@ export async function GET(peticion: Request) {
   const errores: { proveedor: string; mensaje: string }[] = [];
   /* Lo que no es un error pero conviene saber (Whop no trajo cobros nuevos): se muestra como información. */
   const diagnosticos: { proveedor: string; mensaje: string }[] = [];
+  /* Las que no contestaron (no los avisos sueltos, como «no se pudieron ver los reembolsos»): quedan anotadas en pasarelas_estado. */
+  const fallas = new Map<ProveedorPasarela, string>();
+  const ultimos = new Map<ProveedorPasarela, string | undefined>();
 
   /* Whop manda quién pagó y la comisión en el detalle de cada pago, un
      pedido por cobro: se pide sólo para los que en la base están incompletos. */
@@ -121,8 +125,11 @@ export async function GET(peticion: Request) {
           necesitaDetalle: proveedor === "whop" && completosWhop ? (m) => !completosWhop.has(m.referencia) : undefined,
         });
         if (!soloPases) movimientos.push(...cobros);
+        ultimos.set(proveedor, cobroMasNuevo(cobros));
       } catch (err) {
-        errores.push({ proveedor, mensaje: err instanceof Error ? err.message : "Error desconocido." });
+        const mensaje = err instanceof Error ? err.message : "Error desconocido.";
+        errores.push({ proveedor, mensaje });
+        fallas.set(proveedor, mensaje);
       }
     }
     /* Los retiros de Stripe al banco, aparte: si la clave no los deja ver,
@@ -141,6 +148,15 @@ export async function GET(peticion: Request) {
   }));
 
   movimientos.sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha));
+
+  /* Cuándo se le preguntó a cada una y si contestó (lib/pasarelas-estado.ts): el selector de pagos lo muestra y, si una falla seguido
+     más de una hora, les llega un aviso a los dueños. */
+  const db = hayServidor && !soloPases ? nubeServidor() : null;
+  if (db) {
+    await Promise.all(conectadas.map((p) => anotarRevision(db, p, {
+      ok: !fallas.has(p), error: fallas.get(p), ultimoCobro: ultimos.get(p), fuente: esCron ? "cron" : "pantalla",
+    })));
+  }
 
   let guardados = 0;
   let completados = 0;

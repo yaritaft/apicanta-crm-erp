@@ -535,6 +535,14 @@ async function traerTabla(db: NonNullable<typeof nube>, tabla: string) {
   }
 }
 
+/** ¿La lista que vino de la base es la misma que ya hay en pantalla? Por id y contenido, sin importar el orden: si es la misma, no se
+ *  repinta (el Shell la vuelve a pedir cada dos minutos). */
+export function mismosMovimientos(a: readonly Movimiento[], b: readonly Movimiento[]): boolean {
+  if (a.length !== b.length) return false;
+  const porId = new Map(a.map((m) => [m.id, JSON.stringify(m)] as const));
+  return b.every((m) => porId.get(m.id) === JSON.stringify(m));
+}
+
 /* Lo que el lector de WhatsApp suma por webinar (vista whatsapp_resumen_webinar, supabase/whatsapp-resumen-webinar.sql):
    de ahí sale «Se unieron al grupo». No es una tabla de la app —no se escribe ni se respalda—, así que se pide aparte y
    nunca corta la carga: sin la vista creada, sin permiso o sin red, la app sigue como estaba (undefined = no cambiar nada). */
@@ -2828,6 +2836,25 @@ export const acciones = {
     const r = await traerTabla(nube, "traspasos");
     if (r.error || pendiente()) return false;
     guardar({ ...snapshot(), traspasos: (r.data ?? []) as Traspaso[] });
+    return true;
+  },
+
+  /* Vuelve a traer de la base los cobros de las pasarelas: el cron (cada 5 minutos Whop y Hotmart, cada hora el resto), los webhooks y
+     «Buscar pagos nuevos» los guardan en el servidor, y sin esto la pantalla seguía con la lista de cuando se abrió. Así pasó el 24/11:
+     el cobro de Whop ya estaba en la base y Aldana veía «Último cobro recibido: 21 nov», creyó que Whop se había desconectado y cargó
+     los pagos a mano. Lo llaman el selector de pagos al abrirse y el Shell cada dos minutos. Antes espera a que no quede nada de cobros
+     ni pagos por escribir, para no pisar con la base lo que todavía no le llegó; si no cambió nada, no repinta. */
+  async traerMovimientos(): Promise<boolean> {
+    if (!nube) return false;
+    const pendiente = () => cola.some((op) => op.tabla === "movimientos" || op.tabla === "pagos");
+    for (let i = 0; i < 40 && pendiente(); i++) await new Promise((r) => setTimeout(r, 150));
+    if (pendiente()) return false;
+    const r = await traerTabla(nube, "movimientos");
+    if (r.error || pendiente()) return false;
+    const nuevos = (r.data ?? []) as Movimiento[];
+    const e = snapshot();
+    if (mismosMovimientos(e.movimientos, nuevos)) return true;
+    guardar({ ...e, movimientos: nuevos });
     return true;
   },
 
