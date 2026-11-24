@@ -180,7 +180,12 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
       const j = await pedir({ alumnoId: alumno.id, ...cuerpo });
       toast(ok(j));
       if (typeof j.mensaje === "string" && j.mensaje) {
-        try { await navigator.clipboard.writeText(j.mensaje); toast("Copié el mensaje de bienvenida con los links: pegáselo por WhatsApp."); } catch { /* sin portapapeles */ }
+        /* El portapapeles puede no contestar nunca (la pestaña perdió el foco mientras se daban): no deja el botón girando (24/11). */
+        const copio = await Promise.race([
+          navigator.clipboard.writeText(j.mensaje).then(() => true, () => false),
+          new Promise<boolean>((r) => setTimeout(() => r(false), 2000)),
+        ]);
+        if (copio) toast("Copié el mensaje de bienvenida con los links: pegáselo por WhatsApp.");
       }
     } catch (err) { toast(err instanceof Error ? err.message : "No se pudo.", "err"); }
     setTrabajando(null);

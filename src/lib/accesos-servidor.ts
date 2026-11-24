@@ -501,6 +501,8 @@ export async function darAccesos(db: SupabaseClient, a: {
         externo: { telegramUserId: Number(adentro.id), ...(adentro.usuario ? { telegramUsuario: adentro.usuario } : {}), yaEstaba: true },
         error: null, dadoEn: ahora, quitadoEn: null,
       });
+      /* Que «Cuenta de Telegram» cuente también este grupo (decía «está en 1 grupo» con 4 en verde). */
+      await verEnElGrupo(db, adentro.id, chat, ahora);
       continue;
     }
     try {
@@ -620,6 +622,15 @@ async function cuentasDeTelegramDelAlumno(db: SupabaseClient, alumnoId: string):
 async function cuentasConUsuario(db: SupabaseClient, alumnoId: string): Promise<{ id: string; usuario: string | null }[]> {
   const r = await db.from("telegram_personas").select("id, usuario").eq("alumnoId", alumnoId);
   return r.error ? [] : ((r.data ?? []) as { id: string; usuario: string | null }[]);
+}
+
+/** Está en ese grupo: se suma a los grupos donde se la ve adentro (lo que cuenta «Cuenta de Telegram» en la ficha). Si falla, no importa. */
+async function verEnElGrupo(db: SupabaseClient, personaId: string, chatId: string, cuando: string): Promise<void> {
+  try {
+    const p = (await db.from("telegram_personas").select("grupos").eq("id", personaId).maybeSingle()).data as { grupos?: Record<string, string> | null } | null;
+    if (!p || (p.grupos && chatId in p.grupos)) return;
+    await db.from("telegram_personas").update({ grupos: { ...(p.grupos ?? {}), [chatId]: cuando } }).eq("id", personaId);
+  } catch { /* nada */ }
 }
 
 /** Ya no está en ese grupo: sale de los grupos donde se la veía adentro. Es sólo un dato para mostrar: si falla, no importa. */

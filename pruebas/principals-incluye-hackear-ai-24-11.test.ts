@@ -139,3 +139,46 @@ test("Mariano: «Máximo» está en la Agenda y la lista de atajos no se corta (
   assert.doesNotMatch(rail, /max-height/, "con un alto máximo, los últimos atajos (Máximo) quedan escondidos");
   assert.doesNotMatch(rail, /overflow-y:\s*auto/);
 });
+
+/* ---------- Dar lo que falta a quien renueva de Hackear AI a Principals (lo que pasó con Brando y Juan Ignacio) ---------- */
+
+import { baseEnMemoria, conServiciosFalsos, type Fila } from "./ayudas-accesos";
+import { darAccesos, idDeAcceso } from "@/lib/accesos-servidor";
+
+test("renovó a Principals: lo de Hackear AI pasa a Principals, no se repite, y en Telegram identificado no se le manda link al grupo donde ya está", async () => {
+  const p = principals();
+  const fila = (plataforma: string, recurso: string, estado: string, programa: string): Fila => ({
+    id: idDeAcceso("alu_b", plataforma as "telegram", recurso), alumnoId: "alu_b", plataforma, recurso, recursoNombre: recurso, estado, programa, venceEn: null, externo: {}, error: null,
+  });
+  const { db, tablas } = baseEnMemoria({
+    accesos_alumno: [fila("wisboo", WISBOO.hackearIt, "dado", "hackear-ai"), fila("telegram", GRUPO_PRINCIPALS, "entro", "principals")],
+    telegram_personas: [{ id: "777", usuario: "brando", alumnoId: "alu_b", grupos: { [GRUPO_PRINCIPALS]: "2026-11-24T22:00:00.000Z" } }],
+    telegram_grupos: [],
+  });
+  const links: string[] = [];
+  const r = await conServiciosFalsos(async () => {
+    const falso = globalThis.fetch;
+    globalThis.fetch = (async (entrada: string | URL, init?: RequestInit) => {
+      const url = String(entrada);
+      if (url.includes("/getChatMember")) {
+        const chat = String(JSON.parse(String(init?.body ?? "{}")).chat_id);
+        const json = { ok: true, result: { status: chat === GENERAL ? "member" : "left" } };
+        return new Response(JSON.stringify(json), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/createChatInviteLink")) links.push(String(JSON.parse(String(init?.body ?? "{}")).chat_id));
+      return falso(entrada, init);
+    }) as typeof fetch;
+    try {
+      return await darAccesos(db, { alumnoId: "alu_b", persona: { nombre: "Brando Sánchez", email: "b@x.com" }, programa: p, origen: "manual", quien: "t" });
+    } finally { globalThis.fetch = falso; }
+  });
+  const de = (pl: string, rec: string) => tablas.accesos_alumno.find((f) => f.plataforma === pl && f.recurso === rec);
+  assert.equal(de("wisboo", WISBOO.hackearIt)?.programa, "principals", "lo que tenía de Hackear AI ahora es de Principals");
+  assert.equal(r.yaEstaban, 2, "Hackear IT y el grupo de Principals no se vuelven a dar");
+  assert.equal(de("telegram", GENERAL)?.estado, "entro", "ya estaba en General: se anota adentro");
+  assert.equal((de("telegram", GENERAL)?.externo as Record<string, unknown>).telegramUsuario, "brando");
+  assert.ok(!links.includes(GENERAL), "y no se le genera link");
+  assert.deepEqual([...links].sort(), [CONTENIDO, NOVEDADES, BOLSA, GRUPO_IA].sort(), "a los otros cuatro, link");
+  assert.ok(GENERAL in (tablas.telegram_personas[0].grupos as Record<string, string>), "la cuenta cuenta también ese grupo");
+  assert.equal(tablas.accesos_alumno.filter((f) => f.plataforma === "wisboo").length, 4);
+});
