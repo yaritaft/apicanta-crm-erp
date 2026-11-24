@@ -709,11 +709,12 @@ export async function reenviarBienvenida(db: SupabaseClient, c: Contrato, quien:
   if (!mail) return { mail: false, motivo: "Este programa no tiene mail de bienvenida." };
   const r = await enviarPorResend(cfg, { para, asunto: mail.asunto, texto: mail.texto, html: htmlDeBienvenida(mail.texto), responderA: mail.responderA });
   if (!r.ok) {
-    await evento(db, c.id, "bienvenida", quien, "app", { enviado: false, reenvio: true, error: r.error });
+    await evento(db, c.id, "bienvenida", quien, "app", { enviado: false, reenvio: Boolean(c.bienvenidaMailEn), error: r.error });
     return { mail: false, motivo: r.error };
   }
   await db.from("contratos").update({ bienvenidaMailId: r.id, ...(c.bienvenidaMailEn ? {} : { bienvenidaMailEn: ahora() }) }).eq("id", c.id);
-  await evento(db, c.id, "bienvenida", quien, "app", { enviado: true, reenvio: true, id: r.id, modelo: mail.modelo, perfil: mail.perfil });
+  /* El primero que se manda desde la ficha (Principals no tenía mail hasta el 24/11) no es un reenvío: el historial decía «Se le reenvió». */
+  await evento(db, c.id, "bienvenida", quien, "app", { enviado: true, reenvio: Boolean(c.bienvenidaMailEn), id: r.id, modelo: mail.modelo, perfil: mail.perfil });
   return { mail: true };
 }
 

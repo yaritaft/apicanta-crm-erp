@@ -236,7 +236,8 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
       <FilaServicio icono={<Mail size={15} />} rotulo="Mail de bienvenida"
         detalle={contrato.bienvenidaMailEn
           ? [seg.envios > 1 ? `Salió ${seg.envios} veces` : "", mail?.texto ?? ""].filter(Boolean).join(" · ") || undefined
-          : "Todavía no sale solo: copiá el mensaje y mandáselo por WhatsApp o mail."}>
+          : firmado ? "No le salió: mandáselo con «Mandar el mail» (o copiá el mensaje para WhatsApp)."
+            : "Le llega solo cuando firme. Con «Ver cómo sale» ves cómo le va a llegar."}>
         <span style={{ display: "inline-flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
           {contrato.bienvenidaMailEn && (
             <span className="t-num" style={mail?.tono === "malo" ? { color: "var(--danger)" } : undefined} title={seg.ultimoEnvio ? `Último envío: ${fechaHora(seg.ultimoEnvio)}` : undefined}>
