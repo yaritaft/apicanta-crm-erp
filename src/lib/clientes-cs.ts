@@ -176,6 +176,7 @@ export function seguimientoCompleto(
     telefono: textoLimpio(m.telefono), stack: textoLimpio(m.stack), dni: textoLimpio(m.dni), domicilio: textoLimpio(m.domicilio),
     programas: aListaDeTextos(m.programas), planDePago: textoLimpio(m.planDePago),
     duracionMeses: aNumero(m.duracionMeses), fechaEgreso: aDia(m.fechaEgreso), sesionesMentor: aNumero(m.sesionesMentor),
+    ...(m.egresoDelInicio !== undefined ? { egresoDelInicio: aDia(m.egresoDelInicio) } : {}),
     sesionesUnoAUno: sesionesNormales(m.sesionesUnoAUno),
     pausas: pausasNormales(m.pausas),
     contactoInicial: aDia(m.contactoInicial), contactoSemana: aDia(m.contactoSemana),
@@ -306,7 +307,22 @@ export function programasYDuracion(
 /** El fin del programa de un alumno, el mismo de «Fecha de egreso» en Clientes (sin el caso de la reserva, que no arrancó):
  *  lo usa también la pasada que le saca los accesos en el outboarding (lib/outboarding-servidor.ts). */
 export function finDelPrograma(inicio: string, seg: SeguimientoAlumno, productoOPlan: string, lista: readonly string[]): string | null {
-  return egresoDelPrograma(inicio, seg.fechaEgreso, programasYDuracion(seg, productoOPlan, lista).duracion, seg.pausas ?? []);
+  return egresoDelPrograma(inicio, egresoDeEsteCiclo(inicio, seg), programasYDuracion(seg, productoOPlan, lista).duracion, seg.pausas ?? []);
+}
+
+/** El fin guardado, si es de ESTE ciclo; null si se escribió para otro inicio. LA RAÍZ del 24/11: al renovar, el inicio pasa a la fecha de
+    la compra pero el fin del programa anterior quedaba guardado y, si caía después del inicio nuevo (Juan Ignacio: Upgrade AI hasta el 18/12,
+    Principals desde el 24/11), la app lo tomaba como escrito a mano y el outboarding le iba a sacar los accesos ese día. Ahora cada fin lleva
+    el inicio para el que se escribió (`egresoDelInicio`) y la base sella como del ciclo anterior el que no lo tenga cuando el inicio avanza
+    (supabase/egreso-de-cada-ciclo-24-11.sql). */
+export function egresoDeEsteCiclo(inicio: string, seg: Pick<SeguimientoAlumno, "fechaEgreso" | "egresoDelInicio">): string | null {
+  const de = seg.egresoDelInicio ? seg.egresoDelInicio.slice(0, 10) : null;
+  return de && inicio && de !== inicio.slice(0, 10) ? null : seg.fechaEgreso;
+}
+
+/** Lo que se guarda al escribir el fin del programa: la fecha y el inicio para el que vale (vacía, sin marca). */
+export function conEgresoEscrito(fecha: string | null, inicio: string): Pick<SeguimientoAlumno, "fechaEgreso" | "egresoDelInicio"> {
+  return { fechaEgreso: fecha, egresoDelInicio: fecha && inicio ? inicio.slice(0, 10) : null };
 }
 
 /** El fin que calcula la app solo: el inicio más la duración, sin demoras ni pausas (null si falta alguno de los dos). */
@@ -530,7 +546,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
     const { programas, programasSug, duracion, duracionSug } = programasYDuracion(seg, producto || a.plan, listas.programas);
     /* Sólo una reserva (lib/reservas.ts): no entra al seguimiento hasta que pague lo que falta. */
     const enReserva = Boolean(venta && reservaSinCompletar(cuotasDe.get(venta.id) ?? [])) || followUpDeReserva(seg.followUp);
-    const egresoPropio = seg.fechaEgreso;
+    const egresoPropio = egresoDeEsteCiclo(inicio, seg);
     /* La reserva todavía no arrancó: no se le calcula el fin (inicio más duración) hasta que pague lo que falta. Las
        reservas de junio y julio figuraban «se les terminó el contrato» (Lili, 23/10). Un egreso cargado a mano se respeta. */
     const egreso = enReserva && egresoPropio === null ? null : egresoDelPrograma(inicio, egresoPropio, duracion, seg.pausas ?? []);
@@ -781,7 +797,11 @@ export function escrituraCliente(f: FilaCliente, clave: ClaveCliente, valor: str
       const n = /\d+/.exec(v);
       return numero(ENTRE.mentor, "sesionesMentor", "Sesiones con el mentor", n ? n[0] : v);
     }
-    case "egreso": return dia("fechaEgreso");
+    case "egreso": {
+      /* El fin escrito lleva el inicio para el que vale: si después renueva, deja de contar solo. */
+      const r = dia("fechaEgreso");
+      return r.tipo === "seguimiento" ? { ...r, cambios: { ...r.cambios, ...conEgresoEscrito((r.cambios.fechaEgreso as string | null) ?? null, f.inicio) } } : r;
+    }
     case "contactoInicial": return dia("contactoInicial");
     case "contactoSemana": return dia("contactoSemana");
     case "ultimoContacto": {

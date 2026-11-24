@@ -6,7 +6,7 @@ import { Button, Field, Input, Select, Textarea } from "@/components/ui/ui";
 import { ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, nuevoId, useEstado } from "@/lib/store";
-import { egresoDelPrograma, egresoEscritoAMano, type FilaCliente } from "@/lib/clientes-cs";
+import { conEgresoEscrito, egresoDeEsteCiclo, egresoDelPrograma, egresoEscritoAMano, type FilaCliente } from "@/lib/clientes-cs";
 import { conPausa, demoraDe, diasDe, diasDePausa, MAX_DEMORA_DIAS, MAX_PAUSA_DIAS, pasaDelTope, pausasDelCiclo, problemaDePausa, textoDePausa } from "@/lib/pausas";
 import { diasEntre, formatoDia, sumarDias } from "@/lib/seguimiento";
 import type { PausaServicio, SeguimientoAlumno } from "@/lib/types";
@@ -25,7 +25,7 @@ export function PausasAlumno({ f, hoy, puede }: { f: FilaCliente; hoy: string; p
   const [form, setForm] = useState<{ tipo: PausaServicio["tipo"]; p?: PausaServicio } | null>(null);
   const [editandoFin, setEditandoFin] = useState(false);
   const pausas = f.seg.pausas ?? [];
-  const aMano = egresoEscritoAMano(f.inicio, f.seg.fechaEgreso, f.duracion);
+  const aMano = egresoEscritoAMano(f.inicio, egresoDeEsteCiclo(f.inicio, f.seg), f.duracion);
   const delCiclo = pausasDelCiclo(pausas, f.inicio);
   const demora = demoraDe(delCiclo);
   const corrido = (demora ? diasDe(demora) : 0) + diasDePausa(delCiclo);
@@ -85,9 +85,9 @@ function FormFin({ f, hoy, aMano, onCerrar }: { f: FilaCliente; hoy: string; aMa
   function guardar(nueva: string | null) {
     const ahora = new Date().toISOString();
     const antes = acciones.guardarSeguimiento(f.id, (s: SeguimientoAlumno, quien: string): SeguimientoAlumno => ({
-      ...s, fechaEgreso: nueva, actualizadoEn: ahora, actualizadoPor: quien,
+      ...s, ...conEgresoEscrito(nueva, f.inicio), actualizadoEn: ahora, actualizadoPor: quien,
     }), (d) => {
-      const fin = egresoDelPrograma(f.inicio, d.fechaEgreso, f.duracion, d.pausas ?? []);
+      const fin = egresoDelPrograma(f.inicio, egresoDeEsteCiclo(f.inicio, d), f.duracion, d.pausas ?? []);
       return nueva ? `El fin del programa de ${f.nombre} quedó el ${fmt(nueva)} (escrito a mano).` : `El fin del programa de ${f.nombre} se vuelve a calcular solo${fin ? `: ${fmt(fin)}` : ""}.`;
     });
     if (!antes) return;
@@ -137,7 +137,7 @@ function FormPausa({ f, hoy, tipo, pausa, onCerrar }: {
   const problema = b.hasta ? problemaDePausa(nueva, f.inicio, otras) : null;
   const sobreTope = b.hasta ? pasaDelTope(nueva, otras) : null;
   const lista = conPausa(f.seg.pausas, nueva);
-  const finNuevo = !problema && b.hasta ? egresoDelPrograma(f.inicio, f.seg.fechaEgreso, f.duracion, lista) : null;
+  const finNuevo = !problema && b.hasta ? egresoDelPrograma(f.inicio, egresoDeEsteCiclo(f.inicio, f.seg), f.duracion, lista) : null;
   const fmt = (d: string) => formatoDia(d, hoy);
   const que = tipo === "demora" ? "La demora de inicio" : `La pausa del ${b.desde ? fmt(b.desde) : "—"}`;
 
@@ -146,7 +146,7 @@ function FormPausa({ f, hoy, tipo, pausa, onCerrar }: {
     const antes = acciones.guardarSeguimiento(f.id, (s: SeguimientoAlumno, quien: string): SeguimientoAlumno => ({
       ...s, pausas: conPausa(s.pausas, { ...nueva, creadoPor: nueva.creadoPor || quien }, borrar), actualizadoEn: ahora, actualizadoPor: quien,
     }), (d) => {
-      const fin = egresoDelPrograma(f.inicio, d.fechaEgreso, f.duracion, d.pausas ?? []);
+      const fin = egresoDelPrograma(f.inicio, egresoDeEsteCiclo(f.inicio, d), f.duracion, d.pausas ?? []);
       return `${que}${borrar ? " se borró" : tipo === "demora" ? `: arranca el ${fmt(nueva.hasta)}` : ` al ${fmt(nueva.hasta)}`}${nueva.motivo && !borrar ? ` (${nueva.motivo})` : ""}${nueva.autorizadoPor && !borrar ? `, autorizó ${nueva.autorizadoPor}` : ""}.${fin ? ` El programa termina el ${fmt(fin)}.` : ""}`;
     });
     if (!antes) return;
@@ -184,7 +184,7 @@ function FormPausa({ f, hoy, tipo, pausa, onCerrar }: {
             opciones={[{ valor: "", texto: "Nadie en particular" }, ...equipo.map((n) => ({ valor: n, texto: n })),
               ...(b.autorizadoPor && !equipo.includes(b.autorizadoPor) ? [{ valor: b.autorizadoPor, texto: b.autorizadoPor }] : [])]} />
         </Field>
-        {egresoEscritoAMano(f.inicio, f.seg.fechaEgreso, f.duracion) && (
+        {egresoEscritoAMano(f.inicio, egresoDeEsteCiclo(f.inicio, f.seg), f.duracion) && (
           <p className="t-sm t-muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
             Su fin del programa está escrito a mano ({f.egreso ? fmt(f.egreso) : "—"}): no se corre solo. Si cambia, corregilo en «Fin del programa».
           </p>

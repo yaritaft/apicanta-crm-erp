@@ -538,6 +538,8 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       poner("planDePago", texto("plan"));
       if (v("duracion")) poner("duracionMeses", numOk("duracion", ENTRE.duracion));
       poner("fechaEgreso", egresoTxt);
+      /* El fin del Airtable vale para el inicio del Airtable: si en la app el alumno ya renovó, no pisa el ciclo nuevo (24/11). */
+      if (egresoTxt && inicio) poner("egresoDelInicio", inicio);
       if (v("mentor")) poner("sesionesMentor", numOk("mentor", [0, 10]));
       poner("notas", texto("comentarios"));
       for (const [k, dias] of [["contactoInicial", 0], ["contactoSemana", 7]] as const) {

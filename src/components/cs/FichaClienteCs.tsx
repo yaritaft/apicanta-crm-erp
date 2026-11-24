@@ -12,8 +12,8 @@ import { PAISES } from "@/lib/crm-tabla";
 import { configSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
 import { diaAInstante } from "@/lib/dia-negocio";
 import {
-  aNumero, CONTRATOS, DURACION_POR_PROGRAMA, edadDeNacimiento, ENTRE, listasCs, OPCIONES_ESTADO_ALUMNO, problemaDeNacimiento, SESIONES_MENTOR, valorDeLista,
-  type FilaCliente,
+  aNumero, conEgresoEscrito, CONTRATOS, DURACION_POR_PROGRAMA, edadDeNacimiento, egresoDeEsteCiclo, ENTRE, listasCs, OPCIONES_ESTADO_ALUMNO, problemaDeNacimiento,
+  SESIONES_MENTOR, valorDeLista, type FilaCliente,
 } from "@/lib/clientes-cs";
 import type { Alumno, SeguimientoAlumno } from "@/lib/types";
 
@@ -46,6 +46,8 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
   const cfg = configSeguimiento(e.ajustes.seguimiento);
   const listas = useMemo(() => listasCs(e.ajustes.seguimiento), [e.ajustes.seguimiento]);
   const s = fila.seg;
+  /* El fin escrito para ESTE ciclo: el de antes de renovar no se muestra como si fuera suyo (24/11). */
+  const egresoInicial = egresoDeEsteCiclo(fila.inicio, s) ?? "";
   const conReportes = fila.reporte.origen === "reportes";
   const [tocoProgramas, setTocoProgramas] = useState(false);
   const [b, setB] = useState<Borrador>(() => ({
@@ -53,7 +55,7 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
     edad: s.edad === null ? "" : String(s.edad), nacimiento: s.nacimiento ?? "", dni: s.dni, domicilio: s.domicilio,
     numero: s.numero === null ? "" : String(s.numero),
     inicio: fila.inicio, programas: fila.programas, planDePago: s.planDePago, duracion: s.duracionMeses === null ? "" : String(s.duracionMeses),
-    egreso: s.fechaEgreso ?? "", mentor: s.sesionesMentor === null ? "" : String(s.sesionesMentor), stack: s.stack,
+    egreso: egresoInicial, mentor: s.sesionesMentor === null ? "" : String(s.sesionesMentor), stack: s.stack,
     garantia: s.garantia, acceso: s.acceso, closer: s.closerNombre,
     followUp: s.followUp, contactoInicial: s.contactoInicial ?? "", contactoSemana: s.contactoSemana ?? "", ultimoContacto: s.ultimoContacto ?? "",
     cadencia: String(s.cadenciaDias), estadoAlumno: fila.alumno.estado, notas: s.notas,
@@ -96,7 +98,9 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
     const cambiosSeg: Partial<SeguimientoAlumno> = {
       ...(numero.n !== null ? { numero: numero.n } : {}), edad: edad.n, nacimiento: b.nacimiento || null, dni: b.dni.trim(), domicilio: b.domicilio.trim(),
       stack: valorDeLista(b.stack, listas.stacks), planDePago: b.planDePago.trim(), duracionMeses: duracion.n,
-      fechaEgreso: b.egreso || null, sesionesMentor: mentor.n, garantia: valorDeLista(b.garantia, listas.garantias),
+      /* Escrito o cambiado: queda con el inicio para el que vale. Sin tocar: queda como estaba (el de otro ciclo, que no se mostró, se limpia). */
+      ...(b.egreso !== egresoInicial ? conEgresoEscrito(b.egreso || null, b.inicio || fila.inicio) : egresoInicial ? {} : { fechaEgreso: null, egresoDelInicio: null }),
+      sesionesMentor: mentor.n, garantia: valorDeLista(b.garantia, listas.garantias),
       acceso: valorDeLista(b.acceso, listas.accesos), followUp: valorDeLista(b.followUp, listas.followUps),
       contactoInicial: b.contactoInicial || null, contactoSemana: b.contactoSemana || null,
       notas: b.notas, accesoWhatsapp: b.wpp, accesoZoom: b.zoom, accesoWibo: b.wibo,

@@ -406,6 +406,9 @@ export interface SeguimientoAlumno {
   duracionMeses: number | null;
   /* El día en que egresa. Sin dato, es el inicio más la duración. */
   fechaEgreso: string | null;
+  /* Para qué inicio se escribió `fechaEgreso` (día de Argentina). Si el alumno renovó y su inicio cambió, ese fin es del ciclo anterior y
+     no cuenta (Juan Ignacio Ledesma, 24/11: renovó a Principals y le quedó el fin del Upgrade AI). Sin marca: las filas de antes. */
+  egresoDelInicio?: string | null;
   /* 0, 1, 2 o 3 sesiones con el mentor, según lo acordado con el closer. */
   sesionesMentor: number | null;
   /* Las sesiones 1 a 1 que tomó: las del contrato con Yari (los «bonos») y las de acompañamiento con Lili (reunión del 21/10). */
