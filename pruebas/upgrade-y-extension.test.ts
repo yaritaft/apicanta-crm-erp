@@ -152,9 +152,9 @@ test("los programas de fábrica: «Upgrade a mentoría» va al programa completo
 });
 
 test("la extensión no manda mail de bienvenida ni pide el perfil: la persona ya los tuvo", () => {
-  assert.equal(modeloDeBienvenida({ programa: "hackear-ia-mid-extension" }), null);
-  assert.equal(modeloDeBienvenida({ programa: "hackear-ia-mid" }), "downsell");
-  assert.equal(modeloDeBienvenida({ programa: "hackear-ai" }), "completo");
+  assert.equal(modeloDeBienvenida({ programa: "hackear-ia-mid-extension", incluye: [] }), null);
+  assert.equal(modeloDeBienvenida({ programa: "hackear-ia-mid", incluye: [] }), "downsell");
+  assert.equal(modeloDeBienvenida({ programa: "hackear-ai", incluye: [] }), "completo");
 });
 
 test("la ficha al firmar: quien sube de un downsell al programa completo suma el programa; lo demás queda igual", () => {

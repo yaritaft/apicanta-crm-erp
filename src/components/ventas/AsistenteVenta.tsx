@@ -761,7 +761,7 @@ function validar(paso: PasoId, b: Borrador, diferencia: number, ctx: {
       if (!plantillaDelContrato(programa, b.contrato.datos.reserva, b.contrato.datos.sesiones).id) {
         return b.contrato.datos.reserva && programa ? `${programa.nombre} todavía no tiene contrato de reserva` : "Elegí el programa del contrato";
       }
-      return problemaDeDatos(b.contrato.datos, ctx.modoContrato, undefined, programa?.id);
+      return problemaDeDatos(b.contrato.datos, ctx.modoContrato, undefined, programa);
     }
     case "precio": {
       const pagado = sumar(b.fijas);

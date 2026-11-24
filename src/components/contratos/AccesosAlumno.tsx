@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarX2, Copy, GraduationCap, KeyRound, RotateCcw, Send, UserMinus, Video } from "lucide-react";
+import { CalendarX2, ClipboardCheck, Copy, GraduationCap, KeyRound, RotateCcw, Send, UserMinus, Video } from "lucide-react";
 import { Badge, Button, Field, Select, type VarianteBadge } from "@/components/ui/ui";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
@@ -16,6 +16,7 @@ import { bajaResuelta, pedidosDeBaja, queFaltaDeLaBaja } from "@/lib/bajas-falta
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { programaDeProducto, programasDe } from "@/lib/programas";
+import { accesosQueFaltan, resumenDelPrograma } from "@/lib/accesos-que-faltan";
 import type { Alumno, Venta } from "@/lib/types";
 import type { Acceso, EstadoAcceso, Plataforma } from "@/lib/accesos-servidor";
 import { contratosPrendidos } from "./cliente";
@@ -150,6 +151,17 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
     setAccesos(r.error ? [] : (r.data ?? []) as Acceso[]);
   }, [alumno.id]);
   useEffect(() => { void leer(); }, [leer]);
+  /* Los nombres de los grupos de Telegram, para decir cuál le falta (los cursos y las reuniones se conocen por su número). */
+  const [nombresGrupos, setNombresGrupos] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!nube || forma !== "hoja") return;
+    let vivo = true;
+    void nube.from("telegram_grupos").select('"chatId", titulo').then((r) => {
+      if (!vivo || r.error) return;
+      setNombresGrupos(Object.fromEntries(((r.data ?? []) as { chatId: string; titulo: string | null }[]).filter((g) => g.titulo).map((g) => [`telegram:${g.chatId}`, g.titulo!])));
+    });
+    return () => { vivo = false; };
+  }, [forma]);
 
   const lista = accesos ?? [];
   const vigentes = lista.filter((x) => x.estado !== "quitado");
@@ -187,7 +199,12 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
     catch { window.prompt("Copiá el mensaje:", texto); }
   }
 
-  const programaSugerido = programaDeProducto(programas, venta?.productoId)?.id ?? "";
+  const delPrograma = programaDeProducto(programas, venta?.productoId);
+  const programaSugerido = delPrograma?.id ?? "";
+  /* Lo que su programa le da y todavía no tiene (Lili, 24/11): se ve en su bloque y se da con un clic. */
+  const faltan = useMemo(() => (accesos === null ? [] : accesosQueFaltan(delPrograma, accesos, nombresGrupos)), [accesos, delPrograma, nombresGrupos]);
+  const darLoQueFalta = () => void correr("faltan", { accion: "dar", programa: programaSugerido, solo: faltan.map((x) => ({ plataforma: x.plataforma, recurso: x.recurso })) },
+    (j) => `Accesos: ${String(j.dados ?? 0)} dados${Number(j.fallaron) ? `, ${String(j.fallaron)} con error` : ""}${Number(j.yaEstaban) ? `, ${String(j.yaEstaban)} ya los tenía` : ""}.`);
   /* Quién es en Telegram (Manu, 20/11): con eso «Quitar» y el outboarding lo pueden sacar de los grupos, también a los de antes de la app. */
   const identidad = (
     <IdentidadTelegram alumno={alumno} acciona={acciona} conAccesoVigente={vigentes.some((x) => x.plataforma === "telegram")}
@@ -232,9 +249,29 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
             {acciona && vigentes.length > 0 && (
               <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom.", wisboo: true })}>Quitar todo</Button>
             )}
-            {acciona && <Button sm variante="secondary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>}
+            {acciona && faltan.length > 0
+              ? <Button sm variante="primary" icono={<KeyRound size={14} />} cargando={trabajando === "faltan"} onClick={darLoQueFalta}>Dar lo que falta ({faltan.length})</Button>
+              : acciona && <Button sm variante="secondary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>}
           </AccionesServicio>
         )}
+        {/* Qué le da su programa y si ya lo tiene todo (Lili, 24/11): sin esto, lo que faltaba no se veía en ningún lado. */}
+        {delPrograma && accesos !== null && (() => {
+          const r = resumenDelPrograma(delPrograma, accesos, faltan);
+          const incluidos = (delPrograma.incluye ?? []).map((id) => programas.find((p) => p.id === id)?.nombre ?? id);
+          const estado = r.faltan > 0 ? `Le ${r.faltan === 1 ? "falta 1" : `faltan ${r.faltan}`}` : r.conError > 0 ? `${r.conError} con error` : "Tiene todo";
+          const nota = [
+            r.faltan > 0 ? `Lo que falta está en ámbar en cada bloque${acciona ? ": «Dar lo que falta» se lo da sin repetir lo que ya tiene" : ""}.` : "",
+            r.sinEntrar > 0 ? `${r.sinEntrar === 1 ? "Un link de Telegram" : `${r.sinEntrar} links de Telegram`} sin usar: falta que entre.` : "",
+          ].filter(Boolean).join(" ");
+          return (
+            <BloqueServicio titulo="Su programa">
+              <FilaServicio icono={<ClipboardCheck size={15} />} rotulo={`${delPrograma.nombre}${incluidos.length ? ` (incluye ${incluidos.join(" y ")})` : ""}`}
+                detalle={`Le da ${r.da || "nada todavía"}.${nota ? ` ${nota}` : ""}`}>
+                <Badge variante={r.tieneTodo ? "success" : r.faltan > 0 ? "warning" : "danger"}>{estado}</Badge>
+              </FilaServicio>
+            </BloqueServicio>
+          );
+        })()}
         {baja && accesos !== null && (() => {
           const cuotas = baja.cuotas.map((c) => (c.esReserva ? "la reserva" : `la cuota ${c.numero}`)).join(" y ");
           const producto = e.productos.find((p) => p.id === baja.venta.productoId)?.nombre;
@@ -275,12 +312,13 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
         )}
         {accesos === null ? <div className="skeleton" style={{ height: 132, borderRadius: 12 }} /> : PLATAFORMAS.map(({ clave, nombre, icono }) => {
           const xs = lista.filter((x) => x.plataforma === clave);
+          const leFaltan = faltan.filter((x) => x.plataforma === clave);
           /* Sin estado general de la plataforma (Juan Cruz, 21/10): cada fila ya dice a qué tiene acceso y a qué no. */
           return (
             <BloqueServicio key={clave} titulo={nombre}>
               {clave === "telegram" && identidad}
               {xs.length === 0
-                ? (manual?.[clave] ?? <p className="hs-nada">Todavía no se le dio nada desde la app.</p>)
+                ? (leFaltan.length && !manual?.[clave] ? null : manual?.[clave] ?? <p className="hs-nada">Todavía no se le dio nada desde la app.</p>)
                 : xs.map((x) => {
                   const est = estadoDe(x);
                   return (
@@ -293,6 +331,11 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
                     </FilaServicio>
                   );
                 })}
+              {leFaltan.map((x) => (
+                <FilaServicio key={`falta-${x.recurso}`} icono={icono} rotulo={x.nombre} detalle={`Su programa lo da y todavía no lo tiene${clave === "telegram" ? " (se le genera su link)" : clave === "zoom" ? " (se lo inscribe)" : ""}.`}>
+                  <Badge variante="warning">Falta darlo</Badge>
+                </FilaServicio>
+              ))}
             </BloqueServicio>
           );
         })}

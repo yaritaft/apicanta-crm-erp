@@ -79,7 +79,7 @@ export function DatosDelContrato({ datos, onCambio, programas, programaId, onPro
         </p>
       )}
       {/* Lili, 22/10: con el perfil le llega al alumno el roadmap que le corresponde (lib/bienvenida-alumno.ts). */}
-      {modeloDeBienvenida({ reserva, programa: programaId }) && (
+      {modeloDeBienvenida({ reserva, programa: programaId, incluye: programa?.incluye }) && (
         <Field label="Perfil del alumno" span2
           ayuda="Con esto le llega su roadmap al firmar. Full Stack incluye Frontend y Backend.">
           <Select value={datos.perfil ?? ""} placeholder="Elegí el perfil" aria-label="Perfil del alumno"

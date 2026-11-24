@@ -257,10 +257,10 @@ export function DateRangePicker({
   useLayoutEffect(() => {
     if (!open) { setUbic(null); return; }
     acomodar();
-    /* El preset activo a la vista (el rail scrollea: son 13 o 16). A mano y no
-       con `scrollIntoView`, que además desplaza la página entera. */
-    const rail = railRef.current, on = rail?.querySelector<HTMLElement>(".dp-preset--on");
-    if (rail && on) rail.scrollTop = Math.max(0, on.offsetTop - (rail.clientHeight - on.offsetHeight) / 2);
+    /* El preset activo a la vista. El rail ya no scrollea (se ven los 13 o 16), pero en una ventana baja scrollea el cuerpo:
+       a mano y no con `scrollIntoView`, que además desplaza la página entera. */
+    const body = bodyRef.current, on = railRef.current?.querySelector<HTMLElement>(".dp-preset--on");
+    if (body && on && body.scrollHeight > body.clientHeight) body.scrollTop = Math.max(0, on.offsetTop - (body.clientHeight - on.offsetHeight) / 2);
     window.addEventListener("resize", acomodar);
     window.addEventListener("scroll", acomodar, true);
     return () => { window.removeEventListener("resize", acomodar); window.removeEventListener("scroll", acomodar, true); };

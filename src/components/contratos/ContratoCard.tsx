@@ -193,7 +193,7 @@ export function ContratoCard({ venta, alumnoId, sesionId, manual, forma = "tarje
   async function guardarEdicion() {
     if (!edicion) return;
     const modo = edicion.prueba ? "prueba" : "produccion";
-    const problema = !edicion.programaId ? "Elegí el programa." : problemaDeDatos(edicion.datos, edicion.contrato?.modo ?? modo, undefined, edicion.programaId);
+    const problema = !edicion.programaId ? "Elegí el programa." : problemaDeDatos(edicion.datos, edicion.contrato?.modo ?? modo, undefined, programas.find((p) => p.id === edicion.programaId) ?? { id: edicion.programaId });
     if (problema) { toast(problema, "err"); return; }
     /* Sin contrato de reserva en ese programa no hay nada que mandar: el servidor tampoco lo arma, pero acá se dice antes. */
     if (edicion.tipo === "crear" && edicion.datos.reserva && !plantillaDelContrato(programas.find((p) => p.id === edicion.programaId), true).id) {

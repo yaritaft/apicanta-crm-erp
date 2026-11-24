@@ -247,9 +247,8 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
             <Button sm variante={contrato.bienvenidaMailEn ? "secondary" : "primary"} icono={<Send size={14} />} disabled={reenviando}
               onClick={() => void reenviarBienvenida()}>{contrato.bienvenidaMailEn ? "Reenviar" : "Mandar el mail"}</Button>
           )}
-          {contrato.bienvenidaMailEn && (
-            <Button sm variante="secondary" icono={<Eye size={14} />} onClick={() => void abrirMail()}>Ver cómo salió</Button>
-          )}
+          {/* Antes de mandarlo también se ve cómo le va a llegar (Lili, 24/11: «necesito ver cómo se envía el mail de bienvenida»). */}
+          <Button sm variante="secondary" icono={<Eye size={14} />} onClick={() => void abrirMail()}>{contrato.bienvenidaMailEn ? "Ver cómo salió" : "Ver cómo sale"}</Button>
           <Button sm variante="secondary" icono={<Copy size={14} />} disabled={copiando} onClick={() => void copiar()}>Copiar el mensaje</Button>
         </span>
       </FilaServicio>
@@ -264,8 +263,15 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
         </FilaServicio>
       )}
       <Modal abierto={verMail !== null} onCerrar={() => setVerMail(null)} titulo="Mail de bienvenida"
-        sub={verMail?.mail ? `Para ${verMail.mail.para || "—"}${verMail.mail.cuando ? ` · ${fechaHora(verMail.mail.cuando)}` : ""}` : undefined} ancho
-        pie={verMail?.mail ? <Button sm variante="secondary" icono={<Copy size={14} />} onClick={() => void copiarMail()}>Copiar</Button> : undefined}>
+        sub={verMail?.mail ? `Para ${verMail.mail.para || "—"}${verMail.mail.cuando ? ` · ${fechaHora(verMail.mail.cuando)}` : " · todavía no salió"}` : undefined} ancho
+        pie={verMail?.mail ? (
+          <span style={{ display: "inline-flex", gap: 8 }}>
+            <Button sm variante="secondary" icono={<Copy size={14} />} onClick={() => void copiarMail()}>Copiar</Button>
+            {!contrato.bienvenidaMailEn && firmado && puedeCambiar && (
+              <Button sm variante="primary" icono={<Send size={14} />} disabled={reenviando} onClick={() => { setVerMail(null); void reenviarBienvenida(); }}>Mandarlo ahora</Button>
+            )}
+          </span>
+        ) : undefined}>
         {verMail?.cargando && <p className="t-sm t-subtle">Trayendo el mail…</p>}
         {verMail?.error && <p className="t-sm" style={{ color: "var(--danger)" }}>{verMail.error}</p>}
         {verMail?.mail && (
@@ -276,7 +282,9 @@ export function BienvenidaAlumno({ alumnoId, ventaId }: { alumnoId: string; vent
                 opciones={[...envios].reverse().map((x, i) => ({ valor: x.detalle.id as string, texto: `${fechaHora(x.cuando)}${x.detalle.reenvio ? " · reenvío" : i === envios.length - 1 ? " · el primero" : ""}` }))} />
             )}
             {verMail.mail.reconstruido && (
-              <p className="t-sm hs-guion">Resend ya no guarda este mail: te mostramos el texto que saldría hoy, que puede diferir del que recibió.</p>
+              <p className="t-sm hs-guion">{contrato.bienvenidaMailEn
+                ? "Resend ya no guarda este mail: te mostramos el texto que saldría hoy, que puede diferir del que recibió."
+                : "Todavía no se lo mandamos: así le va a llegar, con sus accesos y sus links."}</p>
             )}
             <div className="t-label">Asunto</div>
             <div className="t-strong">{verMail.mail.asunto}</div>

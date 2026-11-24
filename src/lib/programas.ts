@@ -16,6 +16,15 @@ import type { Ajustes, ID } from "./types";
      Principals Mastermind usan la misma plantilla (se ajusta en el documento).
    - Downsell: el contrato de acceso al contenido grabado, y en Wisboo los
      cursos de Hackear IT y Hackear AI.
+
+   Un programa puede INCLUIR a otro (Lili, 24/11: «los que renuevan en
+   Principals deben tener Hackear IT, Hackear IA, Bonos y Principals, los
+   grupos de Hackear IA más el de Principals y las tres salas de Zoom»):
+   Principals incluye Hackear AI. Lo que da un programa es lo suyo MÁS lo de
+   los que incluye, y eso lo lee todo el que da, muestra o cuenta accesos
+   (`programasDe`). LA RAÍZ del 24/11: Principals tenía su propia lista con
+   sólo su curso y su grupo; copiar las de Hackear AI se iba a desfasar el
+   día que Hackear AI sumara un grupo. Ahora se suma solo.
    ================================================================== */
 
 export interface Programa {
@@ -46,6 +55,9 @@ export interface Programa {
      el inicio del servicio, si arranca después). Lo que no está acá no se corta nunca. Manuel, 12/11: en el Hackear IA MID, al terminar el mes se
      saca sólo la mentoría grupal y se conserva el contenido grabado. */
   vencen?: Record<string, number>;
+  /* Los programas cuyos accesos también da este (Principals incluye Hackear AI). En lo que devuelve `programasDe`, ya están sumados a
+     `wisboo`/`telegram`/`zoom` y acá quedan TODOS los que incluye, también los de segunda mano. */
+  incluye?: string[];
   /* Un programa de extensión (Manuel, 13/11: «subirse» al MID con 2 meses más de mentoría por US$ 1.000): lo que la persona ya tiene con corte no
      se vuelve a dar, se le SUMA el tiempo al corte que tiene; lo que ya perdió se le vuelve a dar por esos meses. No mueve el inicio del alumno. */
   sumaTiempo?: boolean;
@@ -115,8 +127,9 @@ export const PROGRAMAS_POR_DEFECTO: Programa[] = [
     wisboo: [WISBOO.hackearBiz], telegram: [], zoom: [], bonos: [], activo: true,
   },
   {
+    /* Lo de Hackear AI (cursos, grupos y las tres salas) más lo suyo: casi todos llegan renovando desde Hackear AI (Lili, 24/11). */
     id: "principals", nombre: "Principals", productos: ["prod_principals"], ...PLANTILLA_PRINCIPALS,
-    wisboo: [WISBOO.principals], telegram: [], zoom: [], bonos: [], activo: true,
+    wisboo: [WISBOO.principals], telegram: [], zoom: [], bonos: [], incluye: ["hackear-ai"], activo: true,
   },
   {
     id: "principals-mastermind", nombre: "Principals Mastermind", productos: [], ...PLANTILLA_PRINCIPALS,
@@ -167,17 +180,68 @@ export function programaNormal(v: unknown): Programa | null {
     plantillaSinSesionesNombre: typeof o.plantillaSinSesionesNombre === "string" ? o.plantillaSinSesionesNombre : "",
     wisboo: lista(o.wisboo), telegram: lista(o.telegram), zoom: lista(o.zoom), bonos: lista(o.bonos),
     vencen: cortesNormales(o.vencen),
+    ...(lista(o.incluye).filter((x) => x !== id).length ? { incluye: [...new Set(lista(o.incluye).filter((x) => x !== id))] } : {}),
     sumaTiempo: o.sumaTiempo === true,
     activo: o.activo !== false,
   };
 }
 
-/** Los programas de la empresa: los guardados en Ajustes o, sin nada guardado, los de siempre. */
-export function programasDe(ajustes: Pick<Ajustes, "programas"> | null | undefined): Programa[] {
+/** Los programas tal como se guardan (cada uno con SU lista y los que incluye, sin sumar): los guardados en Ajustes o, sin nada
+    guardado, los de siempre. Sólo para editarlos (Ajustes → Programas); para dar, mostrar o contar accesos, `programasDe`. */
+export function programasPropios(ajustes: Pick<Ajustes, "programas"> | null | undefined): Programa[] {
   const guardados = Array.isArray(ajustes?.programas)
     ? ajustes!.programas!.map(programaNormal).filter((p): p is Programa => p !== null)
     : [];
   return guardados.length ? guardados : PROGRAMAS_POR_DEFECTO;
+}
+
+/** Los programas con lo que da cada uno de verdad: lo suyo más lo de los que incluye (y lo que incluyen esos), sin repetir y sin dar
+    vueltas si alguien arma un círculo. Lo que se corta solo (`vencen`) manda lo de cada programa: lo que da el que incluye sin corte no
+    hereda el corte del incluido. Se suma aunque el incluido esté inactivo (inactivo = no se ofrece al mandar contratos, nada más). */
+export function conLoQueIncluye(propios: Programa[]): Programa[] {
+  const porId = new Map(propios.map((p) => [p.id, p]));
+  const incluidos = (p: Programa): Programa[] => {
+    const vistos = new Set<string>([p.id]);
+    const salida: Programa[] = [];
+    const pendientes = [...(p.incluye ?? [])];
+    while (pendientes.length) {
+      const id = pendientes.shift()!;
+      const x = porId.get(id);
+      if (vistos.has(id) || !x) continue;
+      vistos.add(id);
+      salida.push(x);
+      pendientes.push(...(x.incluye ?? []));
+    }
+    return salida;
+  };
+  return propios.map((p) => {
+    const otros = incluidos(p);
+    if (!otros.length) return p;
+    const sumar = (campo: "wisboo" | "telegram" | "zoom") => [...new Set([...p[campo], ...otros.flatMap((x) => x[campo])])];
+    const vencen: Record<string, number> = {};
+    for (const x of [...otros].reverse()) {
+      for (const [k, n] of Object.entries(x.vencen ?? {})) {
+        const [pl, ...rec] = k.split(":");
+        if (!(p[pl as PlataformaDeAcceso] ?? []).includes(rec.join(":"))) vencen[k] = n;
+      }
+    }
+    Object.assign(vencen, p.vencen ?? {});
+    return {
+      ...p, wisboo: sumar("wisboo"), telegram: sumar("telegram"), zoom: sumar("zoom"),
+      ...(Object.keys(vencen).length || p.vencen ? { vencen } : {}),
+      incluye: otros.map((x) => x.id),
+    };
+  });
+}
+
+/** Los programas de la empresa, cada uno con todo lo que da (lo suyo y lo de los que incluye). */
+export function programasDe(ajustes: Pick<Ajustes, "programas"> | null | undefined): Programa[] {
+  return conLoQueIncluye(programasPropios(ajustes));
+}
+
+/** ¿El programa incluye a `otro` (o es ese)? Con lo que devuelve `programasDe`, también de segunda mano. */
+export function incluyeAlPrograma(p: Pick<Programa, "id" | "incluye"> | null | undefined, otro: string): boolean {
+  return Boolean(p) && (p!.id === otro || (p!.incluye ?? []).includes(otro));
 }
 
 /** El programa de un producto de la venta (el primero activo que lo tenga), o null. */

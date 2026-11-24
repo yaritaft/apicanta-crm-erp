@@ -916,15 +916,17 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 
 .dp-body { display: flex; flex: 1 1 auto; min-height: 0; overflow: auto; }
 
+/* Todos los atajos a la vista, sin scroll propio (Mariano, 24/11: en la Agenda son 16 y la lista se cortaba en «Este mes»: «Máximo»,
+   el último, existía pero no se veía y nada avisaba que se podía bajar). El rail mide lo que sus atajos; si la ventana es baja, lo que
+   scrollea es el cuerpo entero (ubicar-popover.ts) y el pie con Cancelar/Actualizar sigue a la vista. */
 .dp-rail {
   position: relative;
-  width: 176px; flex: none; padding: var(--space-2);
+  width: 176px; flex: none; padding: 6px var(--space-2);
   border-right: 1px solid var(--border);
-  max-height: 340px; overflow-y: auto;
 }
 .dp-preset {
   display: flex; align-items: center; gap: var(--space-2);
-  padding: 7px var(--space-2); border-radius: var(--radius-sm);
+  padding: 5px var(--space-2); border-radius: var(--radius-sm);
   font-size: 13px; color: var(--ink-muted); cursor: pointer; white-space: nowrap;
 }
 .dp-preset:hover { background: var(--surface-200); color: var(--ink); }

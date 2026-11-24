@@ -7,7 +7,7 @@ import {
   modalidadDeCuotas, partirNombre, problemaDeDatos, textoBonos, textoSesiones, variablesDelContrato, type DatosContrato,
 } from "@/lib/contratos";
 import { clavePandadoc, firmaPandadocValida } from "@/lib/pandadoc-servidor";
-import { programaDeProducto, programasDe, PROGRAMAS_POR_DEFECTO, WISBOO } from "@/lib/programas";
+import { programaDeProducto, programasDe, programasPropios, PROGRAMAS_POR_DEFECTO, WISBOO } from "@/lib/programas";
 import { idDeAcceso, mensajeDeBienvenida } from "@/lib/accesos-servidor";
 
 /* El contrato de PandaDoc desde la venta (pedido del 20/10, el circuito de Blue OS traído a PandaDoc). */
@@ -147,7 +147,9 @@ test("la clave de producción de PandaDoc nunca sale fuera de la app publicada",
 
 test("los programas: Mentoría y el upgrade son Hackear AI, con Bonos; Downsell con IT y AI", () => {
   const ps = programasDe(undefined);
-  assert.equal(ps, PROGRAMAS_POR_DEFECTO);
+  /* Sin nada guardado, los de siempre (para editar, tal cual; para dar accesos, con lo que incluye cada uno: Principals, lo de Hackear AI). */
+  assert.equal(programasPropios(undefined), PROGRAMAS_POR_DEFECTO);
+  assert.deepEqual(ps.map((p) => p.id), PROGRAMAS_POR_DEFECTO.map((p) => p.id));
   assert.equal(programaDeProducto(ps, "prod_mentoria")?.id, "hackear-ai");
   assert.equal(programaDeProducto(ps, "prod_upgrade_ai")?.id, "hackear-ai");
   assert.ok(programaDeProducto(ps, "prod_mentoria")!.wisboo.includes(WISBOO.bonos));

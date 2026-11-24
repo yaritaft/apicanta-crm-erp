@@ -604,7 +604,9 @@ export async function mandarRoadmap(db: SupabaseClient, c: Contrato, quien: stri
   const alumnoId = await alumnoDelContrato(db, c);
   const perfil = await perfilDelContrato(db, c, alumnoId);
   const config = await configBienvenida(db);
-  const guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil, config });
+  /* Con su programa: sin él, Principals (que incluye Hackear AI) no se reconoce como programa completo. */
+  const { delPrograma } = await accesosParaBienvenida(db, c.programa, alumnoId);
+  const guia = guiaDeBienvenida({ reserva: c.datos.reserva, programa: c.programa, perfil, config, delPrograma });
   const nombre = (c.destinatario?.nombre || c.datos?.nombre || "").trim();
   const mail = guia ? textoDelRoadmap(guia, nombre) : null;
   if (!mail) return { mail: false, motivo: perfil ? `Falta el link del roadmap de ${perfil} en Ajustes.` : "Falta elegir el perfil." };

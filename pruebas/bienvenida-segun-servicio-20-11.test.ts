@@ -107,7 +107,7 @@ test("ningún programa nombra un grupo, curso o clase que no trae (recorre todos
     ...[WISBOO.hackearIt, WISBOO.hackearAi, WISBOO.bonos].map((id) => ({ plataforma: "wisboo" as const, id })),
   ];
   for (const p of Object.values(P)) {
-    if (!modeloDeBienvenida({ programa: p.id })) continue;
+    if (!modeloDeBienvenida({ programa: p.id, incluye: p.incluye })) continue;
     const a = accesos(mail(p.id));
     for (const x of todos) {
       const e = explicacionDe(x.plataforma, x.id)!;

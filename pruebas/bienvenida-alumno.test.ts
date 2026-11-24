@@ -15,10 +15,10 @@ const ROADMAPS = CONFIG.roadmaps as Record<string, string>;
    el formulario de los lunes y el WhatsApp de soporte. Tres textos: programa completo, Downsell y Reserva. */
 
 test("el modelo sale del contrato: la reserva manda, después el programa; Hackear Biz todavía no tiene", () => {
-  assert.equal(modeloDeBienvenida({ programa: "hackear-ai" }), "completo");
-  assert.equal(modeloDeBienvenida({ programa: "downsell" }), "downsell");
-  assert.equal(modeloDeBienvenida({ programa: "hackear-ai", reserva: true }), "reserva");
-  assert.equal(modeloDeBienvenida({ programa: "hackear-biz" }), null);
+  assert.equal(modeloDeBienvenida({ programa: "hackear-ai", incluye: [] }), "completo");
+  assert.equal(modeloDeBienvenida({ programa: "downsell", incluye: [] }), "downsell");
+  assert.equal(modeloDeBienvenida({ programa: "hackear-ai", reserva: true, incluye: [] }), "reserva");
+  assert.equal(modeloDeBienvenida({ programa: "hackear-biz", incluye: [] }), null);
 });
 
 test("el roadmap según el perfil; el formulario semanal sólo en el programa completo", () => {
@@ -58,9 +58,9 @@ test("sin la configuración en Ajustes no se inventa nada: sin roadmap ni WhatsA
 
 test("el closer tiene que cargar el perfil en los programas con bienvenida", () => {
   const datos: Partial<DatosContrato> = { nombre: "Ana Pérez", email: "ana@mail.com", documento: "1", domicilio: "Calle 1" };
-  assert.match(problemaDeDatos(datos, "produccion", undefined, "hackear-ai") ?? "", /perfil del alumno/);
-  assert.equal(problemaDeDatos({ ...datos, perfil: "Full Stack" }, "produccion", undefined, "hackear-ai"), null);
-  assert.equal(problemaDeDatos(datos, "produccion", undefined, "hackear-biz"), null, "Hackear Biz todavía no tiene bienvenida");
+  assert.match(problemaDeDatos(datos, "produccion", undefined, { id: "hackear-ai" }) ?? "", /perfil del alumno/);
+  assert.equal(problemaDeDatos({ ...datos, perfil: "Full Stack" }, "produccion", undefined, { id: "hackear-ai" }), null);
+  assert.equal(problemaDeDatos(datos, "produccion", undefined, { id: "hackear-biz" }), null, "Hackear Biz todavía no tiene bienvenida");
   assert.equal(problemaDeDatos(datos, "produccion"), null, "sin programa no se pide (lo de antes sigue igual)");
 });
 

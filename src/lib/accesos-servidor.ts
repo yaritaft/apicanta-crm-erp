@@ -414,8 +414,11 @@ export async function darAccesos(db: SupabaseClient, a: {
   /* Lo que ya tenía de un downsell y este programa (el completo) también da pasa a ser de este programa (lanzamiento interno, 20/11: los de
      Downsell pasan a Hackear AI). Así la ficha muestra todo como de Hackear AI y lo que se haga con los accesos de un downsell (el tope de
      quien pasó a Downsell por falta de pago, un corte del contenido) no le toca lo que ahora es del programa. */
+  /* Lo mismo con lo que tenía de un programa que este incluye (renovó de Hackear AI a Principals, 24/11): pasa a ser de Principals. */
   const pasaAlPrograma = async (ya: Acceso) => {
-    if (ya.programa === a.programa.id || !esProgramaDownsell(ya.programa) || esProgramaDownsell(a.programa.id)) return;
+    if (ya.programa === a.programa.id) return;
+    const deUnDownsell = esProgramaDownsell(ya.programa) && !esProgramaDownsell(a.programa.id);
+    if (!deUnDownsell && !(a.programa.incluye ?? []).includes(ya.programa)) return;
     await db.from("accesos_alumno").update({ programa: a.programa.id, actualizadoEn: new Date().toISOString() }).eq("id", ya.id);
     ya.programa = a.programa.id;
   };
@@ -466,8 +469,19 @@ export async function darAccesos(db: SupabaseClient, a: {
     }
   }
 
-  /* Telegram: un link de un solo uso por grupo. */
-  for (const chat of a.programa.telegram.filter((c) => quiere("telegram", c))) {
+  /* Telegram: un link de un solo uso por grupo. Si ya se sabe quién es en Telegram (identificado) y ya está en el grupo, se anota que
+     está adentro y no se le manda un link que nunca va a usar: pasa con quien renueva (de Hackear AI a Principals, 24/11). */
+  const chats = a.programa.telegram.filter((c) => quiere("telegram", c));
+  const cuentas = chats.length && hayTelegram() ? await cuentasConUsuario(db, a.alumnoId) : [];
+  const yaEstaEn = async (chat: string): Promise<{ id: string; usuario: string | null } | null> => {
+    for (const cuenta of cuentas) {
+      const r = await telegram("getChatMember", { chat_id: chat, user_id: Number(cuenta.id) }).catch(() => null);
+      const estado = (r?.result as { status?: string } | undefined)?.status;
+      if (r?.ok && (estado === "member" || estado === "restricted" || estado === "administrator" || estado === "creator")) return cuenta;
+    }
+    return null;
+  };
+  for (const chat of chats) {
     const nombre = grupos.get(chat) ?? chat;
     const ya = previo("telegram", chat);
     if (ya && (ya.estado === "dado" || ya.estado === "entro")) {
@@ -480,6 +494,15 @@ export async function darAccesos(db: SupabaseClient, a: {
       continue;
     }
     if (!hayTelegram()) { await anotar({ plataforma: "telegram", recurso: chat, recursoNombre: nombre, estado: "fallo", externo: {}, error: "Falta el token del bot de Telegram en Vercel.", dadoEn: null, quitadoEn: null }); continue; }
+    const adentro = await yaEstaEn(chat);
+    if (adentro) {
+      await anotar({
+        plataforma: "telegram", recurso: chat, recursoNombre: nombre, estado: "entro",
+        externo: { telegramUserId: Number(adentro.id), ...(adentro.usuario ? { telegramUsuario: adentro.usuario } : {}), yaEstaba: true },
+        error: null, dadoEn: ahora, quitadoEn: null,
+      });
+      continue;
+    }
     try {
       const r = await telegram("createChatInviteLink", {
         chat_id: chat, name: nombreDeLink(a.persona.nombre), member_limit: 1,
@@ -591,6 +614,12 @@ export async function topeDeLaBaja(db: SupabaseClient, alumnoId: string): Promis
 async function cuentasDeTelegramDelAlumno(db: SupabaseClient, alumnoId: string): Promise<string[]> {
   const r = await db.from("telegram_personas").select("id").eq("alumnoId", alumnoId);
   return r.error ? [] : ((r.data ?? []) as { id: string }[]).map((p) => p.id);
+}
+
+/** Las cuentas de Telegram atadas a un alumno con su @usuario (para anotar «entró como @…»). */
+async function cuentasConUsuario(db: SupabaseClient, alumnoId: string): Promise<{ id: string; usuario: string | null }[]> {
+  const r = await db.from("telegram_personas").select("id, usuario").eq("alumnoId", alumnoId);
+  return r.error ? [] : ((r.data ?? []) as { id: string; usuario: string | null }[]);
 }
 
 /** Ya no está en ese grupo: sale de los grupos donde se la veía adentro. Es sólo un dato para mostrar: si falla, no importa. */

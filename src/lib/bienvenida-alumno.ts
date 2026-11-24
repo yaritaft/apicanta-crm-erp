@@ -18,7 +18,7 @@
 
 import { enlaceWhatsapp } from "./contacto-telefono";
 import { enlaceDelAlumno } from "./links-alumno";
-import { esProgramaDeExtension, esProgramaDownsell, mesesDeCorte, WISBOO, type PlataformaDeAcceso, type Programa } from "./programas";
+import { esProgramaDeExtension, esProgramaDownsell, incluyeAlPrograma, mesesDeCorte, WISBOO, type PlataformaDeAcceso, type Programa } from "./programas";
 import { MODULOS_PARA_SIMULACRO } from "./simulacros";
 
 export const PERFILES = ["Full Stack", "Mobile Developer", "Data Engineer", "AI Engineer"] as const;
@@ -67,11 +67,14 @@ const EXPLICACIONES: { plataforma: PlataformaDeAcceso; ids: string[]; nombre: Re
   { plataforma: "wisboo", ids: [WISBOO.hackearIt], nombre: /hackear it\b/i, e: { nombre: "Hackear IT", orden: 1 } },
   { plataforma: "wisboo", ids: [WISBOO.hackearAi], nombre: /hackear (ai|ia)\b/i, e: { nombre: "Hackear IA", orden: 2 } },
   { plataforma: "wisboo", ids: [WISBOO.bonos], nombre: /^bonos\b/i, e: { nombre: "Bonos", detalle: CONTENIDO_DE_BONOS, orden: 3 } },
+  /* Principals incluye todo Hackear AI (Lili, 24/11): su curso y su grupo van al final, después de lo de Hackear AI. */
+  { plataforma: "wisboo", ids: [WISBOO.principals], nombre: /principals\)?$/i, e: { nombre: "Principals", orden: 4 } },
   { plataforma: "telegram", ids: ["-1004341505711"], nombre: /^general$/i, e: { nombre: "General", detalle: "comunidad con todos los alumnos", orden: 1 } },
   { plataforma: "telegram", ids: ["-1004338558206"], nombre: /novedades/i, e: { nombre: "Novedades", detalle: "canal donde realizamos comunicados importantes", orden: 2 } },
   { plataforma: "telegram", ids: ["-1004492115716"], nombre: /bolsa de trabajo/i, e: { nombre: "Bolsa de trabajo", detalle: "publicación de oportunidades laborales", orden: 3 } },
   { plataforma: "telegram", ids: ["-1004393795361"], nombre: /contenido recomendado/i, e: { nombre: "Contenido recomendado", detalle: "compartimos recursos y contenido de interés", orden: 4 } },
   { plataforma: "telegram", ids: ["-1003990857017"], nombre: /^hackear (ai|ia)$/i, e: { nombre: "Hackear IA", detalle: "espacio exclusivo para consultas relacionadas con IA", orden: 5 } },
+  { plataforma: "telegram", ids: ["-1003910580644"], nombre: /^principals$/i, e: { nombre: "Principals", detalle: "grupo exclusivo de los alumnos de Principals", orden: 6 } },
   { plataforma: "zoom", ids: ["83449857065"], nombre: /simulacro/i, e: { nombre: "Simulacros y tema nuevo", detalle: "simulacros de entrevistas y tema nuevo", dia: "martes", orden: 1 } },
   { plataforma: "zoom", ids: ["84681899646"], nombre: /seguimiento/i, e: { nombre: "Seguimiento y consultas", detalle: "seguimiento y consultas en general", dia: "jueves", orden: 3 } },
   { plataforma: "zoom", ids: ["84967094264"], nombre: /consultas?\b.*\b(ia|ai)\b/i, e: { nombre: "Consultas de IA", detalle: "consultas exclusivas de IA", dia: "miercoles", orden: 2 } },
@@ -164,13 +167,15 @@ export function perfilEfectivo(delContrato: unknown, stackDeLaFicha: string | nu
 /* Lo que cubre la bienvenida: el programa completo (Hackear AI), el Downsell o la Reserva. */
 export type ModeloBienvenida = "completo" | "downsell" | "reserva";
 
-/** El modelo según el contrato: la reserva manda; después, el programa. Hackear Biz y Principals: null (no hay texto). */
-export function modeloDeBienvenida(c: { reserva?: boolean; programa: string }): ModeloBienvenida | null {
+/** El modelo según el contrato: la reserva manda; después, el programa. El programa completo es Hackear AI y todo programa que lo incluye
+    (Principals, Lili 24/11: hasta ese día Principals no tenía mail y no se veía en la ficha). Hackear Biz: null (no hay texto).
+    `incluye`: los programas que incluye el del contrato (de `programasDe`); va siempre, aunque sea vacío, para que nadie lo olvide. */
+export function modeloDeBienvenida(c: { reserva?: boolean; programa: string; incluye: readonly string[] | null | undefined }): ModeloBienvenida | null {
   if (c.reserva) return "reserva";
   /* La extensión del MID es para alguien que ya tiene su bienvenida y sus accesos: ni mail ni roadmap de nuevo. */
   if (esProgramaDeExtension(c.programa)) return null;
   if (esProgramaDownsell(c.programa)) return "downsell";
-  if (c.programa === "hackear-ai") return "completo";
+  if (incluyeAlPrograma({ id: c.programa, incluye: c.incluye ? [...c.incluye] : undefined }, "hackear-ai")) return "completo";
   return null;
 }
 
@@ -208,11 +213,12 @@ function salasDe(config: ConfigBienvenida | null | undefined): Partial<Record<Di
 export function guiaDeBienvenida(a: {
   reserva?: boolean; programa: string; perfil?: string | null; formulario?: string | null; simulacro?: string | null; consulta?: string | null; codigo?: string | null;
   config?: ConfigBienvenida | null;
-  /* Su programa tal como está en Ajustes → Programas (lo que se le da al firmar) y los nombres conocidos de sus accesos. */
-  delPrograma?: Pick<Programa, "wisboo" | "telegram" | "zoom" | "vencen"> | null;
+  /* Su programa tal como está en Ajustes → Programas (lo que se le da al firmar, con lo de los programas que incluye) y los nombres
+     conocidos de sus accesos. Sin él, Principals no se reconoce como programa completo: va siempre que se lo tenga. */
+  delPrograma?: Pick<Programa, "wisboo" | "telegram" | "zoom" | "vencen" | "incluye"> | null;
   nombres?: NombresDeAccesos;
 }): GuiaBienvenida | null {
-  const modelo = modeloDeBienvenida(a);
+  const modelo = modeloDeBienvenida({ reserva: a.reserva, programa: a.programa, incluye: a.delPrograma?.incluye });
   if (!modelo) return null;
   const perfil = esPerfil(a.perfil) ? a.perfil : null;
   const roadmap = perfil ? a.config?.roadmaps?.[perfil]?.trim() || null : null;

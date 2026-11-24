@@ -68,12 +68,12 @@ test("para la ficha y la bienvenida los tres son downsell; el programa completo,
   const acc = (programa: string) => ({ plataforma: "wisboo" as const, estado: "dado" as const, programa });
   for (const id of ["downsell", "downsell-plus", "hackear-ia-mid"]) {
     assert.equal(marcasDeLaFicha([acc(id)]).acceso, "Downsell", id);
-    assert.equal(modeloDeBienvenida({ programa: id }), "downsell", id);
+    assert.equal(modeloDeBienvenida({ programa: id, incluye: [] }), "downsell", id);
   }
   assert.equal(marcasDeLaFicha([acc("hackear-ia-mid"), acc("hackear-ai")]).acceso, "Completos", "pasó al programa completo");
   assert.equal(marcasDeLaFicha([]).acceso, "Sin acceso");
-  assert.equal(modeloDeBienvenida({ programa: "hackear-ai" }), "completo");
-  assert.equal(modeloDeBienvenida({ programa: "hackear-ia-mid", reserva: true }), "reserva", "la reserva manda");
+  assert.equal(modeloDeBienvenida({ programa: "hackear-ai", incluye: [] }), "completo");
+  assert.equal(modeloDeBienvenida({ programa: "hackear-ia-mid", reserva: true, incluye: [] }), "reserva", "la reserva manda");
 });
 
 test("Hackear IA MID no recibe el formulario semanal (es un downsell, no el programa completo)", () => {

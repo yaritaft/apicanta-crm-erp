@@ -9,7 +9,7 @@ import { cabeceras } from "@/components/webinars/useYoutube";
 import { acciones, useEstado } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { fecha, relativo } from "@/lib/format";
-import { claveDeCorte, mesesDeCorte, PROGRAMAS_POR_DEFECTO, programasDe, type PlataformaDeAcceso, type Programa } from "@/lib/programas";
+import { claveDeCorte, conLoQueIncluye, mesesDeCorte, PROGRAMAS_POR_DEFECTO, programasPropios, type PlataformaDeAcceso, type Programa } from "@/lib/programas";
 import { nombreDeReunion, PRODUCTOS_WISBOO } from "@/lib/accesos-alumnos";
 import { accesosSinExplicacion, modeloDeBienvenida, type NombresDeAccesos } from "@/lib/bienvenida-alumno";
 import type { ConfigContratos } from "@/lib/types";
@@ -244,8 +244,11 @@ function BotTelegram() {
 function Programas({ pruebas }: { pruebas: Pruebas | null }) {
   const e = useEstado();
   const toast = useToast();
-  const guardados = useMemo(() => programasDe(e.ajustes), [e.ajustes]);
+  /* Cada uno con SU lista: lo que incluye de otro programa se suma al dar los accesos, no se guarda copiado (si no, se desfasa). */
+  const guardados = useMemo(() => programasPropios(e.ajustes), [e.ajustes]);
   const [lista, setLista] = useState<Programa[]>(guardados);
+  /* Lo que da cada uno de verdad, con lo de los programas que incluye: para el resumen y el aviso del mail. */
+  const conIncluidos = useMemo(() => new Map(conLoQueIncluye(lista).map((p) => [p.id, p])), [lista]);
   const [abierto, setAbierto] = useState<string | null>(null);
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   useEffect(() => { setLista(guardados); }, [guardados]);
@@ -278,8 +281,15 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
   ]), [cursos, grupos, reuniones]);
 
   const cambiar = (id: string, c: Partial<Programa>) => setLista((xs) => xs.map((p) => (p.id === id ? { ...p, ...c } : p)));
-  const alternar = (id: string, campo: "productos" | "wisboo" | "telegram" | "zoom", valor: string) =>
-    setLista((xs) => xs.map((p) => (p.id !== id ? p : { ...p, [campo]: p[campo].includes(valor) ? p[campo].filter((x) => x !== valor) : [...p[campo], valor] })));
+  const alternar = (id: string, campo: "productos" | "wisboo" | "telegram" | "zoom" | "incluye", valor: string) =>
+    setLista((xs) => xs.map((p) => {
+      if (p.id !== id) return p;
+      const antes = p[campo] ?? [];
+      const despues = antes.includes(valor) ? antes.filter((x) => x !== valor) : [...antes, valor];
+      if (campo !== "incluye") return { ...p, [campo]: despues };
+      const { incluye: _i, ...resto } = p;
+      return despues.length ? { ...resto, incluye: despues } : resto;
+    }));
 
   return (
     <Seccion titulo="Programas" sub="Qué productos de la venta son cada programa, con qué plantilla sale su contrato y qué accesos se dan al firmar."
@@ -297,11 +307,15 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
       <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
         {lista.map((p, k) => {
           const ab = abierto === p.id;
+          /* El resumen cuenta todo lo que da (con lo de los que incluye) y dice de dónde sale. */
+          const t = conIncluidos.get(p.id) ?? p;
+          const incluidos = (t.incluye ?? []).map((id) => lista.find((x) => x.id === id)?.nombre ?? id);
           const resumen = [
             p.plantillaNombre || "sin contrato",
-            `${p.wisboo.length} ${p.wisboo.length === 1 ? "curso" : "cursos"}`,
-            `${p.telegram.length} ${p.telegram.length === 1 ? "grupo" : "grupos"}`,
-            p.zoom.length ? `${p.zoom.length} ${p.zoom.length === 1 ? "reunión" : "reuniones"}` : "",
+            incluidos.length ? `incluye ${incluidos.join(" y ")}` : "",
+            `${t.wisboo.length} ${t.wisboo.length === 1 ? "curso" : "cursos"}`,
+            `${t.telegram.length} ${t.telegram.length === 1 ? "grupo" : "grupos"}`,
+            t.zoom.length ? `${t.zoom.length} ${t.zoom.length === 1 ? "reunión" : "reuniones"}` : "",
             Object.keys(p.vencen ?? {}).length ? `${Object.keys(p.vencen ?? {}).length} se cortan solos` : "",
           ].filter(Boolean).join(" · ");
           return (
@@ -348,6 +362,12 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
                   </div>
                   <Opciones titulo="Productos de la venta que son este programa" valores={p.productos} onAlternar={(v) => alternar(p.id, "productos", v)}
                     opciones={productos.map((x) => ({ id: x.id, nombre: x.nombre }))} />
+                  {/* Principals incluye Hackear AI (Lili, 24/11): al firmar se le da lo de los dos, y si Hackear AI suma un grupo, le llega también. */}
+                  <Opciones titulo="Incluye todo lo de" valores={p.incluye ?? []} onAlternar={(v) => alternar(p.id, "incluye", v)}
+                    opciones={lista.filter((x) => x.id !== p.id).map((x) => ({ id: x.id, nombre: x.nombre }))} />
+                  {incluidos.length > 0 && (
+                    <p className="t-sm t-subtle">Al firmar se le da lo de {incluidos.join(" y ")} más lo que marques acá abajo. Si a {incluidos.join(" o ")} le sumás un curso, un grupo o una reunión, a este también.</p>
+                  )}
                   <Opciones titulo="Cursos de Wisboo que se regalan" valores={p.wisboo} onAlternar={(v) => alternar(p.id, "wisboo", v)} opciones={cursos} />
                   <Opciones titulo="Grupos de Telegram" valores={p.telegram} onAlternar={(v) => alternar(p.id, "telegram", v)}
                     opciones={grupos.map((g) => ({ id: g.chatId, nombre: g.titulo || g.chatId }))} vacio="Todavía no hay grupos vinculados (ver «Bot de Telegram»)." />
@@ -367,7 +387,7 @@ function Programas({ pruebas }: { pruebas: Pruebas | null }) {
                   {(() => {
                     /* El mail de bienvenida cuenta qué hay en cada acceso del programa (Lili, 20/11): si se suma uno que todavía no tiene
                        su explicación, el mail lo nombra sin decir qué es. Se avisa acá, que es donde se suma. */
-                    const sin = modeloDeBienvenida({ programa: p.id }) ? accesosSinExplicacion(p, nombres) : [];
+                    const sin = modeloDeBienvenida({ programa: p.id, incluye: t.incluye }) ? accesosSinExplicacion(t, nombres) : [];
                     return sin.length > 0 && (
                       <p className="t-sm" style={{ color: "var(--warning)" }}>
                         El mail de bienvenida nombra {sin.map((x) => `«${x}»`).join(", ")} sin explicar qué hay ahí. Avisá para sumarle su explicación.

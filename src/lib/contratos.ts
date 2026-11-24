@@ -1,6 +1,7 @@
 import type { ConfigContratos } from "./types";
 import { esPerfil, explicacionDe, modeloDeBienvenida, PERFILES, type GuiaBienvenida } from "./bienvenida-alumno";
 import { diaDeNegocio } from "./dia-negocio";
+import type { Programa } from "./programas";
 import { fechaHora, relativo } from "./format";
 
 /* ==================================================================
@@ -709,7 +710,7 @@ export function conectarAvisoSolo(a: { enProduccion: boolean; hayClave: boolean;
 }
 
 /** Lo que falta para poder mandarlo. null: se puede. */
-export function problemaDeDatos(d: Partial<DatosContrato>, modo: ModoContrato, dominioPrueba = "apicanta.com", programa?: string): string | null {
+export function problemaDeDatos(d: Partial<DatosContrato>, modo: ModoContrato, dominioPrueba = "apicanta.com", programa?: Pick<Programa, "id" | "incluye"> | null): string | null {
   if (!d.nombre?.trim()) return "Falta el nombre completo del alumno.";
   const email = (d.email ?? "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Falta un mail válido: es adonde le llega el contrato.";
@@ -719,8 +720,8 @@ export function problemaDeDatos(d: Partial<DatosContrato>, modo: ModoContrato, d
   if (!d.documento?.trim()) return "Falta el documento (DNI, pasaporte o el que tenga).";
   if (!d.domicilio?.trim()) return "Falta el domicilio.";
   if (d.reserva && !d.modalidad?.trim()) return "Falta el monto de la reserva.";
-  /* Los programas con bienvenida (Hackear AI, Downsell y la reserva) le mandan al alumno el roadmap de su perfil. */
-  if (programa && modeloDeBienvenida({ reserva: d.reserva, programa }) && !esPerfil(d.perfil)) {
+  /* Los programas con bienvenida (Hackear AI y los que lo incluyen, como Principals; Downsell y la reserva) le mandan al alumno el roadmap de su perfil. */
+  if (programa && modeloDeBienvenida({ reserva: d.reserva, programa: programa.id, incluye: programa.incluye }) && !esPerfil(d.perfil)) {
     return "Falta el perfil del alumno (Full Stack, Mobile, Data o AI Engineer): con eso le llega su roadmap.";
   }
   return null;

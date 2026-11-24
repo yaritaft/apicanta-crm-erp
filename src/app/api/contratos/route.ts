@@ -72,7 +72,7 @@ export async function POST(peticion: Request) {
       const programa = programaPorId(programas, typeof b.programa === "string" ? b.programa : null);
       if (!programa) return mal("Elegí el programa del contrato.");
       const datos = datosLimpios(b.datos as Partial<DatosContrato>);
-      const problema = problemaDeDatos(datos, modo, undefined, programa.id);
+      const problema = problemaDeDatos(datos, modo, undefined, programa);
       if (problema) return mal(problema);
 
       const contrato = await crearContrato(db, {
@@ -103,7 +103,7 @@ export async function POST(peticion: Request) {
       /* Corregir no cambia la plantilla: si era el de la reserva, sigue siéndolo (lo dice el contrato, no la pantalla). */
       const { reserva: _r, ...limpios } = datosLimpios(b.datos as Partial<DatosContrato>);
       const datos: DatosContrato = { ...limpios, ...(c.datos.reserva ? { reserva: true } : {}) };
-      const problema = problemaDeDatos(datos, c.modo, undefined, c.programa);
+      const problema = problemaDeDatos(datos, c.modo, undefined, programaPorId(programas, c.programa) ?? { id: c.programa });
       if (problema) return mal(problema);
       if (cambiaLaPlantilla(programaPorId(programas, c.programa), datos.reserva, c.datos.sesiones, datos.sesiones)) {
         return mal("Para cambiar si incluye sesiones 1 a 1, anulá este contrato y mandá otro: sale con otra plantilla.");
