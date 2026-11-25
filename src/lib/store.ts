@@ -336,6 +336,11 @@ const nombreDeQuien = (e: EstadoApp, por: string): string => quienEs(e.equipo, p
 /* Los cobros que se cargan en esta sesión llevan quién los cargó. */
 const cargadosAhora = (e: EstadoApp, pagos: Pago[]): Pago[] => pagos.map((p) => (p.cargadoPor ? p : { ...p, cargadoPor: quienSoy(e) }));
 
+/* Con la base, el leído y el recibido del chat se anotan a nombre del MAIL de quien entró (la base no deja otro: supabase/chat-adjuntos.sql).
+   Mientras la sesión carga, la app no sabe quién es y usaba el nombre del responsable («yari taft»): se espera al mail (24/11). Sin base
+   (la app local) la clave es el nombre, como siempre. */
+export const sinMailDeSesion = (quien: string, conBase: boolean = hayNube): boolean => conBase && !quien.includes("@");
+
 const oyentesNegadas = new Set<(tabla: string, motivo?: string) => void>();
 export function alNegarseEscritura(f: (tabla: string, motivo?: string) => void): () => void {
   oyentesNegadas.add(f);
@@ -2444,6 +2449,7 @@ export const acciones = {
 
   /** Abrí el chat de esta ficha: leí (y me llegó) hasta el último mensaje de otro. Los tildes de quien lo mandó se ponen azules. */
   marcarLeido(contactoId: ID, quien: string, nombre: string): void {
+    if (sinMailDeSesion(quien)) return;
     const e = snapshot();
     const fila = lecturaAlLeer(contactoId, e.comentarios ?? [], e.chatLecturas ?? [], quien, nombre);
     if (!fila) return;
@@ -2453,6 +2459,7 @@ export const acciones = {
 
   /** Me llegaron mensajes (al abrir la app o en vivo): en los chats de los que soy parte, el que los mandó ve el doble tilde. */
   marcarRecibidos(quien: string, nombre: string): void {
+    if (sinMailDeSesion(quien)) return;
     const e = snapshot();
     const filas = recibidosAlLlegar(e.comentarios ?? [], e.chatLecturas ?? [], quien, nombre);
     if (filas.length === 0) return;

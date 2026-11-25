@@ -14,28 +14,35 @@ export interface Sesion {
   sinAuth: boolean;
 }
 
+/* La última sesión conocida. Cada componente que pregunta arrancaba «cargando, sin mail» aunque la sesión ya estuviera: el chat de la ficha,
+   recién abierto, se creía «Yari Taft» (el responsable) un instante y anotaba el leído con ese nombre; la base lo rechaza (quien = tu mail) y
+   salía «Tu tipo de cuenta no puede cambiar esto» (24/11). El que se monta después arranca con la que ya se sabe. En la primera carga no hay
+   ninguna todavía: igual que el servidor, así no cambia lo que se hidrata. */
+let conocida: Sesion | null = null;
+const anotar = (s: Sesion): Sesion => { conocida = s; return s; };
+
 export function useSesion(): Sesion {
-  const [estado, setEstado] = useState<Sesion>({
+  const [estado, setEstado] = useState<Sesion>(() => conocida ?? {
     cargando: hayNube, session: null, email: null, sinAuth: !hayNube,
   });
 
   useEffect(() => {
-    if (!nube) { setEstado({ cargando: false, session: null, email: null, sinAuth: true }); return; }
+    if (!nube) { setEstado(anotar({ cargando: false, session: null, email: null, sinAuth: true })); return; }
 
     let vivo = true;
     nube.auth.getSession().then(({ data }) => {
       if (!vivo) return;
-      setEstado({
+      setEstado(anotar({
         cargando: false, session: data.session,
         email: data.session?.user?.email ?? null, sinAuth: false,
-      });
+      }));
     });
 
     const { data: sub } = nube.auth.onAuthStateChange((_evento, session) => {
-      setEstado({
+      setEstado(anotar({
         cargando: false, session,
         email: session?.user?.email ?? null, sinAuth: false,
-      });
+      }));
     });
 
     return () => { vivo = false; sub.subscription.unsubscribe(); };
