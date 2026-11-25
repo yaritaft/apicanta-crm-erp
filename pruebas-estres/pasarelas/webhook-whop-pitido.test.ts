@@ -9,6 +9,8 @@ import { instalarFetchFalso, URL_NUBE } from "./nube-falsa";
    (cualquiera con el link podría inventar un monto, y el cuerpo de la API v1
    no tiene la forma que leía delPayload): contesta al toque y trae los cobros
    de la API de Whop con el mismo código del cron de cada 5 minutos.
+   Por eso también se acepta sin el token del link (la dirección pelada que
+   se pega en el panel de Whop): lo peor es pedir una revisión de Whop.
    Red cortada y nube de mentira: no sale nada de la máquina.
    ================================================================== */
 
@@ -69,11 +71,20 @@ test("el mismo aviso dos veces deja un solo cobro", async () => {
   assert.equal(inst.nube.filas("movimientos").filter((m) => m.referencia === "pay_real").length, 1);
 });
 
-test("sin el token del link sigue siendo 401 (el pitido no abre la puerta)", async () => {
+test("sin el token (la dirección pelada que se pega en el panel de Whop) igual sólo trae de la API: nunca guarda el cuerpo", async () => {
   const antes = pedidosAWhop;
-  assert.equal((await avisar({ type: "payment.succeeded", data: { id: "pay_real" } }, null)).status, 401);
-  assert.equal((await avisar({ type: "payment.succeeded", data: { id: "pay_real" } }, "otro")).status, 401);
-  assert.equal(pedidosAWhop, antes, "sin token no se le pregunta nada a Whop");
+  const r = await avisar({ type: "payment.succeeded", data: { id: "pay_trucho", final_amount: 777, paid_at: AHORA } }, null);
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ok: true, enCamino: true });
+  assert.ok(pedidosAWhop > antes, "le preguntó a Whop");
+  assert.ok(!inst.nube.filas("movimientos").some((m) => m.referencia === "pay_trucho" || Number(m.monto) === 777), "lo del cuerpo no entra");
+  assert.equal((await avisar({ type: "payment.succeeded", data: { id: "pay_real" } }, "otro")).status, 200, "un token equivocado tampoco abre otra cosa que el pitido");
+});
+
+test("sin el token, un «reembolso» de Whop no llega a devoluciones (sólo el pitido)", async () => {
+  const r = await avisar({ type: "refund.created", data: { id: "pay_dev_trucho", refunded_amount: 999, currency: "usd" } }, null);
+  assert.equal(r.status, 200);
+  assert.ok(!inst.nube.filas("devoluciones").some((d) => String(d.id).includes("pay_dev_trucho")));
 });
 
 test("un reembolso de Whop sigue yendo a devoluciones, nunca a cobros", async () => {

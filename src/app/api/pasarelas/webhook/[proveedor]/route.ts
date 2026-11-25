@@ -1,11 +1,12 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { after, NextResponse } from "next/server";
-import { guardarMovimientos, guardarReembolsos, hayServidor } from "@/lib/servidor";
+import { guardarMovimientos, guardarReembolsos, hayServidor, nubeServidor } from "@/lib/servidor";
 import {
   dinero, hayClaves, moneda, procesadorDe, reembolsoDeHotmart, reembolsoDeStripe, reembolsoDeWhop, reembolsosDeHotmart,
   reembolsosDeStripePorId, traerUno, PROVEEDORES, type MovimientoApi,
 } from "@/lib/pasarelas-api";
-import { traerCobrosAhora } from "@/lib/cobros-al-dia-servidor";
+import { leerEstado, traerCobrosAhora } from "@/lib/cobros-al-dia-servidor";
+import { SEGUNDOS_ENTRE_PEDIDOS } from "@/lib/pasarelas-estado";
 import type { ReembolsoCrudo } from "@/lib/reembolsos";
 import type { ProveedorPasarela } from "@/lib/types";
 
@@ -243,6 +244,22 @@ export async function POST(peticion: Request, ctx: { params: Promise<{ proveedor
   if (!autorizado && proveedor === "hotmart" && hottok) {
     autorizado = peticion.headers.get("x-hotmart-hottok") === hottok;
   }
+  /* Whop sin el token del link (24/11): su aviso es sólo el pitido —no se lee el cuerpo, los cobros se le piden a la API de Whop—, así
+     que el webhook se puede crear en el panel de Whop con la dirección pelada, sin pegar ningún secreto. Lo peor que puede hacer alguien
+     que la conozca es pedir una revisión de Whop, y eso se hace a lo sumo una vez cada 20 segundos. Con el token se sigue por abajo. */
+  if (!autorizado && proveedor === "whop" && hayClaves("whop")) {
+    const traer = async () => {
+      const db = nubeServidor();
+      const est = db ? await leerEstado(db, "whop") : null;
+      const t = Date.parse(est?.revisadoEn ?? "");
+      if (Number.isFinite(t) && Date.now() - t < SEGUNDOS_ENTRE_PEDIDOS * 1000) return;
+      const [r] = await traerCobrosAhora(["whop"], { dias: 2, fuente: "webhook" });
+      if (r && !r.ok) console.warn(`[webhook whop] ${r.error}`);
+    };
+    try { after(traer); } catch { await traer(); }
+    return NextResponse.json({ ok: true, enCamino: true });
+  }
+
   /* Sin ningún secreto configurado no se acepta nada: una URL abierta
      que escribe cobros es una invitación a inventar plata. */
   if (!autorizado) {
