@@ -16,7 +16,7 @@ import type { PagadoPorFuera } from "./types";
 import { cierrePorFuera, tienePagadoPorFuera } from "./pagado-por-fuera";
 import type { EsquemaPago, EstadoSeguimientoCobro, SeguimientoCobro, EstadoTraspaso, EtapaServicio, ExtraLiquidacion, Gasto, GastoRecurrente, ID as IdMiembro, Liquidacion, MiembroEquipo, ResultadoLiquidacion, TipoCuenta, Traspaso } from "./types";
 import { alDesmarcar, gastoDelPago, type PagoARegistrar } from "./pagos-liquidacion";
-import { conciliarPuntas, llegadaDeCobro, motivoDelMovimiento, paseDelCobro, rutaDe, type Punta } from "./traspasos";
+import { cobroDeLaLlegada, conciliarPuntas, esMotivoDeMovimiento, motivoDelMovimiento, paseDelCobro, paseDelDeposito, paseDesdeCobro, porQueNoEsMovimiento, rutaDe, type Punta } from "./traspasos";
 import { gastoAprobado, plantillasDesdeGastos } from "./gastos-recurrentes";
 import { cobrosAnulados, NOTA_ANULADO } from "./mercury";
 import { MOTIVO_ANULADO } from "./motivos";
@@ -305,6 +305,29 @@ export function fijarAcceso(a: MiAcceso | null) { acceso = a; }
    por la llamada del CRM, que no es suya. Lo que la persona cambia a
    propósito sí pasa por empujar(), que avisa si no se puede. */
 const puedo = (tabla: string) => !acceso || puedeEditar(acceso, tabla);
+
+/* Un depósito, una sola decisión (lib/traspasos.ts): el pase que acaba de cambiar acomoda al cobro que es su llegada, para que la Caja y
+   Conciliación no digan cosas distintas del mismo depósito.
+     · confirmado  → el cobro pendiente sale de la bandeja con el motivo; el que ya estaba sin venta por esto actualiza el motivo (si se
+       corrigió de dónde salió);
+     · ya no cuenta (descartado, vuelto a «por confirmar» o borrado) → el cobro que estaba sin venta POR ESTO vuelve a la bandeja. El que
+       tiene un motivo escrito por una persona no se toca.
+   Quien no edita los cobros (no es de Finanzas) no los mueve desde acá. */
+function acomodarCobroDelPase(t: Traspaso): void {
+  if (!puedo("movimientos")) return;
+  const e = snapshot();
+  const cobro = cobroDeLaLlegada(e.movimientos, t);
+  if (!cobro || cobro.estado === "conciliado") return;
+  if (t.estado === "confirmado") {
+    const motivo = motivoDelMovimiento(e, t);
+    if (cobro.estado === "pendiente") acciones.marcarMovimiento(cobro.id, "ignorado", motivo);
+    else if (esMotivoDeMovimiento(cobro.motivo) && cobro.motivo !== motivo) acciones.cambiarMotivoDeMovimiento(cobro.id, motivo);
+    return;
+  }
+  /* Otro pase del mismo depósito que sí cuenta (uno cargado a mano encima de uno descartado) sigue explicando el cobro. */
+  const otroQueCuenta = (e.traspasos ?? []).some((x) => x.id !== t.id && x.estado === "confirmado" && x.llegadaRef === t.llegadaRef);
+  if (cobro.estado === "ignorado" && esMotivoDeMovimiento(cobro.motivo) && !otroQueCuenta) acciones.marcarMovimiento(cobro.id, "pendiente");
+}
 
 /* ---------- quién es ----------
    El correo de la sesión. El control de los cobros anota quién cargó y quién
@@ -2749,6 +2772,7 @@ export const acciones = {
     if (gasto) empujar({ tipo: "upsert", tabla: "gastos", filas: [gasto] });
     if (viejo) empujar({ tipo: "delete", tabla: "gastos", ids: [viejo] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    acomodarCobroDelPase(con);
   },
 
   /* Confirmar el que propuso la sincronización, o decir que no es un pase
@@ -2772,6 +2796,7 @@ export const acciones = {
     empujarUpdate("traspasos", [id], { estado, ...(sinGasto ? { gastoId: null } : {}) });
     if (sinGasto) empujar({ tipo: "delete", tabla: "gastos", ids: [sinGasto] });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    acomodarCobroDelPase({ ...t, estado });
   },
 
   /* Lo que alguien dijo de la llegada de uno o varios movimientos (al contar el arqueo, o desde la lista): cuáles siguen en camino y cuáles ya
@@ -2800,6 +2825,8 @@ export const acciones = {
     });
     empujar({ tipo: "delete", tabla: "traspasos", ids: [id] });
     if (t.gastoId) empujar({ tipo: "delete", tabla: "gastos", ids: [t.gastoId] });
+    /* Sin el pase, el cobro que estaba sin venta por él ya no tiene motivo: vuelve a la bandeja. */
+    acomodarCobroDelPase({ ...t, estado: "ignorado" });
   },
 
   /* Lo que vio la sincronización de las cuentas (un depósito de Stripe en
@@ -4477,7 +4504,12 @@ export const acciones = {
     /* Sólo va y viene entre la bandeja y «sin venta»: un cobro conciliado tiene su pago, y se suelta desde su venta. */
     if (mov.estado === "conciliado" || estado === "conciliado") return false;
     /* Un cobro que es la llegada de un movimiento entre cuentas cargado a mano no vuelve solo a la bandeja: se deshace el movimiento. */
-    if (estado === "pendiente" && paseDelCobro(e.traspasos, mov)?.origen === "manual") return false;
+    const suPase = estado === "pendiente" ? paseDelCobro(e.traspasos, mov) : undefined;
+    if (suPase?.origen === "manual") return false;
+    /* El que vio la cuenta y alguien confirmó vuelve a «por confirmar» junto con el cobro (un depósito, una sola decisión: lib/traspasos.ts).
+       Quien no edita los movimientos entre cuentas no puede deshacer esa decisión desde acá. */
+    const aPorConfirmar = suPase?.estado === "confirmado" ? suPase : undefined;
+    if (aPorConfirmar && !puedo("traspasos")) return false;
     const porQue = (motivo ?? "").trim();
     if (estado === "ignorado" && !porQue) return false;
     const actualizado: Movimiento = { ...mov, estado, motivo: estado === "ignorado" ? porQue : undefined };
@@ -4491,20 +4523,28 @@ export const acciones = {
     /* El motivo tiene que viajar como null para que la base lo borre (undefined no viaja). */
     else empujarUpdate("movimientos", [mov.id], { estado, motivo: null });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    if (aPorConfirmar) acciones.marcarTraspaso(aPorConfirmar.id, "propuesto");
     return true;
   },
 
   /* «Es un movimiento entre cuentas»: el cobro no es una venta, es plata que pasó de una cuenta propia (o de un cambio con
      alguien) a la cuenta donde entró. Se guarda el pase —con el cobro como su llegada— y el cobro queda sin venta diciendo por qué.
-     Un cobro conciliado tiene su pago y no se toca; uno que ya es la llegada de un pase tampoco se carga dos veces. */
+     Un cobro conciliado tiene su pago y no se toca. Si la cuenta ya había visto ese depósito como un pase (la sincronización lo propone
+     cuando la otra parte es una cuenta propia), NO se carga otro ni se rechaza: se confirma ése con lo que dijo la persona (Aldana, 25/11:
+     el botón no hacía nada porque «ya había un pase»). Por qué no se puede, cuando no se puede: `porQueNoEsMovimiento` (lib/traspasos.ts). */
   asignarCobroComoMovimiento(movimientoId: ID, traspaso: Traspaso, gasto: Gasto | null = null): boolean {
     const e = snapshot();
     const mov = e.movimientos.find((m) => m.id === movimientoId);
-    if (!mov || mov.estado === "conciliado") return false;
-    if (paseDelCobro(e.traspasos, mov)) return false;
-    if (!(traspaso.montoLlega > 0) || traspaso.llegadaRef !== llegadaDeCobro(mov)) return false;
-    const t: Traspaso = { ...traspaso, estado: "confirmado" };
-    acciones.guardarTraspaso(t, gasto);
+    if (!mov || porQueNoEsMovimiento(e.traspasos, mov, traspaso)) return false;
+    const ya = paseDelDeposito(e.traspasos, mov);
+    const t = paseDesdeCobro(ya, traspaso);
+    /* El gasto del costo lleva el id de su pase: si el pase es el que ya había, el gasto es el de ése. */
+    const g: Gasto | null = gasto && gasto.id !== `gas_${t.id}`.slice(0, 120)
+      ? { ...gasto, id: `gas_${t.id}`.slice(0, 120), extra: { ...gasto.extra, traspasoId: t.id } } : gasto;
+    /* Guardar el pase confirmado ya saca el cobro de la bandeja con su motivo (acomodarCobroDelPase). */
+    acciones.guardarTraspaso(t, g);
+    const despues = snapshot().movimientos.find((m) => m.id === movimientoId);
+    if (despues?.estado === "ignorado") return true;
     return acciones.marcarMovimiento(movimientoId, "ignorado", motivoDelMovimiento(snapshot(), t));
   },
 
@@ -4515,7 +4555,9 @@ export const acciones = {
     if (!mov || mov.estado !== "ignorado") return false;
     const t = paseDelCobro(e.traspasos, mov);
     if (!t || t.origen !== "manual") return false;
+    /* Borrar el pase ya devuelve a la bandeja el cobro que estaba sin venta por él; el que tenía otro motivo escrito, acá. */
     acciones.borrarTraspaso(t.id);
+    if (snapshot().movimientos.find((m) => m.id === movimientoId)?.estado === "pendiente") return true;
     return acciones.marcarMovimiento(movimientoId, "pendiente");
   },
 

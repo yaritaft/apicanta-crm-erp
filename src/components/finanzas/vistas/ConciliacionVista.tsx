@@ -601,6 +601,12 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
                   <strong>Le pediste la venta a {pedidoCloser}</strong> {haceCuanto(pedidoHoras)}{pedido.pedidoPor ? ` (${pedido.pedidoPor})` : ""}. Le aparece en Pendientes de su panel; cuando la cargue desde ahí, el cobro queda conciliado.
                 </p>
               )}
+              {pase && (
+                <p className="t-sm" role="status">
+                  <strong>La cuenta lo vio como plata que pasó entre cuentas tuyas:</strong> {rutaDe(e, pase)}{pase.contraparte ? ` (el banco dice «${pase.contraparte}»)` : ""}.
+                  {" "}Si es así, tocá «Es un movimiento entre cuentas» y sale de esta bandeja; si es un cliente pagando, atalo a su cuota.
+                </p>
+              )}
               <div className="t-label">A qué cuota corresponde</div>
               {sugerencias.length === 0 && (
                 <p className="t-sm t-muted">
@@ -645,7 +651,7 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
                   title="No corresponde a ninguna venta: se deja sin venta diciendo por qué.">
                   No es una venta
                 </Button>
-                <Button sm variante="ghost" icono={<ArrowRightLeft size={14} />} onClick={() => setEntreCuentas("nuevo")}
+                <Button sm variante={pase ? "primary" : "ghost"} icono={<ArrowRightLeft size={14} />} onClick={() => setEntreCuentas("nuevo")}
                   title="Es plata que pasó de otra cuenta tuya (o un cambio con alguien): se carga el movimiento y el cobro queda sin venta.">
                   Es un movimiento entre cuentas
                 </Button>
@@ -689,7 +695,12 @@ function FilaMovimiento({ mov, M, abierto, onAbrir, onNuevaVenta }: {
                     Deshacer el movimiento
                   </Button>
                 ) : (
-                  <Button sm variante="secondary" onClick={() => { if (acciones.marcarMovimiento(mov.id, "pendiente")) toast("Vuelve a la bandeja."); }}>
+                  <Button sm variante="secondary" title={pase?.estado === "confirmado" ? "El cobro vuelve a la bandeja y el movimiento entre cuentas vuelve a quedar por confirmar." : undefined}
+                    onClick={() => {
+                      const eraPase = pase?.estado === "confirmado";
+                      if (acciones.marcarMovimiento(mov.id, "pendiente")) toast(eraPase ? "Vuelve a la bandeja, y el movimiento entre cuentas vuelve a quedar por confirmar." : "Vuelve a la bandeja.");
+                      else toast("No se pudo volver a pendientes: el movimiento entre cuentas de este depósito lo cambia Finanzas desde la Caja.", "err");
+                    }}>
                     Volver a pendientes
                   </Button>
                 )}

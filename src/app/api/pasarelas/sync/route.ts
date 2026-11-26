@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { nivelDelPedido } from "@/lib/permisos-servidor";
-import { descartarAnuladosMercury, guardarMovimientos, guardarPuntas, guardarReembolsos, hayServidor, nubeServidor, referenciasCompletas } from "@/lib/servidor";
+import { acomodarCobrosDePases, descartarAnuladosMercury, guardarMovimientos, guardarPuntas, guardarReembolsos, hayServidor, nubeServidor, referenciasCompletas } from "@/lib/servidor";
 import { resumenVacio } from "@/lib/mercury";
 import { cargarGastosDelBanco, type ResultadoDeLaCarga } from "@/lib/plaid-servidor";
 import { hayClaves, listar, procesadorDe, PROVEEDORES, retirosDeStripe, type MovimientoApi } from "@/lib/pasarelas-api";
@@ -201,6 +201,15 @@ export async function GET(peticion: Request) {
     if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
   }
 
+  /* Un depósito, una sola decisión: el cobro cuyo depósito ya es un movimiento entre cuentas confirmado sale de la bandeja de Conciliación
+     con su motivo (lib/servidor.ts: acomodarCobrosDePases). Va después de guardar los cobros y los pases de esta pasada. */
+  let cobrosAcomodados = 0;
+  if (quiereGuardar && hayServidor) {
+    const r = await acomodarCobrosDePases();
+    cobrosAcomodados = r.acomodados;
+    if (r.error) errores.push({ proveedor: "supabase", mensaje: r.error });
+  }
+
   /* Bank of America (por Plaid): cada hora, los gastos nuevos de la cuenta se cargan solos con las mismas reglas que el CSV (lib/plaid-servidor.ts).
      Sólo el cron: si no está conectada o la carga automática está apagada, no hace nada. Un error de acá no tumba el resto. */
   let banco: ResultadoDeLaCarga | undefined;
@@ -218,6 +227,7 @@ export async function GET(peticion: Request) {
     completados,
     pases,
     pasesGuardados,
+    cobrosAcomodados,
     reembolsos,
     reembolsosGuardados,
     mercury,

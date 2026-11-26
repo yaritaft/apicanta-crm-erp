@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Devolucion, Movimiento, Pago, Procesador, Traspaso, Venta } from "./types";
 import { feeDelPago, parcheDeCobro } from "./completar-cobros";
-import { conciliarPuntas, type Punta } from "./traspasos";
+import { cobrosQueYaSonPases, conciliarPuntas, LLEGADA_A_MANO, motivoDelMovimiento, type Punta } from "./traspasos";
 import { conciliarReembolsos, referenciaDeReembolso, type ReembolsoCrudo } from "./reembolsos";
 import { NOTA_ANULADO } from "./mercury";
 import { MOTIVO_ANULADO } from "./motivos";
@@ -179,6 +179,43 @@ export async function guardarPuntas(puntas: Punta[]): Promise<{ nuevos: number; 
     if (u.error) return { nuevos, conciliados: 0, error: u.error.message };
   }
   return { nuevos, conciliados: r.conciliados };
+}
+
+/** Un depósito, una sola decisión (lib/traspasos.ts). Lo que entra a Mercury desde otra cuenta propia se guarda dos veces: como movimiento
+ *  entre cuentas y como cobro pendiente. Cuando el pase ya está confirmado (lo confirmó alguien en la Caja, o era uno cargado a mano al que
+ *  la cuenta le acaba de ver la llegada), el cobro no tiene nada que hacer en la bandeja de Conciliación: sale solo, diciendo por qué, con el
+ *  mismo texto que escribe la pantalla. Corre en cada pasada de la sincronización, después de guardar los cobros y los pases, así que también
+ *  acomoda lo que haya quedado a medias por cualquier otro camino. Sólo mira los pases de los últimos meses; un error acá no tumba el resto. */
+export async function acomodarCobrosDePases(): Promise<{ acomodados: number; error?: string }> {
+  const db = nubeServidor();
+  if (!db) return { acomodados: 0 };
+  const desde = new Date(Date.now() - 120 * 86400000).toISOString();
+  const tq = await db.from("traspasos").select("*").eq("estado", "confirmado").not("llegadaRef", "is", null).neq("llegadaRef", LLEGADA_A_MANO)
+    .gte("fecha", desde).order("fecha", { ascending: false }).limit(1000);
+  if (tq.error) return faltaLaTabla(tq.error) ? { acomodados: 0 } : { acomodados: 0, error: tq.error.message };
+  const pases = (tq.data ?? []) as Traspaso[];
+  /* La llegada es «proveedor:referencia»: se buscan los cobros pendientes con esas referencias y la regla dice cuáles son de verdad. */
+  const refs = [...new Set(pases.map((t) => (t.llegadaRef ?? "").slice((t.llegadaRef ?? "").indexOf(":") + 1)).filter(Boolean))];
+  const cobros: Pick<Movimiento, "id" | "proveedor" | "referencia" | "estado">[] = [];
+  for (let i = 0; i < refs.length; i += 80) {
+    const q = await db.from("movimientos").select("id, proveedor, referencia, estado").eq("estado", "pendiente").in("referencia", refs.slice(i, i + 80));
+    if (q.error) return { acomodados: 0, error: q.error.message };
+    cobros.push(...((q.data ?? []) as Pick<Movimiento, "id" | "proveedor" | "referencia" | "estado">[]));
+  }
+  const pares = cobrosQueYaSonPases(cobros, pases);
+  if (pares.length === 0) return { acomodados: 0 };
+  const pq = await db.from("procesadores").select("id, nombre");
+  if (pq.error) return { acomodados: 0, error: pq.error.message };
+  const procesadores = (pq.data ?? []) as Procesador[];
+  let acomodados = 0;
+  for (const { cobro, pase } of pares) {
+    /* Sólo si sigue pendiente: si alguien lo concilió mientras tanto, no se pisa. */
+    const u = await db.from("movimientos").update({ estado: "ignorado", motivo: motivoDelMovimiento({ procesadores }, pase) })
+      .eq("id", cobro.id).eq("estado", "pendiente").select("id");
+    if (u.error) return { acomodados, error: u.error.message };
+    acomodados += (u.data ?? []).length;
+  }
+  return { acomodados };
 }
 
 /* ---------- Reembolsos de las pasarelas ---------- */

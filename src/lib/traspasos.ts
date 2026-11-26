@@ -395,12 +395,69 @@ export function paseQuePisaUnCobro(movimientos: readonly Movimiento[] | undefine
   return cobro?.estado === "conciliado" ? cobro : undefined;
 }
 
+/* ---------- El mismo depósito, una sola decisión ----------
+   Lo que entra a Mercury desde otra cuenta propia («Bank of America», «Relay», «Binance») la sincronización lo guarda dos veces: como un
+   movimiento entre cuentas «por confirmar» (Caja) y como un cobro pendiente (Conciliación), porque también podría ser un cliente pagando.
+   Eran dos listas con dos estados sueltos: lo que se decidía en una no se enteraba la otra. Aldana (25/11): confirmó en la Caja el pase de
+   US$ 15.000 de Bank of America a Mercury, el cobro siguió pendiente en Conciliación y, al querer dejarlo ahí como movimiento entre cuentas,
+   el botón no hacía nada (la app se negaba en silencio: «ya hay un pase de ese depósito»). El 12/11 le había pasado lo mismo y lo resolvió
+   escribiendo el motivo a mano.
+
+   La regla, la misma en la pantalla (lib/store.ts) y en el servidor (lib/servidor.ts):
+     · pase confirmado  ⇒ el cobro no queda pendiente: sale de la bandeja diciendo que es un movimiento entre cuentas;
+     · cobro que vuelve a la bandeja ⇒ el pase que vio la cuenta vuelve a «por confirmar» (el cargado a mano se deshace entero);
+     · «no es un pase» o pase borrado ⇒ el cobro que estaba sin venta por ese motivo vuelve a la bandeja;
+     · «es un movimiento entre cuentas» desde el cobro ⇒ se confirma el pase que ya había, no se carga otro. */
+
+const MOTIVO_DE_MOVIMIENTO = "Movimiento entre cuentas:";
+/** El motivo lo escribió la app al dejar el cobro como movimiento entre cuentas (no una persona con sus palabras). */
+export const esMotivoDeMovimiento = (motivo?: string | null): boolean => (motivo ?? "").startsWith(MOTIVO_DE_MOVIMIENTO);
+
+/** El pase de ese depósito, cuente o no: el que cuenta primero y, si no hay, el que alguien descartó (para no cargar otro encima). */
+export function paseDelDeposito(traspasos: readonly Traspaso[] | undefined, m: Pick<Movimiento, "proveedor" | "referencia">): Traspaso | undefined {
+  const ref = llegadaDeCobro(m);
+  return paseDelCobro(traspasos, m) ?? (traspasos ?? []).find((t) => t.llegadaRef === ref);
+}
+
+/** Por qué un cobro no se puede dejar como movimiento entre cuentas, con palabras para mostrar; null si se puede. Nunca en silencio. */
+export function porQueNoEsMovimiento(
+  traspasos: readonly Traspaso[] | undefined, mov: Pick<Movimiento, "proveedor" | "referencia" | "estado"> | undefined,
+  t: Pick<Traspaso, "montoLlega" | "llegadaRef">,
+): string | null {
+  if (!mov) return "Ese cobro ya no está en la lista: recargá la página y probá de nuevo.";
+  if (mov.estado === "conciliado") return "Ese cobro ya está atado a un pago: deshacé la conciliación antes de dejarlo como movimiento entre cuentas.";
+  if (mov.estado === "ignorado" && paseDelCobro(traspasos, mov)) return "Ese cobro ya está como movimiento entre cuentas: se corrige con «Corregir el movimiento».";
+  if (!(t.montoLlega > 0)) return "Poné cuánto llegó";
+  if (t.llegadaRef !== llegadaDeCobro(mov)) return "Ese movimiento no es el de este cobro: cerrá y volvé a abrirlo desde el cobro.";
+  return null;
+}
+
+/** El pase que queda al decir desde el cobro que es un movimiento entre cuentas. Si la cuenta ya lo había visto (o alguien lo cargó), es ESE,
+ *  confirmado y con lo que dijo la persona (de dónde salió, cuánto, la nota): lo que vio el banco —su id, sus puntas, la contraparte— no se pierde. */
+export function paseDesdeCobro(ya: Traspaso | undefined, dicho: Traspaso): Traspaso {
+  if (!ya) return { ...dicho, estado: "confirmado" };
+  return { ...ya, ...dicho, id: ya.id, origen: ya.origen, creadoEn: ya.creadoEn, por: ya.por ?? dicho.por, salidaRef: ya.salidaRef, contraparte: ya.contraparte, estado: "confirmado" };
+}
+
+/** Los cobros que siguen pendientes aunque su depósito ya es un movimiento entre cuentas confirmado: salen de la bandeja con el motivo. */
+export function cobrosQueYaSonPases<M extends Pick<Movimiento, "proveedor" | "referencia" | "estado">>(
+  movimientos: readonly M[] | undefined, traspasos: readonly Traspaso[] | undefined,
+): { cobro: M; pase: Traspaso }[] {
+  const porLlegada = new Map<string, Traspaso>();
+  for (const t of traspasos ?? []) if (t.estado === "confirmado" && t.llegadaRef && t.llegadaRef !== LLEGADA_A_MANO) porLlegada.set(t.llegadaRef, t);
+  if (porLlegada.size === 0) return [];
+  return (movimientos ?? []).flatMap((cobro) => {
+    const pase = cobro.estado === "pendiente" ? porLlegada.get(llegadaDeCobro(cobro)) : undefined;
+    return pase ? [{ cobro, pase }] : [];
+  });
+}
+
 /** Lo que queda escrito en el cobro sin venta cuando es un movimiento entre cuentas. */
 export function motivoDelMovimiento(e: Pick<EstadoApp, "procesadores">, t: Pick<Traspaso, "origenId" | "destinoId" | "notas">): string {
   const donde = t.origenId
     ? `salió de ${nombreDe(e, t.origenId)} y llegó a ${nombreDe(e, t.destinoId)}`
     : `llegó a ${nombreDe(e, t.destinoId)} desde una cuenta que todavía no se identificó`;
-  return `Movimiento entre cuentas: ${donde}. No es una venta.${t.notas?.trim() ? ` ${t.notas.trim()}` : ""}`;
+  return `${MOTIVO_DE_MOVIMIENTO} ${donde}. No es una venta.${t.notas?.trim() ? ` ${t.notas.trim()}` : ""}`;
 }
 
 /** De qué cuenta a cuál: "Stripe → ACH-WIRE Mercury". */

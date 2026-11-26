@@ -18,8 +18,8 @@ import { escribirMonto, leerMonto } from "@/lib/gastos";
 import { ultimoArqueo } from "@/lib/caja";
 import { useParamsURL, useTablaURL } from "@/lib/useParamsURL";
 import {
-  AYUDA_SITUACION, cambioDe, cambioDeLlegada, CATEGORIA_COSTO, cobroDeLaLlegada, conComisionDelRetiro, costoDe, esperaLlegada, faltaComisionDelRetiro, gastoDelCosto,
-  llegadaDeCobro, LLEGADA_A_MANO, parecidos, paseQuePisaUnCobro, problemasDelMovimiento, resumenDePases, rutaDe, SALIDA_A_MANO, situacionDe, TEXTO_SITUACION, type Punta, type Situacion,
+  AYUDA_SITUACION, cambioDe, cambioDeLlegada, CATEGORIA_COSTO, cobroDeLaLlegada, conComisionDelRetiro, costoDe, esMotivoDeMovimiento, esperaLlegada, faltaComisionDelRetiro, gastoDelCosto,
+  llegadaDeCobro, LLEGADA_A_MANO, parecidos, paseDelDeposito, paseQuePisaUnCobro, porQueNoEsMovimiento, problemasDelMovimiento, resumenDePases, rutaDe, SALIDA_A_MANO, situacionDe, TEXTO_SITUACION, type Punta, type Situacion,
 } from "@/lib/traspasos";
 import type { EstadoApp, EstadoTraspaso, Moneda, Movimiento, Traspaso } from "@/lib/types";
 
@@ -68,6 +68,14 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar, rango, plegable = fals
   const [borrar, setBorrar] = useState<Traspaso | null>(null);
   /* El retiro de Hotmart al que se le carga cuánto salió. */
   const [comision, setComision] = useState<Traspaso | null>(null);
+
+  /* Un depósito, una sola decisión (lib/traspasos.ts): lo que se decide acá del pase acomoda solo al cobro del mismo depósito en Conciliación.
+     Se dice en el aviso, para que nadie vaya después a buscarlo a la bandeja. */
+  const conElCobro = (t: Pick<Traspaso, "llegadaRef">, cuenta: boolean): string => {
+    const cobro = cobroDeLaLlegada(e.movimientos, t);
+    if (cuenta) return cobro?.estado === "pendiente" ? ` El cobro de ${plata(cobro.monto, cobro.moneda)} salió de la bandeja de Conciliación.` : "";
+    return cobro?.estado === "ignorado" && esMotivoDeMovimiento(cobro.motivo) ? ` El cobro de ${plata(cobro.monto, cobro.moneda)} vuelve a la bandeja de Conciliación.` : "";
+  };
 
   const ahora = Math.floor(Date.now() / 60000) * 60000;
   const delPeriodo = useMemo(
@@ -222,7 +230,7 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar, rango, plegable = fals
             /* Lo que hay que decidir, a la vista: no escondido hasta pasar el mouse. */
             <span className="pases__decidir">
               <Button sm variante="secondary" icono={<Check size={14} />} title="Sí, es plata que pasó entre dos cuentas tuyas" aria-label="Sí, es un movimiento entre cuentas"
-                onClick={() => { acciones.marcarTraspaso(t.id, "confirmado"); toast("Confirmado: cuenta como movimiento entre cuentas."); }}>Sí</Button>
+                onClick={() => { const cobro = conElCobro(t, true); acciones.marcarTraspaso(t.id, "confirmado"); toast(`Confirmado: cuenta como movimiento entre cuentas.${cobro}`); }}>Sí</Button>
               <Button sm variante="ghost" icono={<X size={14} />} title="No es un movimiento entre cuentas: no se cuenta" aria-label="No es un movimiento entre cuentas"
                 onClick={() => { acciones.marcarTraspaso(t.id, "ignorado"); toast("Descartado: no cuenta como movimiento entre cuentas.", "ok", { texto: "Deshacer", onClick: () => acciones.marcarTraspaso(t.id, "propuesto") }); }}>No</Button>
             </span>
@@ -232,7 +240,7 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar, rango, plegable = fals
                 onClick={() => setComision((e.traspasos ?? []).find((x) => x.id === t.id) ?? null)}>Cargar la comisión</Button>
             </span>
           ) : t.situacion === "ignorado" ? (
-            <IconButton etiqueta="Volver a contarlo" onClick={() => { acciones.marcarTraspaso(t.id, "confirmado"); toast("Vuelve a contar como movimiento entre cuentas."); }}><RotateCcw size={15} /></IconButton>
+            <IconButton etiqueta="Volver a contarlo" onClick={() => { const cobro = conElCobro(t, true); acciones.marcarTraspaso(t.id, "confirmado"); toast(`Vuelve a contar como movimiento entre cuentas.${cobro}`); }}><RotateCcw size={15} /></IconButton>
           ) : (
             <>
               {(t.situacion === "en-camino" || t.situacion === "no-llego") && (
@@ -248,7 +256,7 @@ export function PasesEntreCuentas({ e, onNuevo, onEditar, rango, plegable = fals
               <IconButton etiqueta="Corregir" onClick={() => editar(t.id)}><Pencil size={15} /></IconButton>
               {t.origen === "api" && (
                 <IconButton etiqueta="No es un movimiento entre cuentas"
-                  onClick={() => { acciones.marcarTraspaso(t.id, "ignorado"); toast("Descartado: ya no cuenta como movimiento entre cuentas.", "ok", { texto: "Deshacer", onClick: () => acciones.marcarTraspaso(t.id, "confirmado") }); }}><X size={15} /></IconButton>
+                  onClick={() => { const cobro = conElCobro(t, false); acciones.marcarTraspaso(t.id, "ignorado"); toast(`Descartado: ya no cuenta como movimiento entre cuentas.${cobro}`, "ok", { texto: "Deshacer", onClick: () => acciones.marcarTraspaso(t.id, "confirmado") }); }}><X size={15} /></IconButton>
               )}
               <IconButton etiqueta="Borrar" onClick={() => setBorrar((e.traspasos ?? []).find((x) => x.id === t.id) ?? null)}><Trash2 size={15} /></IconButton>
             </>
@@ -347,9 +355,14 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
   onCerrar: () => void;
   onListo: (mensaje: string) => void;
 }) {
+  const toast = useToast();
   const t0 = traspaso ?? null;
   const cobro = !t0 ? desdeCobro ?? null : null;
-  const [origenId, setOrigenId] = useState(t0?.origenId ?? "");
+  /* El mismo depósito, que la cuenta ya había visto como un pase (la sincronización lo propone cuando la otra parte es una cuenta propia) o
+     que alguien ya cargó: desde el cobro no se carga OTRO, se confirma ése con lo que se diga acá (Aldana, 25/11: el pase de Bank of America
+     a Mercury ya estaba y «Dejarlo como movimiento entre cuentas» no hacía nada). Se mira una vez, al abrir. */
+  const [ya] = useState<Traspaso | undefined>(() => (cobro ? paseDelDeposito(e.traspasos, cobro) : undefined));
+  const [origenId, setOrigenId] = useState(t0?.origenId ?? ya?.origenId ?? "");
   const [destinoId, setDestinoId] = useState(t0?.destinoId ?? (cobro ? cobro.procesadorId ?? `proc_${cobro.proveedor}` : ""));
   const [dia, setDia] = useState(diaAr(t0?.fecha ?? cobro?.fecha ?? new Date().toISOString()));
   const [sale, setSale] = useState(t0 ? enTexto(t0.montoSale) : cobro ? enTexto(cobro.monto) : "");
@@ -358,15 +371,17 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
   const [llegaTocado, setLlegaTocado] = useState(Boolean(t0) || Boolean(cobro));
   const [tc, setTc] = useState(e.ajustes.tipoCambio > 0 ? escribirMonto(e.ajustes.tipoCambio) : "");
   const [conGasto, setConGasto] = useState(t0 ? Boolean(t0.gastoId) || costoDe(t0) === 0 : true);
-  const [notas, setNotas] = useState(t0?.notas ?? "");
+  const [notas, setNotas] = useState(t0?.notas ?? ya?.notas ?? "");
   /* Lo que detectó la sincronización lo decide quien lo mira, y guardar una nota NO lo decide (Aldana, 13/10: quiso dejar un comentario en un
      depósito «por confirmar» y quedó confirmado como pase de Hotmart, cuando era el pago de un alumno). Sin tocar nada, queda como estaba. */
   const detectado = t0?.origen === "api";
   const [decision, setDecision] = useState<EstadoTraspaso>(t0?.estado ?? "confirmado");
   const estado: EstadoTraspaso = detectado ? decision : "confirmado";
   const conDecision = detectado && Boolean(t0);
-  const [pasoId, setPasoId] = useState<PasoId>(() => (t0 ? (conDecision ? "decision" : "revisar") : "de"));
-  const [vioRevision, setVioRevision] = useState(() => Boolean(t0) && !conDecision);
+  /* Del cobro que la cuenta ya vio como pase se sabe todo (de dónde salió, cuánto, el día): directo a revisar y confirmar. */
+  const yaSeSabe = Boolean(ya?.origenId);
+  const [pasoId, setPasoId] = useState<PasoId>(() => (t0 ? (conDecision ? "decision" : "revisar") : yaSeSabe ? "revisar" : "de"));
+  const [vioRevision, setVioRevision] = useState(() => (Boolean(t0) && !conDecision) || yaSeSabe);
   /* El mismo depósito, ya conciliado como el cobro de una cuota: contarlo también como pase lo cuenta dos veces. */
   const cobroDelDeposito = useMemo(() => (t0 ? cobroDeLaLlegada(e.movimientos, t0) : undefined), [e.movimientos, t0]);
   const pisaUnCobro = Boolean(t0) && Boolean(paseQuePisaUnCobro(e.movimientos, { llegadaRef: t0?.llegadaRef, estado }));
@@ -389,11 +404,12 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
   const montoSale = sinOrigen ? montoLlega : leerMonto(sale);
   /* El que se corrige conserva su hora; el de hoy, ahora (no al mediodía:
      quedaría en el futuro y la caja no lo contaría hasta entonces). */
-  const fechaIso = t0 && diaAr(t0.fecha) === dia ? t0.fecha
+  const fechaDeAntes = t0?.fecha ?? ya?.fecha;
+  const fechaIso = fechaDeAntes && diaAr(fechaDeAntes) === dia ? fechaDeAntes
     : dia === diaAr(new Date().toISOString()) ? new Date().toISOString() : new Date(`${dia}T15:00:00.000Z`).toISOString();
 
   const borrador: Traspaso = {
-    ...(t0 ?? { id: nuevoId("tra"), origen: "manual", creadoEn: new Date().toISOString(), por: e.ajustes.responsable || undefined }),
+    ...(t0 ?? ya ?? { id: nuevoId("tra"), origen: "manual", creadoEn: new Date().toISOString(), por: e.ajustes.responsable || undefined }),
     fecha: fechaIso, origenId: origenId || undefined, destinoId: destinoId || undefined,
     montoSale: Number.isFinite(montoSale) ? montoSale : 0, monedaSale,
     montoLlega: Number.isFinite(montoLlega) ? montoLlega : 0, monedaLlega,
@@ -417,16 +433,18 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
   const gasto = cuentaComoPase && conGasto && costo > 0 ? gastoDelCosto(e, borrador, enPesos ? tipoCambio : 0) : null;
   const faltaTc = cuentaComoPase && conGasto && costo > 0 && enPesos && !(tipoCambio > 0);
   const yaHay = useMemo(
-    () => parecidos(e.traspasos ?? [], borrador, t0?.id),
+    () => parecidos(e.traspasos ?? [], borrador, t0?.id ?? ya?.id),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [e.traspasos, origenId, destinoId, borrador.montoSale, dia, t0?.id],
+    [e.traspasos, origenId, destinoId, borrador.montoSale, dia, t0?.id, ya?.id],
   );
 
   const problemas = problemasDelMovimiento({
     origenId: origenId || undefined, destinoId: destinoId || undefined, desdeCobro: Boolean(cobro),
     montoSale: borrador.montoSale, montoLlega: borrador.montoLlega, faltaTc, dia, hoy: diaAr(new Date().toISOString()),
   });
-  const problema = problemas[0]?.texto ?? null;
+  /* Por qué este cobro no se puede dejar como movimiento entre cuentas (ya se concilió, ya es uno): se dice, nunca un botón que no hace nada. */
+  const rechazo = cobro ? porQueNoEsMovimiento(e.traspasos, e.movimientos.find((m) => m.id === cobro.id), borrador) : null;
+  const problema = problemas[0]?.texto ?? rechazo;
 
   /* Las cuentas activas, y las de este movimiento aunque ya no lo estén. */
   const cuentas = e.procesadores.filter((p) => p.activo || p.id === t0?.origenId || p.id === t0?.destinoId)
@@ -435,7 +453,10 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
   function guardar() {
     if (problema) return;
     if (cobro) {
-      if (!acciones.asignarCobroComoMovimiento(cobro.id, borrador, gasto)) return;
+      if (!acciones.asignarCobroComoMovimiento(cobro.id, borrador, gasto)) {
+        toast(`No se pudo dejar como movimiento entre cuentas. ${porQueNoEsMovimiento(e.traspasos, e.movimientos.find((m) => m.id === cobro.id), borrador) ?? "Recargá la página y probá de nuevo."}`, "err");
+        return;
+      }
       onListo(origenId
         ? `Listo: el cobro es plata que pasó de ${nombreCuenta(e, origenId)} a ${nombreCuenta(e, destinoId)}${gasto ? `; ${plata(costo, monedaSale)} quedaron como gasto` : ""}. Ya no cuenta como venta.`
         : `Listo: el cobro quedó como un movimiento entre cuentas sin identificar de dónde salió. Cuando lo averigües, corregilo desde la Caja.`);
@@ -668,6 +689,14 @@ export function FormTraspaso({ e, traspaso, desdeCobro, onCerrar, onListo }: {
           <div className="stack-3">
             <ResumenAsistente filas={filas} />
             {avisoDeCobroDoble}
+            {ya && (
+              <p className="t-sm t-muted pases__nota">
+                {ya.origen === "api"
+                  ? <>La cuenta ya había visto este depósito{ya.contraparte ? <> (el banco dice «{ya.contraparte}»)</> : null}{ya.estado === "confirmado" ? " y está confirmado como movimiento entre cuentas" : ya.estado === "propuesto" ? " y lo tenía por confirmar" : ""}.</>
+                  : <>Este depósito ya estaba cargado como movimiento entre cuentas.</>}
+                {" "}No se carga otro: queda ese mismo, confirmado, y el cobro sale de la bandeja.
+              </p>
+            )}
             {faltaLlegar && (
               <label className="pases__costo">
                 <input type="checkbox" checked={yaLlego} onChange={(ev) => setYaLlego(ev.target.checked)} />
