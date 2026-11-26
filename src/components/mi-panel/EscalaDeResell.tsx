@@ -32,9 +32,9 @@ export function EscalaDeResell({ e, miembro, ahora }: { e: EstadoApp; miembro: M
         <span>{nombrePeriodo(x.mes)}</span>
       </div>
       <div className="mp-tiles">
-        <Tile rot="Llamadas de resell" valor={String(cierre.llamadas)} sub="las que se hicieron este mes" />
+        <Tile rot="Llamadas de resell" valor={String(cierre.llamadas)} sub="hechas este mes" />
         <Tile rot="Cierres" valor={String(cierre.cierres)} sub="personas que compraron" />
-        <Tile rot="% de cierre" valor={cierre.pct === null ? "Sin dato" : porcentajeDeCierre(cierre.pct)} sub={cierre.pct === null ? "todavía sin llamadas este mes" : "cierres ÷ llamadas"} />
+        <Tile rot="% de cierre" valor={cierre.pct === null ? "Sin dato" : porcentajeDeCierre(cierre.pct)} sub={cierre.pct === null ? "sin llamadas este mes" : "cierres ÷ llamadas"} />
         <Tile rot="Cobrás de resell" valor={porcentajeDeCierre(x.tasa)} sub={falta} verde />
       </div>
       <p className="mp-nota-escala">La escala: {textoDeEscala(x.escala, x.base)}. Vale para todo lo que cobres de resell en el mes.</p>
