@@ -26,7 +26,7 @@ import { conAdelantoEnExtra, conExtraEnMes, conPagadoPorFuera, historialParaFina
 import { sinConfirmarSiCambio } from "./reglas";
 import { diaDeNegocio } from "./dia-negocio";
 import {
-  alumnoConLaCompra, alumnoDeVenta, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
+  alumnoConLaCompra, alumnoDeVenta, alumnoSinVentaConLaCompra, cuotaMensualDeVenta, etapaDelAlumno, etapaInicialDeServicio, etapasDeServicio,
   personaDeVenta, planDeVenta, sinVentaPendiente,
 } from "./alumnos";
 import { pagoDesdeMovimiento, tasaEstimada } from "./conciliacion";
@@ -1171,8 +1171,9 @@ export function alumnoDesdeVenta(e: EstadoApp, venta: Venta, cuotas?: Cuota[]): 
   const ya = alumnoDeVenta(e, venta);
   if (ya) {
     if (ya.ventaId) return sinCambios;
-    /* Si lo habían dado de alta esperando la venta (lib/alumnos.ts → ventaPendienteDe), ya la tiene. */
-    const enlazado: Alumno = { ...ya, ventaId: venta.id, leadId: ya.leadId ?? venta.contactoId, extra: sinVentaPendiente(ya.extra) };
+    /* Si lo habían dado de alta esperando la venta (lib/alumnos.ts → ventaPendienteDe), ya la tiene; y el alumno de antes sin venta
+       cargada que vuelve a comprar, además renueva (alumnoSinVentaConLaCompra). */
+    const enlazado = alumnoSinVentaConLaCompra(e, ya, venta);
     return { alumnos: e.alumnos.map((a) => (a.id === ya.id ? enlazado : a)), tocado: enlazado };
   }
   if (venta.estado !== "activa") return sinCambios;
@@ -3203,6 +3204,9 @@ export const acciones = {
     empujar({ tipo: "upsert", tabla: "actividad", filas: registros });
     empujarTanda(t);
     if (responsableNuevo) empujarUpdate("leads", [responsableNuevo.id], { responsable: responsableNuevo.responsable });
+    /* La compra de quien ya era alumno le cambia la ficha de Servicio en la base (su programa y su duración pasan a los de esta compra:
+       supabase/renovacion-deja-la-ficha-26-11.sql): se vuelve a traer para verla sin recargar. */
+    if (conAlumno.tocado && !alumnoNuevo) void acciones.traerFichaDe(conAlumno.tocado.id);
     return venta.id;
   },
 

@@ -85,11 +85,15 @@ export const CONTRATOS = ["Firmado", "Pendiente", NO_SE_HACIA_CONTRATO];
 /* Desde cuándo se hace contrato a las reservas y al Downsell (Lili, 22/10: «de un mes para atrás no se hacían»). */
 export const CONTRATO_RESERVA_DOWNSELL_DESDE = "2026-09-22";
 export const SESIONES_MENTOR = [0, 1, 2, 3];
-/* Lo que Lili contó que dura cada programa, «por ejemplo»: sólo es lo que se sugiere al cargar uno. */
+/* Lo que dura cada programa (Lili): es lo que se sugiere al cargar uno y lo que la base le pone a la ficha cuando una compra nueva pasa a
+   ser el servicio del alumno (26/11: «todos los que renuevan Principals, el contrato es por 12 meses»; la misma tabla está en
+   supabase/renovacion-deja-la-ficha-26-11.sql → meses_de_programa, y pruebas/renovacion-deja-la-ficha-26-11.test.ts las compara). */
 export const DURACION_POR_PROGRAMA: Record<string, number> = {
   "Hackear IT": 3, "Hackear Biz": 6, Principals: 12, "Principal Mastermind": 12,
 };
 export const DURACION_POR_DEFECTO = 3;
+/** Los meses de un programa, se haya escrito como se haya escrito («PRINCIPALS», «Principals Mastermind»). */
+export const mesesDePrograma = (programa: string): number => DURACION_POR_PROGRAMA[familiaDePrograma(programa)] ?? DURACION_POR_DEFECTO;
 /* Desde cuántas semanas sin reportar se lo da por inactivo. */
 export const SEMANAS_PARA_INACTIVO = 3;
 
@@ -300,7 +304,7 @@ export function programasYDuracion(
 ): { programas: string[]; programasSug: string[]; duracion: number | null; duracionSug: number | null } {
   const programasSug = seg.programas.length ? [] : programasDeTexto(productoOPlan, lista);
   const programas = seg.programas.length ? seg.programas : programasSug;
-  const duracionSug = seg.duracionMeses === null && programas.length ? DURACION_POR_PROGRAMA[programas[0]] ?? DURACION_POR_DEFECTO : null;
+  const duracionSug = seg.duracionMeses === null && programas.length ? mesesDePrograma(programas[0]) : null;
   return { programas, programasSug, duracion: seg.duracionMeses ?? duracionSug, duracionSug };
 }
 

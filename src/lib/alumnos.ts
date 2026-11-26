@@ -128,13 +128,41 @@ export function alumnoConLaCompra(e: EstadoApp, v: Venta): Alumno | null {
   if (tomaElServicio(e, v, a.ventaId)) {
     const anteriores = Array.isArray(a.extra?.ventasAnteriores) ? (a.extra.ventasAnteriores as unknown[]).filter((x): x is string => typeof x === "string") : [];
     nuevo = {
-      ...nuevo, ventaId: v.id, plan: planDeVenta(e, v) || a.plan, moneda: v.moneda || a.moneda,
+      ...nuevo, ventaId: v.id, leadId: a.leadId ?? v.contactoId, plan: planDeVenta(e, v) || a.plan, moneda: v.moneda || a.moneda,
       ...(a.estado === "baja" || a.estado === "graduado" ? { estado: "activo" as const } : {}),
       extra: { ...(a.extra ?? {}), ventasAnteriores: [...anteriores.filter((x) => x !== a.ventaId), a.ventaId] },
     };
   }
   if (renuevaElPrograma(e, v) && diaDeNegocio(v.fecha) > diaDeNegocio(a.inicio)) nuevo = { ...nuevo, inicio: v.fecha };
   return nuevo === a ? null : nuevo;
+}
+
+/* ---------- El alumno de antes, sin venta cargada, que vuelve a comprar (Liliana, 26/11) ----------
+   Luis Carlos J. estaba de baja desde 2025 y nunca tuvo su venta en la app (vino del Airtable). El 25/11 compró Principals y la venta
+   se le «pegó» sin más, como al que Lili da de alta esperando la venta: quedó de baja, sin plan y con el inicio de 2025. Si la compra es de
+   estos días (no una vieja que alguien carga tarde) y llega más de un mes después de su inicio, es una renovación como la de cualquiera:
+   pasa a ese plan, vuelve a activo y su programa arranca con la compra. El que espera la venta (`ventaPendiente`) sigue igual: se le pega.
+   La base hace lo mismo (supabase/renovacion-deja-la-ficha-26-11.sql → compra_al_alumno). */
+export const DIAS_PARA_SER_UNA_RENOVACION = 30;
+const DIA_MS = 86_400_000;
+const diasEntre = (desde: string, hasta: string): number =>
+  Math.round((Date.parse(`${diaDeNegocio(hasta)}T00:00:00Z`) - Date.parse(`${diaDeNegocio(desde)}T00:00:00Z`)) / DIA_MS);
+
+export function renuevaSinVentaCargada(e: Pick<EstadoApp, "productos" | "ventas"> & Partial<Pick<EstadoApp, "ajustes">>, a: Pick<Alumno, "ventaId" | "extra" | "inicio">, v: Pick<Venta, "id" | "estado" | "productoId" | "fecha">, ahora: number = Date.now()): boolean {
+  if (a.ventaId || ventaPendienteDe(a) || !a.inicio) return false;
+  if (!tomaElServicio(e, v) || !renuevaElPrograma(e, v)) return false;
+  if (Date.parse(v.fecha) < ahora - DIAS_PARA_SER_UNA_RENOVACION * DIA_MS) return false;
+  return diasEntre(a.inicio, v.fecha) > DIAS_PARA_SER_UNA_RENOVACION;
+}
+
+/* El alumno que no tenía venta, con esta: se le pega (y deja de esperarla) y, si es uno de antes que vuelve a comprar, además renueva. */
+export function alumnoSinVentaConLaCompra(e: EstadoApp, a: Alumno, v: Venta, ahora: number = Date.now()): Alumno {
+  const enlazado: Alumno = { ...a, ventaId: v.id, leadId: a.leadId ?? v.contactoId, extra: sinVentaPendiente(a.extra) };
+  if (!renuevaSinVentaCargada(e, a, v, ahora)) return enlazado;
+  return {
+    ...enlazado, plan: planDeVenta(e, v) || a.plan, moneda: v.moneda || a.moneda, inicio: v.fecha,
+    ...(a.estado === "baja" || a.estado === "graduado" ? { estado: "activo" as const } : {}),
+  };
 }
 
 /* El alumno con el inicio corrido a la fecha de esta compra, o null si no corresponde: la compra no renueva, es la primera del
