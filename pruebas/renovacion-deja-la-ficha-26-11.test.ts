@@ -124,7 +124,7 @@ async function banco(): Promise<Pg> {
     create table public.ajustes (id int primary key, programas jsonb);
     create table public.leads (id text primary key, "contactoId" text);
     create table public.seguimiento_alumnos (id text primary key, "alumnoId" text not null unique, programas jsonb not null default '[]'::jsonb, "duracionMeses" integer,
-      "ultimoContacto" text, "followUp" text default '');
+      "ultimoContacto" text, "followUp" text default '', "planDePago" text not null default '');
     create table public.actividad (id text primary key, accion text, actor text, entidad text, "entidadId" text, titulo text, fecha timestamptz, detalle text);
     insert into public.productos (id, nombre, tipo) values ('prod_hackear_ai', 'Hackear AI', 'principal'), ('prod_principals', 'Principals', 'principal'),
       ('prod_resell', 'Resell Mentoría', 'principal'), ('prod_biz', 'Hackear Biz', 'principal'), ('prod_downsell', 'Downsell', 'downsell'),
@@ -137,8 +137,8 @@ async function banco(): Promise<Pg> {
   return db;
 }
 
-type Ficha = { programas: string[]; duracionMeses: number | null; cicloDeVenta: string | null; ultimoContacto: string | null; followUp: string };
-const fichaDe = async (db: Pg, alumno: string) => (await db.query<Ficha>(`select programas, "duracionMeses", "cicloDeVenta", "ultimoContacto", "followUp" from public.seguimiento_alumnos where "alumnoId" = $1`, [alumno])).rows[0];
+type Ficha = { programas: string[]; duracionMeses: number | null; cicloDeVenta: string | null; ultimoContacto: string | null; followUp: string; planDePago: string };
+const fichaDe = async (db: Pg, alumno: string) => (await db.query<Ficha>(`select programas, "duracionMeses", "cicloDeVenta", "ultimoContacto", "followUp", "planDePago" from public.seguimiento_alumnos where "alumnoId" = $1`, [alumno])).rows[0];
 type Fila = { estado: string; plan: string; ventaId: string | null; leadId: string | null; dia: string; extra: Record<string, unknown> };
 const alumnoDe = async (db: Pg, id: string) => (await db.query<Fila>(`select estado, plan, "ventaId", "leadId", extra, to_char(inicio at time zone 'America/Argentina/Buenos_Aires', 'YYYY-MM-DD') dia from public.alumnos where id = $1`, [id])).rows[0];
 const hoyArg = async (db: Pg) => (await db.query<{ d: string }>(`select to_char(now() at time zone 'America/Argentina/Buenos_Aires', 'YYYY-MM-DD') d`)).rows[0].d;
@@ -149,45 +149,45 @@ async function conAlumnoDeHackearAi(db: Pg, programas = '["HACKEAR IA"]', duraci
   await db.exec(`
     insert into public.ventas (id, "contactoId", "productoId", fecha) values ('ven_ai', 'lead_1', 'prod_hackear_ai', now() - interval '70 days');
     insert into public.alumnos (id, nombre, plan, inicio, "leadId", "ventaId") values ('alu_1', 'Betsabeth Prueba', 'Hackear AI', now() - interval '70 days', 'lead_1', 'ven_ai');
-    insert into public.seguimiento_alumnos (id, "alumnoId", programas, "duracionMeses", "ultimoContacto") values ('seg_1', 'alu_1', '${programas}'::jsonb, ${duracion === null ? "null" : duracion}, '2026-11-01');
+    insert into public.seguimiento_alumnos (id, "alumnoId", programas, "duracionMeses", "ultimoContacto", "planDePago") values ('seg_1', 'alu_1', '${programas}'::jsonb, ${duracion === null ? "null" : duracion}, '2026-11-01', 'PIF 3000 USD');
   `);
 }
 
-test("renovar a Principals deja la ficha en «Principals · HACKEAR IA», 12 meses, y lo anota", { skip: saltear }, async () => {
+test("renovar a Principals deja la ficha en «Principals · HACKEAR IA», 12 meses, con el plan de pago de la compra anterior en blanco, y lo anota", { skip: saltear }, async () => {
   const db = await banco();
   await conAlumnoDeHackearAi(db);
   await db.exec(`insert into public.ventas (id, "contactoId", "productoId") values ('ven_pr', 'lead_1', 'prod_principals')`);
   assert.equal(await pasar(db, "alu_1", "ven_pr"), true);
-  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["Principals", "HACKEAR IA"], duracionMeses: 12, cicloDeVenta: "ven_pr", ultimoContacto: "2026-11-01", followUp: "" });
+  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["Principals", "HACKEAR IA"], duracionMeses: 12, cicloDeVenta: "ven_pr", ultimoContacto: "2026-11-01", followUp: "", planDePago: "" });
   const a = await alumnoDe(db, "alu_1");
   assert.deepEqual({ plan: a.plan, ventaId: a.ventaId, dia: a.dia }, { plan: "Principals", ventaId: "ven_pr", dia: await hoyArg(db) });
   assert.deepEqual(a.extra.ventasAnteriores, ["ven_ai"]);
   const nota = (await db.query<{ detalle: string }>(`select detalle from public.actividad where id = 'act_compra_alu_1_ven_pr'`)).rows[0].detalle;
-  assert.match(nota, /compró Principals: su servicio pasa a ser Principals \(antes Hackear AI\), su programa arranca el .* su ficha de Servicio queda en Principals, 12 meses \(antes 3\)\./);
+  assert.match(nota, /compró Principals: su servicio pasa a ser Principals \(antes Hackear AI\), su programa arranca el .* su ficha de Servicio queda en Principals, 12 meses \(antes 3\) y su plan de pago pasa a ser el de esta compra \(el escrito era «PIF 3000 USD»\)\./);
   /* Volver a pasarla no cambia nada (ni repite el programa). */
   assert.equal(await pasar(db, "alu_1", "ven_pr"), false);
   assert.deepEqual((await fichaDe(db, "alu_1")).programas, ["Principals", "HACKEAR IA"]);
 });
 
-test("una pestaña abierta desde antes de la renovación guarda la fila entera: su programa y su duración viejos no pisan los nuevos; lo demás sí se guarda", { skip: saltear }, async () => {
+test("una pestaña abierta desde antes de la renovación guarda la fila entera: su programa, su duración y su plan de pago viejos no pisan los nuevos; lo demás sí se guarda", { skip: saltear }, async () => {
   const db = await banco();
   await conAlumnoDeHackearAi(db);
   await db.exec(`insert into public.ventas (id, "contactoId", "productoId") values ('ven_pr', 'lead_1', 'prod_principals')`);
   await pasar(db, "alu_1", "ven_pr");
   /* Lili, con la app abierta desde la mañana, marca «Se lo contactó»: la app manda la fila como la tenía (así se guarda: upsert de la fila). */
   const guardar = (f: Partial<Ficha>) => db.query(
-    `insert into public.seguimiento_alumnos (id, "alumnoId", programas, "duracionMeses", "cicloDeVenta", "ultimoContacto", "followUp") values ('seg_1', 'alu_1', $1::jsonb, $2, $3, $4, $5)
+    `insert into public.seguimiento_alumnos (id, "alumnoId", programas, "duracionMeses", "cicloDeVenta", "ultimoContacto", "followUp", "planDePago") values ('seg_1', 'alu_1', $1::jsonb, $2, $3, $4, $5, $6)
      on conflict (id) do update set programas = excluded.programas, "duracionMeses" = excluded."duracionMeses", "cicloDeVenta" = excluded."cicloDeVenta",
-       "ultimoContacto" = excluded."ultimoContacto", "followUp" = excluded."followUp"`,
-    [JSON.stringify(f.programas), f.duracionMeses, f.cicloDeVenta, f.ultimoContacto, f.followUp]);
-  await guardar({ programas: ["HACKEAR IA"], duracionMeses: 3, cicloDeVenta: null, ultimoContacto: "2026-11-26", followUp: "Onboarding" });
-  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["Principals", "HACKEAR IA"], duracionMeses: 12, cicloDeVenta: "ven_pr", ultimoContacto: "2026-11-26", followUp: "Onboarding" });
+       "ultimoContacto" = excluded."ultimoContacto", "followUp" = excluded."followUp", "planDePago" = excluded."planDePago"`,
+    [JSON.stringify(f.programas), f.duracionMeses, f.cicloDeVenta, f.ultimoContacto, f.followUp, f.planDePago]);
+  await guardar({ programas: ["HACKEAR IA"], duracionMeses: 3, cicloDeVenta: null, ultimoContacto: "2026-11-26", followUp: "Onboarding", planDePago: "PIF 3000 USD" });
+  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["Principals", "HACKEAR IA"], duracionMeses: 12, cicloDeVenta: "ven_pr", ultimoContacto: "2026-11-26", followUp: "Onboarding", planDePago: "" });
   /* Con la pestaña al día (trae la marca de esta compra) se cambian a mano como siempre: Lili le da 9 meses y le saca el programa viejo. */
-  await guardar({ programas: ["Principals"], duracionMeses: 9, cicloDeVenta: "ven_pr", ultimoContacto: "2026-11-27", followUp: "Onboarding" });
-  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["Principals"], duracionMeses: 9, cicloDeVenta: "ven_pr", ultimoContacto: "2026-11-27", followUp: "Onboarding" });
+  await guardar({ programas: ["Principals"], duracionMeses: 9, cicloDeVenta: "ven_pr", ultimoContacto: "2026-11-27", followUp: "Onboarding", planDePago: "2 x 750 USD" });
+  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["Principals"], duracionMeses: 9, cicloDeVenta: "ven_pr", ultimoContacto: "2026-11-27", followUp: "Onboarding", planDePago: "2 x 750 USD" });
   /* Nadie se hace pasar por la base escribiendo la marca de otra compra: tampoco pisa. */
-  await guardar({ programas: ["HACKEAR IA"], duracionMeses: 3, cicloDeVenta: "ven_inventada", ultimoContacto: "2026-11-28", followUp: "Onboarding" });
-  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["Principals"], duracionMeses: 9, cicloDeVenta: "ven_pr", ultimoContacto: "2026-11-28", followUp: "Onboarding" });
+  await guardar({ programas: ["HACKEAR IA"], duracionMeses: 3, cicloDeVenta: "ven_inventada", ultimoContacto: "2026-11-28", followUp: "Onboarding", planDePago: "PIF 3000 USD" });
+  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["Principals"], duracionMeses: 9, cicloDeVenta: "ven_pr", ultimoContacto: "2026-11-28", followUp: "Onboarding", planDePago: "2 x 750 USD" });
   /* Una actualización de una sola columna (el servidor: el contrato firmado, los accesos) no trae marca y pasa. */
   await db.exec(`update public.seguimiento_alumnos set "followUp" = 'Activo' where id = 'seg_1'`);
   assert.equal((await fichaDe(db, "alu_1")).followUp, "Activo");
@@ -198,10 +198,10 @@ test("la renovación siguiente vuelve a pasar la ficha a la compra nueva (la dur
   await conAlumnoDeHackearAi(db);
   await db.exec(`insert into public.ventas (id, "contactoId", "productoId", fecha) values ('ven_pr', 'lead_1', 'prod_principals', now() - interval '20 days')`);
   await pasar(db, "alu_1", "ven_pr");
-  await db.exec(`update public.seguimiento_alumnos set "duracionMeses" = 9 where id = 'seg_1'`);
+  await db.exec(`update public.seguimiento_alumnos set "duracionMeses" = 9, "planDePago" = '2 x 750 USD' where id = 'seg_1'`);
   await db.exec(`insert into public.ventas (id, "contactoId", "productoId") values ('ven_biz', 'lead_1', 'prod_biz')`);
   assert.equal(await pasar(db, "alu_1", "ven_biz"), true);
-  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["Hackear Biz", "Principals", "HACKEAR IA"], duracionMeses: 6, cicloDeVenta: "ven_biz", ultimoContacto: "2026-11-01", followUp: "" });
+  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["Hackear Biz", "Principals", "HACKEAR IA"], duracionMeses: 6, cicloDeVenta: "ven_biz", ultimoContacto: "2026-11-01", followUp: "", planDePago: "" });
 });
 
 test("renovar el mismo programa no lo repite en la ficha («HACKEAR IA» ya es Hackear AI) y la duración vuelve a la del programa", { skip: saltear }, async () => {
@@ -209,20 +209,22 @@ test("renovar el mismo programa no lo repite en la ficha («HACKEAR IA» ya es H
   await conAlumnoDeHackearAi(db, '["HACKEAR IA"]', 5);
   await db.exec(`insert into public.ventas (id, "contactoId", "productoId") values ('ven_re', 'lead_1', 'prod_resell')`);
   await pasar(db, "alu_1", "ven_re");
-  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["HACKEAR IA"], duracionMeses: 3, cicloDeVenta: "ven_re", ultimoContacto: "2026-11-01", followUp: "" });
+  assert.deepEqual(await fichaDe(db, "alu_1"), { programas: ["HACKEAR IA"], duracionMeses: 3, cicloDeVenta: "ven_re", ultimoContacto: "2026-11-01", followUp: "", planDePago: "" });
 });
 
-test("lo que no arranca un programa no toca la ficha: un evento, un downsell, un producto sin programa, o un alumno sin ficha todavía", { skip: saltear }, async () => {
+test("lo que no arranca un programa no toca la ficha: un evento, un downsell o un alumno sin ficha todavía; un producto sin programa sólo deja el plan de pago en blanco", { skip: saltear }, async () => {
   const db = await banco();
   await conAlumnoDeHackearAi(db);
-  const igual = { programas: ["HACKEAR IA"], duracionMeses: 3, cicloDeVenta: null, ultimoContacto: "2026-11-01", followUp: "" };
+  const igual = { programas: ["HACKEAR IA"], duracionMeses: 3, cicloDeVenta: null, ultimoContacto: "2026-11-01", followUp: "", planDePago: "PIF 3000 USD" };
   await db.exec(`insert into public.ventas (id, "contactoId", "productoId") values ('ven_cena', 'lead_1', 'prod_cena'), ('ven_up', 'lead_1', 'prod_upsell'), ('ven_ds', 'lead_1', 'prod_downsell')`);
   assert.equal(await pasar(db, "alu_1", "ven_cena"), false);
   assert.deepEqual(await fichaDe(db, "alu_1"), igual);
-  assert.equal(await pasar(db, "alu_1", "ven_up"), true, "el Upsell toma el servicio, pero no es de ningún programa de Ajustes");
-  assert.deepEqual(await fichaDe(db, "alu_1"), igual);
   assert.equal(await pasar(db, "alu_1", "ven_ds"), true);
   assert.deepEqual(await fichaDe(db, "alu_1"), igual, "el downsell lo suma el contrato al firmarse, como siempre");
+  /* El Upsell es una compra nueva que no es de ningún programa de Ajustes: programa y duración quedan, el plan de pago viejo no. */
+  await db.exec(`update public.ventas set fecha = now() + interval '1 minute' where id = 'ven_up'`);
+  assert.equal(await pasar(db, "alu_1", "ven_up"), true);
+  assert.deepEqual(await fichaDe(db, "alu_1"), { ...igual, cicloDeVenta: "ven_up", planDePago: "" });
   /* Sin ficha: la compra pasa igual (la ficha nace después, sugerida por la venta). */
   await db.exec(`
     insert into public.ventas (id, "contactoId", "productoId", fecha) values ('ven_b1', 'lead_2', 'prod_hackear_ai', now() - interval '60 days'), ('ven_b2', 'lead_2', 'prod_principals', now());
@@ -241,7 +243,7 @@ test("Luis Carlos en la base: de baja desde 2025 y sin venta → activo, Princip
   const a = await alumnoDe(db, "alu_l");
   assert.deepEqual({ estado: a.estado, plan: a.plan, ventaId: a.ventaId, leadId: a.leadId, dia: a.dia }, { estado: "activo", plan: "Principals", ventaId: "ven_l", leadId: "lead_l", dia: await hoyArg(db) });
   assert.ok(!("ventasAnteriores" in a.extra), "no tenía venta: no hay anterior que anotar");
-  assert.deepEqual(await fichaDe(db, "alu_l"), { programas: ["Principals"], duracionMeses: 12, cicloDeVenta: "ven_l", ultimoContacto: null, followUp: "Outboarding" });
+  assert.deepEqual(await fichaDe(db, "alu_l"), { programas: ["Principals"], duracionMeses: 12, cicloDeVenta: "ven_l", ultimoContacto: null, followUp: "Outboarding", planDePago: "" });
   const nota = (await db.query<{ detalle: string }>(`select detalle from public.actividad where id = 'act_compra_alu_l_ven_l'`)).rows[0].detalle;
   assert.match(nota, /vuelve a estar activo/);
 });

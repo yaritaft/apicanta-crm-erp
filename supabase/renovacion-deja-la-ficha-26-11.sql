@@ -20,12 +20,16 @@
 --     IA», como los carga Lili) y la «Duración» pasa a la de ese programa
 --     (Principals 12 meses, Hackear Biz 6, el resto 3: la misma cuenta que
 --     sugiere la ficha, lib/clientes-cs.ts → DURACION_POR_PROGRAMA);
+--   - el «Plan de pago» escrito en la ficha era el de la compra anterior
+--     («PIF 3000 USD» en quien ahora paga 1.500 en dos veces): se vacía y
+--     la app muestra el de las cuotas de la compra nueva (sugerido, como
+--     en cualquier alumno sin plan escrito);
 --   - seguimiento_alumnos."cicloDeVenta" anota de qué compra son ese
---     programa y esa duración;
+--     programa, esa duración y ese plan de pago;
 --   - una pestaña abierta desde antes de la renovación guarda la fila
 --     entera del seguimiento («Se lo contactó», el follow-up): como trae la
---     marca de la compra anterior, su programa y su duración viejos NO
---     pisan los de la compra nueva. Lo demás que escribió se guarda. Desde
+--     marca de la compra anterior, su programa, su duración y su plan de
+--     pago viejos NO pisan los de la compra nueva. Lo demás que escribió se guarda. Desde
 --     una pestaña al día se pueden cambiar a mano como siempre.
 --
 -- Y un caso más de lo mismo: el alumno de antes que no tenía venta cargada
@@ -92,8 +96,9 @@ as $$
   limit 1;
 $$;
 
-/* La ficha de Servicio pasa a la compra nueva: su programa primero y su duración. Devuelve lo que cambió (para la actividad) o null si
-   no había nada que cambiar: sin ficha todavía (nace sugerida por la venta), producto sin programa, o ya era de esta compra. */
+/* La ficha de Servicio pasa a la compra nueva: su programa primero, su duración y el plan de pago en blanco (se muestra el de las cuotas de
+   esta compra). Devuelve lo que cambió (para la actividad) o null si no había nada que cambiar: sin ficha todavía (nace sugerida por la
+   venta) o ya era de esta compra. Si el producto no es de ningún programa de Ajustes, el programa y la duración quedan como estaban. */
 create or replace function public.ficha_del_ciclo_nuevo(p_alumno text, p_venta text)
 returns text
 language plpgsql
@@ -106,24 +111,34 @@ declare
   v_meses integer;
   v_programas jsonb;
   v_ya boolean;
+  v_plan text;
+  v_partes text[] := '{}';
 begin
+  if not exists (select 1 from ventas v where v.id = p_venta) then return null; end if;
   select public.programa_de_producto(v."productoId") into v_programa from ventas v where v.id = p_venta;
-  if v_programa is null then return null; end if;
   select * into s from seguimiento_alumnos where "alumnoId" = p_alumno for update;
   if s.id is null or s."cicloDeVenta" is not distinct from p_venta then return null; end if;
 
-  v_meses := public.meses_de_programa(v_programa);
   v_programas := case when jsonb_typeof(s.programas) = 'array' then s.programas else '[]'::jsonb end;
-  select exists (select 1 from jsonb_array_elements_text(v_programas) x where public.familia_de_programa(x) = public.familia_de_programa(v_programa)) into v_ya;
-  if not v_ya then v_programas := jsonb_build_array(v_programa) || v_programas; end if;
+  v_meses := s."duracionMeses";
+  if v_programa is not null then
+    v_meses := public.meses_de_programa(v_programa);
+    select exists (select 1 from jsonb_array_elements_text(v_programas) x where public.familia_de_programa(x) = public.familia_de_programa(v_programa)) into v_ya;
+    if not v_ya then v_programas := jsonb_build_array(v_programa) || v_programas; end if;
+    v_partes := array_append(v_partes, 'su ficha de Servicio queda en ' || v_programa || ', ' || v_meses || ' meses'
+      || case when s."duracionMeses" is not null and s."duracionMeses" <> v_meses then ' (antes ' || s."duracionMeses" || ')' else '' end);
+  end if;
+  v_plan := btrim(coalesce(s."planDePago", ''));
+  if v_plan <> '' then
+    v_partes := array_append(v_partes, 'su plan de pago pasa a ser el de esta compra (el escrito era «' || v_plan || '»)');
+  end if;
 
   /* El disparador de abajo deja pasar el cambio de compra sólo a quien lo hace desde acá. */
   perform set_config('apicanta.ciclo_nuevo', p_venta, true);
-  update seguimiento_alumnos set programas = v_programas, "duracionMeses" = v_meses, "cicloDeVenta" = p_venta where id = s.id;
+  update seguimiento_alumnos set programas = v_programas, "duracionMeses" = v_meses, "planDePago" = '', "cicloDeVenta" = p_venta where id = s.id;
   perform set_config('apicanta.ciclo_nuevo', '', true);
 
-  return 'su ficha de Servicio queda en ' || v_programa || ', ' || v_meses || ' meses'
-    || case when s."duracionMeses" is not null and s."duracionMeses" <> v_meses then ' (antes ' || s."duracionMeses" || ')' else '' end;
+  return nullif(array_to_string(v_partes, ' y '), '');
 end;
 $$;
 
@@ -132,8 +147,8 @@ grant execute on function public.ficha_del_ciclo_nuevo(text, text) to service_ro
 revoke all on function public.programa_de_producto(text) from public, anon;
 grant execute on function public.programa_de_producto(text) to authenticated, service_role;
 
-/* Una fila que llega con la marca de OTRA compra (la pestaña se abrió antes de la renovación) no devuelve el programa y la duración a los
-   de la compra anterior: se quedan los de la compra en curso. Todo lo demás que trae se guarda. */
+/* Una fila que llega con la marca de OTRA compra (la pestaña se abrió antes de la renovación) no devuelve el programa, la duración y el plan
+   de pago a los de la compra anterior: se quedan los de la compra en curso. Todo lo demás que trae se guarda. */
 create or replace function public.seguimiento_es_de_la_compra_en_curso()
 returns trigger
 language plpgsql
@@ -143,6 +158,7 @@ begin
      and coalesce(nullif(current_setting('apicanta.ciclo_nuevo', true), ''), '(nadie)') is distinct from new."cicloDeVenta" then
     new.programas := old.programas;
     new."duracionMeses" := old."duracionMeses";
+    new."planDePago" := old."planDePago";
     new."cicloDeVenta" := old."cicloDeVenta";
   end if;
   return new;
