@@ -1,4 +1,5 @@
 import type { Ad, Contacto, EstadoApp, ID, Lead, Meta, MetricaClave } from "./types";
+import { esSesionUnoAUno } from "./llamadas-de-venta";
 import { inicioSemana, mesClave, nombreMes } from "./format";
 import { calcularPyL, cashCollected, porCobrarTotal } from "./finanzas";
 import { diaDeNegocio } from "./dia-negocio";
@@ -239,7 +240,8 @@ export function valorMetrica(e: EstadoApp, metrica: MetricaClave, m: RangoMes): 
     case "ingresos": return ingresosMes(e, m);
     case "leads-nuevos": return leadsMes(e, m).length;
     case "inscriptos": return inscriptosMes(e, m).length;
-    case "sesiones-hechas": return e.sesiones.filter((s) => s.estado === "hecha" && enMes(s.inicia, m)).length;
+    /* Las llamadas de venta hechas: las sesiones 1 a 1 con el mentor son un bono del contrato, no cuentan (lib/llamadas-de-venta.ts). */
+    case "sesiones-hechas": return e.sesiones.filter((s) => s.estado === "hecha" && enMes(s.inicia, m) && !esSesionUnoAUno(s)).length;
     case "alumnos-activos": return e.alumnos.filter((a) => a.estado === "activo").length;
     case "registrados-webinar": return e.webinars.filter((w) => enMes(w.fecha, m)).reduce((a, w) => a + w.registrados, 0);
     case "margen": {

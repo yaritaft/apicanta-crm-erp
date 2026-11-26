@@ -1,6 +1,6 @@
 "use client";
 
-import { esLlamadaDeResell } from "@/lib/resells";
+import { esLlamadaDeVenta } from "@/lib/llamadas-de-venta";
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -192,7 +192,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const soyCloser = esCuentaDeCloser(acceso);
   const hoy = diaDeNegocio(new Date().toISOString());
   const llamadasDeHoy = useMemo(
-    () => (soyCloser ? estado.sesiones.filter((s) => s.estado !== "cancelada" && diaDeNegocio(s.inicia) === hoy && !esLlamadaDeResell(s)).length : 0),
+    () => (soyCloser ? estado.sesiones.filter((s) => s.estado !== "cancelada" && diaDeNegocio(s.inicia) === hoy && esLlamadaDeVenta(s)).length : 0),
     [soyCloser, estado.sesiones, hoy],
   );
 

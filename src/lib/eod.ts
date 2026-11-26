@@ -2,7 +2,7 @@ import type { Ajustes, EstadoApp, OpcionCrm, Sesion } from "./types";
 import { miembroDeCloser, opcionesDe, sinTildes } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
 import { esReagendar, preguntaDe } from "./estados";
-import { esLlamadaDeResell } from "./resells";
+import { esLlamadaDeVenta } from "./llamadas-de-venta";
 
 /* ==================================================================
    El cierre del día del closer (EOD).
@@ -144,7 +144,7 @@ export function esDelCloser(s: Pick<Sesion, "anfitrion">, closer: string, equipo
 /** Las llamadas de venta de un closer en un día (de Argentina), sin las canceladas ni las de resell (esas se cargan en su agenda). */
 export function llamadasDelDia(e: Pick<EstadoApp, "sesiones" | "equipo">, closer: string, dia: string): Sesion[] {
   return e.sesiones
-    .filter((s) => s.estado !== "cancelada" && diaDeNegocio(s.inicia) === dia && esDelCloser(s, closer, e.equipo) && !esLlamadaDeResell(s))
+    .filter((s) => s.estado !== "cancelada" && diaDeNegocio(s.inicia) === dia && esDelCloser(s, closer, e.equipo) && esLlamadaDeVenta(s))
     .sort((a, b) => a.inicia.localeCompare(b.inicia));
 }
 
@@ -169,7 +169,7 @@ export function repasoDelDia<T extends Pick<Sesion, "id" | "inicia" | "estado" |
   e: { sesiones: T[]; equipo: EstadoApp["equipo"] }, closer: string, dia: string, ahora: number, sinCargar: (id: string) => boolean | undefined,
 ): { s: T; grupo: GrupoDeLlamada }[] {
   return e.sesiones
-    .filter((s) => diaDeNegocio(s.inicia) === dia && esDelCloser(s, closer, e.equipo) && !esLlamadaDeResell(s))
+    .filter((s) => diaDeNegocio(s.inicia) === dia && esDelCloser(s, closer, e.equipo) && esLlamadaDeVenta(s))
     .sort((a, b) => a.inicia.localeCompare(b.inicia))
     .map((s) => ({
       s,

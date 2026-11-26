@@ -2,7 +2,7 @@ import type { EstadoApp, ID, MiembroEquipo, Movimiento, Sesion } from "./types";
 import { miembroDeCloser } from "./crm";
 import { claveEmail } from "./contactos";
 import { normalizar, quienPago } from "./conciliacion";
-import { esLlamadaDeResell } from "./resells";
+import { esLlamadaDeVenta } from "./llamadas-de-venta";
 import { haceCuanto } from "./hace-cuanto";
 
 /* ==================================================================
@@ -116,7 +116,7 @@ export function closerSugerido(e: EstadoApp, mov: Movimiento): CloserSugerido | 
   if (quien.fichaId) fichas.add(quien.fichaId);
   for (const c of e.contactos ?? []) if (correos.has(claveEmail(c.email))) fichas.add(c.id);
 
-  const llamadas = e.sesiones.filter((s) => s.estado !== "cancelada" && Boolean(s.anfitrion?.trim()) && !esLlamadaDeResell(s));
+  const llamadas = e.sesiones.filter((s) => s.estado !== "cancelada" && Boolean(s.anfitrion?.trim()) && esLlamadaDeVenta(s));
   const hallar = (f: (s: Sesion) => boolean, por: CloserSugerido["por"]): { lista: Sesion[]; por: CloserSugerido["por"] } | undefined => {
     const lista = llamadas.filter(f);
     return lista.length ? { lista, por } : undefined;

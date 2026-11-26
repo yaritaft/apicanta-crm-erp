@@ -1,5 +1,5 @@
 import type { EstadoApp, Moneda, Pago } from "./types";
-import { esLlamadaDeResell } from "./resells";
+import { esLlamadaDeVenta } from "./llamadas-de-venta";
 import { diaDeNegocio } from "./dia-negocio";
 import { ultimoArqueo } from "./caja";
 import { arqueoVivo } from "./arqueo";
@@ -194,7 +194,7 @@ export function pasosDelTramo(e: EstadoApp, tramo: Tramo, { ahora = Date.now(), 
     ir: { href: `/ventas?${qs}`, texto: "Ver las ventas" },
   });
 
-  const llamadas = filasTabla(e, ahora).filter((f) => f.dia >= desde && f.dia <= hasta && !esLlamadaDeResell(f.sesion));
+  const llamadas = filasTabla(e, ahora).filter((f) => f.dia >= desde && f.dia <= hasta && esLlamadaDeVenta(f.sesion));
   const sinCargar = llamadas.filter((f) => f.sinCargar);
   paso({
     id: "llamadas-sin-cargar", area: "ventas", titulo: "Llamadas sin cargar cómo terminaron",

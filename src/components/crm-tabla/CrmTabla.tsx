@@ -33,7 +33,7 @@ import { PARAM_VISTA } from "@/lib/vistas-guardadas";
 import type { CampoOpcionesCrm, ColorCrm, OpcionCrm } from "@/lib/types";
 import { money, num } from "@/lib/format";
 import { diaDeNegocio } from "@/lib/dia-negocio";
-import { esLlamadaDeResell } from "@/lib/resells";
+import { esLlamadaDeVenta } from "@/lib/llamadas-de-venta";
 import { bajarCSV, crmDeDescarga, filasDeDescargaDelCrm, tablaDeDescarga } from "@/lib/agendas-descarga";
 import { bajarExcel, excelCobros, filasExcelCobros } from "@/lib/excelCobros";
 import { paginaDeURL, useBusquedaURL, useEscribirURL, useParamsURL } from "@/lib/useParamsURL";
@@ -148,7 +148,7 @@ export function CrmTabla({ misLlamadas = false }: { misLlamadas?: boolean } = {}
   const soloSusLlamadas = misLlamadas && Boolean(acceso?.soloLoSuyo) && !laBaseLeRecortaLlamadas(acceso) ? yo.miembro?.nombre ?? null : null;
   /* Las llamadas de resell tienen su propio grupo (CrmConResells): acá sólo las de venta. */
   const todas = useMemo(
-    () => filasTabla(e, ahora).filter((f) => !esLlamadaDeResell(f.sesion) && (!soloSusLlamadas || esDelCloser(f.sesion, soloSusLlamadas, e.equipo))),
+    () => filasTabla(e, ahora).filter((f) => esLlamadaDeVenta(f.sesion) && (!soloSusLlamadas || esDelCloser(f.sesion, soloSusLlamadas, e.equipo))),
     [e, ahora, soloSusLlamadas],
   );
   /* Buscar a alguien es mirar TODO el historial (Mariano, 26/10: el período quedaba recordado del día anterior y, para encontrar a

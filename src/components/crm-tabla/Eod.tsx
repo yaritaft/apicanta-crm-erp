@@ -17,7 +17,7 @@ import { diaDeNegocio } from "@/lib/dia-negocio";
 import { miembroDeCloser, opcionesDe } from "@/lib/crm";
 import { esReagendar, estadoVisible, preguntaDe, type PreguntaEod } from "@/lib/estados";
 import { leadDeSesion } from "@/lib/etapas-auto";
-import { esLlamadaDeResell } from "@/lib/resells";
+import { esLlamadaDeVenta } from "@/lib/llamadas-de-venta";
 import { filasResells, queFaltaDeLaLlamada, resellAbierto } from "@/lib/clientes-cs";
 import { filasTabla, type FilaTabla } from "@/lib/crm-tabla";
 import {
@@ -120,7 +120,7 @@ export function Eod({ onCerrar, soloSesionId }: { onCerrar: () => void; soloSesi
         .filter((s) => {
           const f = filas.get(s.id);
           const d = diaDeNegocio(s.inicia);
-          return f?.sinCargar && d < dia && esDelCloser(s, closer, e.equipo) && !esLlamadaDeResell(s);
+          return f?.sinCargar && d < dia && esDelCloser(s, closer, e.equipo) && esLlamadaDeVenta(s);
         })
         .sort((a, b) => a.inicia.localeCompare(b.inicia)),
     };

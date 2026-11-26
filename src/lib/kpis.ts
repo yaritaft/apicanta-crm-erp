@@ -20,6 +20,7 @@ import { etapaDelAlumno, etapasDeServicio } from "./alumnos";
 import { diaDeNegocio } from "./dia-negocio";
 import type { QueDesglosar } from "@/components/panel/Desglose";
 import { esSoloReserva } from "./angelo";
+import { esSesionUnoAUno } from "./llamadas-de-venta";
 
 /* ==================================================================
    Dashboard & KPIs: la tabla maestra del negocio.
@@ -344,12 +345,14 @@ export class Contexto {
     });
   }
 
-  /** Las llamadas que se pueden atribuir al filtro (de cualquier fecha). */
+  /** Las llamadas que se pueden atribuir al filtro (de cualquier fecha). Sin las sesiones 1 a 1 con el mentor: son un bono del contrato
+      (Servicio), no una agenda de venta (Lili, 26/11; lib/llamadas-de-venta.ts). Las de resell siguen contando, como siempre. */
   sesiones(): Sesion[] | null {
     return this.memo("sesiones", () => {
       if (this.alcanceWebinar === "ninguno") return null;
-      if (this.general) return this.e.sesiones;
-      return this.e.sesiones.filter((s) =>
+      const deVenta = this.e.sesiones.filter((s) => !esSesionUnoAUno(s));
+      if (this.general) return deVenta;
+      return deVenta.filter((s) =>
         (!this.filtro.webinarId && s.canal === "webinar") ||
         this.contactoEsDelFiltro(s.contactoId ? this.ix.contactoPorId.get(s.contactoId) : undefined) ||
         this.leadEsDelFiltro(s.leadId ? this.ix.leadPorId.get(s.leadId) : undefined));

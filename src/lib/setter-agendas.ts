@@ -1,6 +1,6 @@
 import type { EstadoApp, ID, Sesion } from "./types";
 import { sinTildes } from "./crm";
-import { esLlamadaDeResell } from "./resells";
+import { esLlamadaDeVenta } from "./llamadas-de-venta";
 import { normalizarUtm, origenDe } from "./utms";
 
 /* ==================================================================
@@ -84,7 +84,7 @@ export function agendasParaMarcar(e: EstadoApp, setterId: ID, ahora: number, bus
   const nombres = new Map(e.equipo.map((m) => [m.id, m.nombre] as const));
   const lista = e.sesiones
     .filter((s) => {
-      if (s.estado === "cancelada" || esLlamadaDeResell(s)) return false;
+      if (s.estado === "cancelada" || !esLlamadaDeVenta(s)) return false;
       const cuando = Date.parse(s.inicia);
       if (!(cuando >= ahora - DIAS_ATRAS * DIA && cuando <= ahora + DIAS_ADELANTE * DIA)) return false;
       return !t || sinTildes(`${s.invitado} ${s.email ?? ""}`).includes(t);

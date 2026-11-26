@@ -59,5 +59,7 @@ test("la pantalla tiene los dos grupos y los dos usan el mismo componente", () =
   assert.match(grupos, /<CrmTabla misLlamadas=\{misLlamadas\} \/>/);
   assert.match(readFileSync("src/app/(app)/crm/page.tsx", "utf8"), /CrmConResells/);
   assert.match(readFileSync("src/app/(app)/mis-llamadas/page.tsx", "utf8"), /CrmConResells misLlamadas/);
-  assert.match(readFileSync("src/components/crm-tabla/CrmTabla.tsx", "utf8"), /!esLlamadaDeResell\(f\.sesion\)/);
+  /* La tabla de llamadas es de las de venta: sin las de resell (su solapa) ni las sesiones 1 a 1 con el mentor (lib/llamadas-de-venta.ts). */
+  assert.match(readFileSync("src/components/crm-tabla/CrmTabla.tsx", "utf8"), /esLlamadaDeVenta\(f\.sesion\)/);
+  assert.match(readFileSync("src/lib/llamadas-de-venta.ts", "utf8"), /!esLlamadaDeResell\(s\) && !esSesionUnoAUno\(s\)/);
 });
