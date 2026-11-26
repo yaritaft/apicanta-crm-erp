@@ -3,6 +3,8 @@ import type {
 } from "./types";
 import { closerDeCuota, cobraDirector, cobraEnFecha, tasaDeComision } from "./finanzas";
 import { diaArgentina } from "./comision";
+import { resolverDeCierre } from "./escala-cierre";
+import { rangoDePeriodo } from "./periodos";
 import { devolucionesDe, esDevolucionConfirmada, reversasDeComision } from "./devoluciones";
 import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
 import { diaDeNegocio } from "./dia-negocio";
@@ -446,6 +448,8 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
      día sin cierre cargado ese mismo día tampoco (descuentaPorCierre). */
   const miembro = new Map(e.equipo.map((x) => [x.id, x] as const));
   const sinCierre = ventasSinCierre(e);
+  /* Las comisiones con escala (resell): el % del mes de cada cobro, como en Finanzas. */
+  const cierre = resolverDeCierre(e, rangoDePeriodo);
   let comisiones = 0;
   for (const p of pagos) {
     const c = cuotaDe.get(p.cuotaId) as Cuota;
@@ -457,8 +461,8 @@ export function metricasDeWebinar(e: EstadoApp, webinar: Webinar): MetricasWebin
     const director = v.directorId ? miembro.get(v.directorId) : undefined;
     /* Con el % que valía el día del cobro: el resultado de un webinar viejo no cambia si después cambia la regla. */
     const dia = diaArgentina(p.fecha);
-    if (cobraEnFecha(closer, p.fecha) && !descuentaPorCierre(sinCierre, v, closerId)) comisiones += neto * tasaDeComision(closer, v.productoId, dia);
-    if (cobraDirector(director, p.fecha)) comisiones += neto * tasaDeComision(director, v.productoId, dia);
+    if (cobraEnFecha(closer, p.fecha) && !descuentaPorCierre(sinCierre, v, closerId)) comisiones += neto * tasaDeComision(closer, v.productoId, dia, cierre);
+    if (cobraDirector(director, p.fecha)) comisiones += neto * tasaDeComision(director, v.productoId, dia, cierre);
   }
   /* Y lo que se les revierte por las devoluciones: lo mismo que Finanzas. */
   if (devuelto > 0) {

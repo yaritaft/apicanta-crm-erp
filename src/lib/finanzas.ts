@@ -5,6 +5,8 @@ import { esSoloReserva } from "./angelo";
 import { cobraDirector, cobraEnFecha, closerDeCuota, diaArgentina, tasaDeComision, tasaDeSetterEnVenta } from "./comision";
 import { devolucionesDelMes, reversasDelMes, totalDevuelto, type Reversa } from "./devoluciones";
 import { fechaDePago } from "./gastos";
+import { resolverDeCierre } from "./escala-cierre";
+import { rangoDePeriodo } from "./periodos";
 
 /* Las reglas de cuándo y cuánto comisiona alguien viven en lib/comision.ts
    (sin dependencias, para que las devoluciones las usen); acá se reexportan
@@ -195,6 +197,8 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
   /* El día que cuenta cada cobro (el de la acreditación, si la cuenta retiene): con el % que valía ese día. */
   const ret = retenciones(e.procesadores);
   const diaDelCobro = (p: Pago) => diaArgentina(ret.size ? fechaDeAcreditacion(p, ret) : p.fecha);
+  /* El % de cierre de resell de cada closer en el mes de cada cobro: de ahí sale el % de las comisiones con escala (lib/escala-cierre.ts). */
+  const cierre = resolverDeCierre(e, rangoDePeriodo);
 
   for (const v of e.ventas) {
     if (v.estado === "cancelada") continue;
@@ -219,7 +223,7 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
       const neto = (xs: typeof pagos) => xs.reduce((a, p) => a + (p.monto - p.feeMonto), 0);
       /* Cada cobro con el % que valía el día que entró (la regla de ese momento, no la de hoy). */
       const comisionDe = (quien: typeof closer, xs: typeof pagos) => {
-        const tasas = xs.map((p) => tasaDeComision(quien, v.productoId, diaDelCobro(p)));
+        const tasas = xs.map((p) => tasaDeComision(quien, v.productoId, diaDelCobro(p), cierre));
         /* Con un solo %, la cuenta de siempre (neto × %), así los totales no cambian ni en un centavo. */
         if (tasas.every((t) => t === tasas[0])) return neto(xs) * (tasas[0] ?? 0);
         return xs.reduce((a, p, i) => a + (p.monto - p.feeMonto) * tasas[i], 0);
@@ -228,8 +232,8 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
       const delDirector = pagos.filter((p) => cobraDirector(director, p.fecha));
       /* El % que se muestra: el de esos cobros (si cambió en el medio del mes, el que da la cuenta). */
       const tasaDe = (quien: typeof closer, xs: typeof pagos) => {
-        if (xs.length === 0) return tasaDeComision(quien, v.productoId, diaDelCobro(pagos[0]));
-        const tasas = xs.map((p) => tasaDeComision(quien, v.productoId, diaDelCobro(p)));
+        if (xs.length === 0) return tasaDeComision(quien, v.productoId, diaDelCobro(pagos[0]), cierre);
+        const tasas = xs.map((p) => tasaDeComision(quien, v.productoId, diaDelCobro(p), cierre));
         if (tasas.every((t) => t === tasas[0])) return tasas[0];
         const n = neto(xs);
         return Math.abs(n) > 1e-9 ? comisionDe(quien, xs) / n : tasas[tasas.length - 1];

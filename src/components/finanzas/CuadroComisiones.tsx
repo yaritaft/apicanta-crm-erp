@@ -13,6 +13,8 @@ import { useUsuarioActual } from "@/lib/usuario";
 import {
   conComisionDeServicio, conComisionGeneral, esquemaDelCuadro, quienesComisionan, serviciosDelCuadro, tasaEnServicio, type FilaComision,
 } from "@/lib/comisiones";
+import { escalaDeComision } from "@/lib/comision";
+import { rangoDeEscala, textoDeEscala } from "@/lib/escala-cierre";
 import type { EstadoApp, Producto, RolEquipo } from "@/lib/types";
 
 /* ==================================================================
@@ -121,6 +123,20 @@ export function CuadroComisiones({ e, editable = false, onVerPersona }: {
     const dice = !producto ? "Lo que cobra en todo lo que no tiene un % propio"
       : propio ? `En ${producto.nombre} cobra ${tasaTexto(tasa)} en vez de su ${tasaTexto(f.general)} general`
         : `En ${producto.nombre} cobra su % general`;
+    /* El % sube según su cierre del mes (resell): no es un número que se cambie en la celda, se carga en lo que cobra la persona. */
+    const conEscala = producto ? escalaDeComision(f.miembro, producto.id) : undefined;
+    if (producto && conEscala) {
+      const rango = rangoDeEscala(conEscala.escala, conEscala.base);
+      const diceEscala = `En ${producto.nombre} cobra según su % de cierre de resell del mes: ${textoDeEscala(conEscala.escala, conEscala.base)}`;
+      const adentro = <><span className="t-num">{rango}</span><span className="cuadro-com__segun">según cierre</span></>;
+      return (
+        <td key={columna} className="cuadro-com__celda" data-propio data-escala title={diceEscala}>
+          {seEdita && onVerPersona
+            ? <button type="button" className="cuadro-com__boton" onClick={() => onVerPersona(f.miembro.id)} aria-label={`${diceEscala}. Se cambia en lo que cobra ${f.miembro.nombre}`}>{adentro}</button>
+            : <span>{adentro}</span>}
+        </td>
+      );
+    }
     return (
       <td key={columna} className="cuadro-com__celda" data-propio={propio || undefined} data-general={!producto || undefined} title={dice}>
         {abierta ? campo(f, producto) : seEdita ? (
@@ -172,6 +188,7 @@ export function CuadroComisiones({ e, editable = false, onVerPersona }: {
         <p className="cuadro-com__leyenda">
           <span className="cuadro-com__muestra" data-propio /> Tiene su propio % en ese servicio: en esas ventas vale ése en vez del general.
           {editable ? " Tocá una celda para cambiarla; vaciala para que vuelva al general." : null}
+          {filas.some((f) => servicios.some((p) => escalaDeComision(f.miembro, p.id))) ? " «Según cierre»: el % de ese servicio sube con el % de cierre de resell del mes." : null}
         </p>
         {cambio && (
           <Modal

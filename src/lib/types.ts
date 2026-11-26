@@ -1346,6 +1346,9 @@ export interface TasaVigente {
   hasta?: string;
   general: number;
   servicios?: Record<ID, number>;
+  /* Los servicios cuyo % sube según el % de cierre del mes (servicio → escala): `servicios[id]` es el % de base y el que vale en un mes
+     sale de la escala y del cierre de ese mes (lib/escala-cierre.ts). */
+  escalas?: Record<ID, EscalaCierre>;
 }
 
 export interface MiembroEquipo {
@@ -1660,6 +1663,21 @@ export type BaseMedicion =
 /* De qué ventas sale lo medido, cuando sale de las ventas. */
 export type AlcanceVentas = "todas" | "closer" | "setter" | "director";
 
+/* Un escalón de una escala: desde ese % de cierre (fracción: 0.25 = 25%), se cobra `tasa`. `estricto`: recién al PASARLO («más del 30%»);
+   sin eso, desde ese % inclusive («entre 25% y 30%» arranca en 25 justo). */
+export interface EscalonDeCierre {
+  desde: number;
+  estricto?: boolean;
+  tasa: number;
+}
+
+/* Un % que depende del % de cierre del mes de quien lo cobra. Hoy se mira un solo cierre: el de sus llamadas de resell. */
+export interface EscalaCierre {
+  de: "resell";
+  /* De menor a mayor. Por debajo del primero vale la `tasa` del concepto. */
+  escalones: EscalonDeCierre[];
+}
+
 export interface ConceptoPago {
   id: ID;
   tipo: TipoConcepto;
@@ -1669,6 +1687,9 @@ export interface ConceptoPago {
   monto?: number;
   /* porcentaje: fracción, 0.15 = 15%. */
   tasa?: number;
+  /* porcentaje de una comisión de closer: el % sube según su % de cierre del mes (Yari, 25/11: resell con menos de 25% de cierre 5%,
+     entre 25% y 30% 10%, más de 30% 12%). `tasa` es el % de base (lo que cobra si no llega al primer escalón). Ver lib/escala-cierre.ts. */
+  escala?: EscalaCierre;
   /* porcentaje y tramo: qué se mide. */
   base?: BaseMedicion;
   /* tramo: cada cuánto de la base se paga el monto (100.000 USD, 15 llamadas). */

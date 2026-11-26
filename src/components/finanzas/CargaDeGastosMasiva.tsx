@@ -7,6 +7,8 @@ import { Badge, Button, Chip } from "@/components/ui/ui";
 import { acciones, nuevoId } from "@/lib/store";
 import { isoDia, money } from "@/lib/format";
 import { diaDeNegocio } from "@/lib/dia-negocio";
+import { efectoEnCaja, hayQueAvisarDeCaja } from "@/lib/efecto-en-caja";
+import { AvisoDeCaja } from "./AvisoDeCaja";
 import { fechaDePago } from "@/lib/gastos";
 import { esExportDeMercury, pagosDeTarjetaDelRango, sumaDe } from "@/lib/gastos-mercury";
 import { esExportDeBofa } from "@/lib/gastos-bofa";
@@ -14,7 +16,7 @@ import {
   adivinarColumnas, armarFilas, CAMPOS_MASIVOS, catalogoDe, clavesCargadas, gastosDeFilas, leerFecha, parsearPegado, problemasDeFila,
   resumenDeFilas, tieneTitulos, yaEstaCargada, type CampoMasivo, type FilaMasiva,
 } from "@/lib/gastos-masivos";
-import type { EstadoApp, Moneda } from "@/lib/types";
+import type { EstadoApp, Gasto, Moneda } from "@/lib/types";
 
 /* ==================================================================
    Cargar varios gastos de una vez, pegando las filas de una planilla.
@@ -110,6 +112,14 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
     const dias = compras.map((f) => f.fecha).sort();
     return pagosDeTarjetaDelRango(e.gastos, dias[0], dias[dias.length - 1], (g) => diaDeNegocio(fechaDePago(g)));
   }, [esMercury, filas, e.gastos]);
+  /* Qué le hace a la caja lo que se va a cargar: los pagos con fecha vieja caen en cierres ya hechos (o antes del primero) y no en el saldo de hoy
+     (Aldana, 25/11: retiros de junio a septiembre de la Financiera). */
+  const enCaja = useMemo(() => {
+    if (resumen.aCargar === 0) return null;
+    const datos = gastosDeFilas(filas, e, "lote_por_cargar").map((g, k) => ({ ...g, id: `gasto_por_cargar_${k}` }) as Gasto);
+    const efecto = efectoEnCaja(e, datos, quitarPagos ? pagosAReemplazar.map((g) => g.id) : []);
+    return hayQueAvisarDeCaja(efecto) ? { efecto, cuantos: datos.length } : null;
+  }, [filas, e, resumen.aCargar, quitarPagos, pagosAReemplazar]);
   const sinCategoria = filas.filter((f) => f.incluir && !f.categoria.trim());
   /* Lo pegado con el monto en negativo se toma como plata que volvió; en un extracto del banco es lo contrario, y se lo avisa para dar vuelta de un toque. */
   const negativasComoIngreso = useMemo(
@@ -360,6 +370,8 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
               </div>
             </div>
           )}
+
+          {enCaja && <AvisoDeCaja efecto={enCaja.efecto} base={e.ajustes.monedaBase} cuantos={enCaja.cuantos} />}
 
           {hayAlgo && (
             <p className="t-sm" role="status" style={{ margin: 0 }}>

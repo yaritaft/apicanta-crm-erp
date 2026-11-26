@@ -1,7 +1,8 @@
 import type { Devolucion, EstadoApp, ID, Liquidacion, MiembroEquipo, Pago, Sesion, Venta } from "./types";
 import type { RangoMes } from "./metricas";
 import { closerDeCuota, cobraDirector, cobraEnFecha, tasaPonderada } from "./comision";
-import { moverPeriodo, periodoDeFecha } from "./periodos";
+import { moverPeriodo, periodoDeFecha, rangoDePeriodo } from "./periodos";
+import { resolverDeCierre } from "./escala-cierre";
 import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
 import { opcionesDe } from "./crm";
 import { diaDeNegocio } from "./dia-negocio";
@@ -189,7 +190,7 @@ export interface Reversa {
 }
 
 type EstadoDeReversas = Pick<EstadoApp, "ventas" | "cuotas" | "pagos" | "equipo"> & ConDevoluciones
-  & Partial<Pick<EstadoApp, "sesiones" | "ajustes">>;
+  & Partial<Pick<EstadoApp, "sesiones" | "ajustes" | "resells">>;
 
 /** Lo que se revierte de las comisiones con cada devolución confirmada, de
  *  todas las fechas. Una venta cancelada no comisionó nada (Finanzas la
@@ -203,6 +204,8 @@ export function reversasDeComision(e: EstadoDeReversas, opciones: OpcionesDeReve
   const ventaPorId = new Map(e.ventas.map((v) => [v.id, v] as const));
   const cuotaPorId = new Map(e.cuotas.map((c) => [c.id, c] as const));
   const miembro = new Map(e.equipo.map((x) => [x.id, x] as const));
+  /* Una comisión con escala (resell) se revierte con el % que de verdad se pagó: el del mes de cada cobro. */
+  const cierre = resolverDeCierre(e, rangoDePeriodo);
   const pagosPorVenta = new Map<ID, Pago[]>();
   for (const p of e.pagos) {
     const v = cuotaPorId.get(p.cuotaId)?.ventaId;
@@ -275,7 +278,7 @@ export function reversasDeComision(e: EstadoDeReversas, opciones: OpcionesDeReve
           closer ? { id: closer.id, nombre: closer.nombre } : undefined,
           (regla ? false : sinComision) || descuentaPorCierre(sinCierre, venta, k) ? 0 : regla ? regla.tasa
             /* Cada cobro con el % que valía ese día: se revierte lo que de verdad se le comisionó. */
-            : tasaPonderada(closer, venta.productoId, cobrosDelCloser.filter((p) => cobraEnFecha(closer, p.fecha))),
+            : tasaPonderada(closer, venta.productoId, cobrosDelCloser.filter((p) => cobraEnFecha(closer, p.fecha)), cierre),
           k && k !== venta.closerId ? deLaVenta?.nombre ?? "otro closer" : undefined,
           Boolean(regla),
         ));
@@ -285,7 +288,7 @@ export function reversasDeComision(e: EstadoDeReversas, opciones: OpcionesDeReve
         partes.push(parteDe(
           "d", "director", hasta.filter((p) => (regla ? regla.cuentaCobro(p) : cobraDirector(director, p.fecha))),
           { id: director.id, nombre: director.nombre },
-          regla ? regla.tasa : sinComision ? 0 : tasaPonderada(director, venta.productoId, hasta.filter((p) => cobraDirector(director, p.fecha))),
+          regla ? regla.tasa : sinComision ? 0 : tasaPonderada(director, venta.productoId, hasta.filter((p) => cobraDirector(director, p.fecha)), cierre),
           undefined, Boolean(regla),
         ));
       }

@@ -2,6 +2,7 @@ import type {
   BaseMedicion, DesgloseLinea, ID, ItemDesglose, ListaDesglose, Moneda, Pago, PasoDesglose, Venta,
 } from "./types";
 import { fechaLarga, money, num, pct } from "./format";
+import { diaDeNegocio } from "./dia-negocio";
 
 /* ==================================================================
    El desglose de un renglón de la liquidación: la cuenta con la que se
@@ -353,6 +354,12 @@ export interface ArgsMedido {
   utm?: string;
   /* Si la regla vale sólo parte del mes: los días que se miden. */
   vigencia?: { desde: number; hasta: number; mes: string };
+  /* El % sale de una escala según el % de cierre de resell del mes (lib/escala-cierre.ts): la escala, el cierre y de dónde salió. */
+  escala?: {
+    texto: string; cierre: string;
+    llamadas: { nombre: string; fechaHora: string; cuenta: boolean; motivo?: string }[];
+    ventas: { nombre: string; fecha: string; servicio?: string; repetida: boolean }[];
+  };
 }
 
 const NOMBRE_BASE: Record<BaseMedicion, string> = {
@@ -517,6 +524,19 @@ function pasosDeLoMedido(a: ArgsMedido, f: Extract<Fuente, { tipo: "medido" }>):
   }
 }
 
+/* De dónde salió el % de una comisión con escala: la regla, quiénes compraron y qué llamadas contaron. */
+function avisosDeEscala(x: NonNullable<ArgsMedido["escala"]>): string[] {
+  const dia = (iso: string) => { const d = diaDeNegocio(iso); return `${Number(d.slice(8, 10))}/${Number(d.slice(5, 7))}`; };
+  const lista = (xs: string[]) => (xs.length > 30 ? `${xs.slice(0, 30).join(", ")} y ${xs.length - 30} más` : xs.join(", "));
+  const out = [`El % de esta comisión sube con su % de cierre de resell del mes (personas que compraron ÷ llamadas de resell que se hicieron): ${x.texto}. Este mes ${x.cierre}.`];
+  const compraron = x.ventas.filter((v) => !v.repetida);
+  if (compraron.length) out.push(`Compraron: ${lista(compraron.map((v) => `${v.nombre || "Sin nombre"} (${dia(v.fecha)}${v.servicio ? `, ${v.servicio}` : ""})`))}.`);
+  const cuentan = x.llamadas.filter((l) => l.cuenta), no = x.llamadas.filter((l) => !l.cuenta);
+  if (cuentan.length) out.push(`Llamadas que cuentan: ${lista(cuentan.map((l) => `${l.nombre || "Sin nombre"} (${dia(l.fechaHora)})`))}.`);
+  if (no.length) out.push(`No cuentan: ${lista(no.map((l) => `${l.nombre || "Sin nombre"} (${dia(l.fechaHora)}, ${(l.motivo ?? "").toLowerCase()})`))}.`);
+  return out;
+}
+
 export function desgloseMedido(a: ArgsMedido): DesgloseLinea {
   const B = a.monedaBase;
   const avisos: string[] = [];
@@ -546,7 +566,8 @@ export function desgloseMedido(a: ArgsMedido): DesgloseLinea {
   }
 
   if (a.tipo === "porcentaje") {
-    pasos.push(paso("por", "Porcentaje", a.tasa ?? 0, "tasa"));
+    pasos.push(paso("por", "Porcentaje", a.tasa ?? 0, "tasa", a.escala ? { nota: `Según su cierre de resell: ${a.escala.cierre}` } : {}));
+    if (a.escala) avisos.push(...avisosDeEscala(a.escala));
   } else {
     const cada = a.cada ?? 0;
     const veces = a.veces ?? 0;

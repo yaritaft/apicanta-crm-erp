@@ -106,7 +106,9 @@ export function sinConfirmarSiCambio(previos: ConceptoPago[] | undefined, nuevos
   const sinDatosDeConfirmacion = (c: ConceptoPago, sinHasta = false) => {
     const { confirmadaPor: _p, confirmadaEl: _e, notas: _n, nombre: _nombre, versionDe: _v, inicioVentas: _i, ...regla } = c;
     if (sinHasta) delete regla.hasta;
-    return JSON.stringify(regla, Object.keys(regla).sort());
+    /* La lista de claves filtra también lo de adentro: la escala (un objeto con sus escalones) va como texto, o cambiarle un escalón no se vería. */
+    const plano: Record<string, unknown> = { ...regla, ...(regla.escala ? { escala: JSON.stringify(regla.escala) } : {}) };
+    return JSON.stringify(plano, Object.keys(plano).sort());
   };
   const seCorto = (antes: ConceptoPago, c: ConceptoPago) =>
     Boolean(c.hasta) && (!antes.hasta || c.hasta!.slice(0, 10) < antes.hasta.slice(0, 10));

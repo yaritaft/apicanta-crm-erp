@@ -32,6 +32,7 @@ import { TOMAN_SIMULACROS } from "@/lib/simulacros";
 import { PanelSetter } from "./PanelSetter";
 import { PanelSocio } from "./PanelSocio";
 import { Rendimiento } from "./Rendimiento";
+import { EscalaDeResell } from "./EscalaDeResell";
 import { TarjetaComisiones, TarjetaMesa } from "./Tarjetas";
 import { plural, saludoDe } from "./util";
 import "./mi-panel.css";
@@ -207,6 +208,9 @@ export function MiPanel() {
           {!esDirector && <VentasSinFormulario e={e} miembro={miembro} ahora={ahora} />}
 
           {!esDirector && <Rendimiento datos={datos} e={e} rangoTxt={rangoTxt} />}
+
+          {/* Su comisión de resell sube con su % de cierre del mes: cómo viene (Yari, 25/11). */}
+          {!esDirector && <EscalaDeResell e={e} miembro={miembro} ahora={ahora} />}
 
           {!esDirector && (
             <div className="mp-abajo">

@@ -19,6 +19,8 @@ import type { CategoriaGasto } from "@/lib/seed";
 import type { EstadoApp, Gasto, Moneda } from "@/lib/types";
 import { CampoProveedor } from "./CampoProveedor";
 import { CampoFechasGasto } from "./CampoFechasGasto";
+import { AvisoDeCaja } from "./AvisoDeCaja";
+import { efectoEnCaja, hayQueAvisarDeCaja } from "@/lib/efecto-en-caja";
 
 /* ==================================================================
    Cargar un gasto (o un ingreso: plata que volvió), una pregunta por pantalla.
@@ -104,6 +106,17 @@ export function AsistenteGasto({ gasto, inicial, onCerrar, onListo }: {
     setVioRevision(true);
   };
 
+  /* Qué le hace a la caja con esa fecha de pago: si cae en un cierre ya hecho (o antes del primero), se dice antes de guardar. */
+  const enRevision = paso.id === "revisar";
+  const avisoDeCaja = useMemo(() => {
+    if (!enRevision || !(montoNum > 0)) return null;
+    const datos = datosDelGasto(b, { base, previo: gasto, opciones });
+    const efecto = efectoEnCaja(e, [{ ...datos, id: gasto?.id ?? "gasto_por_cargar" } as Gasto], gasto ? [gasto.id] : []);
+    /* Al corregir un gasto ya cargado sólo se avisa si de verdad mueve un cierre (cambió el día, el monto o la cuenta): abrirlo para tocarle
+       el nombre no tiene que decir nada. */
+    return (gasto ? efecto.cierres.length > 0 : hayQueAvisarDeCaja(efecto)) ? <AvisoDeCaja efecto={efecto} base={base} /> : null;
+  }, [enRevision, montoNum, b, base, gasto, opciones, e]);
+
   function guardar() {
     if (problemaDelPaso("revisar", b, base, e.procesadores)) return;
     const datos = datosDelGasto(b, { base, previo: gasto, opciones });
@@ -137,7 +150,7 @@ export function AsistenteGasto({ gasto, inicial, onCerrar, onListo }: {
       {paso.id === "monto" && <PasoMonto b={b} set={set} base={base} convertido={convertido} M={M} />}
       {paso.id === "fecha" && <PasoFecha b={b} set={set} />}
       {paso.id === "revisar" && (
-        <PasoRevisar b={b} set={set} e={e} M={M} base={base} convertido={convertido} modo={modo} opciones={opciones} />
+        <PasoRevisar b={b} set={set} e={e} M={M} base={base} convertido={convertido} modo={modo} opciones={opciones} avisoDeCaja={avisoDeCaja} />
       )}
       {volverARevisar}
     </Asistente>
@@ -490,9 +503,9 @@ function PasoFecha({ b, set }: { b: BorradorGasto; set: Poner }) {
    preguntas. Cada casillero que falta se pinta de error; mientras falte
    algo, el botón de cargar queda trabado. */
 
-function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
+function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones, avisoDeCaja }: {
   b: BorradorGasto; set: Poner; e: EstadoApp; M: Fmt; base: Moneda; convertido: number;
-  modo: ModoCarga; opciones: OpcionProveedor[];
+  modo: ModoCarga; opciones: OpcionProveedor[]; avisoDeCaja?: React.ReactNode;
 }) {
   const [cambiando, setCambiando] = useState(false);
   const webinars = useMemo(
@@ -582,6 +595,7 @@ function PasoRevisar({ b, set, e, M, base, convertido, modo, opciones }: {
         <div className={b.fechaPago ? "span-2" : undefined}>
           <CampoFechasGasto b={b} set={set} problemas={problemas} id="gasto" />
         </div>
+        {avisoDeCaja && <div className="span-2">{avisoDeCaja}</div>}
 
         {otra && (
           <>

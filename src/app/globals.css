@@ -695,6 +695,8 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
   width: 68px; padding: 5px 6px; border: 1px solid var(--focus); border-radius: var(--radius-md); background: var(--surface-200);
   color: var(--ink); font: inherit; font-variant-numeric: tabular-nums; text-align: center; outline: 0;
 }
+/* El % que sube según el cierre del mes: el rango y, abajo, de qué depende. */
+.cuadro-com__segun { display: block; font-size: 11px; line-height: 14px; font-weight: 500; letter-spacing: .02em; }
 .cuadro-com tr[data-inactivo] > * { opacity: .62; }
 .cuadro-com__pie { display: flex; align-items: center; gap: var(--space-3) var(--space-4); flex-wrap: wrap; margin-top: var(--space-3); }
 .cuadro-com__leyenda { flex: 1 1 320px; font-size: 13px; line-height: 20px; color: var(--ink-subtle); }
@@ -1785,6 +1787,11 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 .mes-cerrado > svg { flex: none; margin-top: 2px; color: var(--warning); }
 .mes-cerrado__texto { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; }
 .mes-cerrado__titulo { font-weight: 600; color: var(--ink); }
+/* Qué le hace a la caja un pago con fecha vieja: informa (neutro) y, si mueve un cierre ya hecho, avisa (ámbar). */
+.aviso-caja:not([data-cambia]) { border-color: var(--border-strong); background: var(--surface-200); }
+.aviso-caja:not([data-cambia]) > svg { color: var(--ink-subtle); }
+.aviso-caja .mes-cerrado__texto { gap: var(--space-1); }
+.aviso-caja__regla { color: var(--ink-subtle); }
 
 /* Cargar una devolución: las opciones con interruptor y lo que pasa al cargarla. */
 .devol-opciones { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -2902,6 +2909,20 @@ span.kpis__etiqueta:hover { color: var(--ink); text-decoration: none; }
   padding: var(--space-4); border-radius: var(--radius-lg); background: var(--brand-soft); border: 1px solid var(--brand-fill);
   font-family: var(--font-display); font-size: 20px; line-height: 28px; font-weight: 600; color: var(--ink);
 }
+.con-frase--chica { padding: var(--space-3); font-size: 15px; line-height: 22px; }
+/* El % que sube según el cierre (Equipo → lo que cobra → Porcentaje): un escalón por renglón. */
+.con-escala { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.con-escala__filas { display: flex; flex-direction: column; gap: var(--space-2); }
+.con-escala__fila { display: flex; align-items: center; gap: var(--space-2) var(--space-3); flex-wrap: wrap; }
+.con-escala__como, .con-escala__campo input {
+  height: 36px; padding: 0 var(--space-2); border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  background: var(--surface-100); color: var(--ink); font: inherit; font-size: 14px;
+}
+.con-escala__campo { display: inline-flex; align-items: center; gap: var(--space-2); font-size: 14px; color: var(--ink-subtle); }
+.con-escala__campo input { width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
+.con-escala__como:focus-visible, .con-escala__campo input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.con-escala__flecha { color: var(--ink-subtle); }
+
 .con-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .con-item {
   display: flex; align-items: flex-start; gap: var(--space-1); padding: var(--space-3);

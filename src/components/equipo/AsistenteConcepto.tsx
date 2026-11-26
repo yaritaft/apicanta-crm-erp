@@ -13,6 +13,7 @@ import type {
   AlcanceVentas, BaseMedicion, ConceptoPago, EstadoApp, MiembroEquipo, Moneda, TipoConcepto,
 } from "@/lib/types";
 import { mismoCalculo, yaValio, type DesdeCuando } from "@/lib/versiones-regla";
+import { ESCALA_DE_RESELL, escalaNormal, rangoDeEscala, textoDeEscala } from "@/lib/escala-cierre";
 import { DesdeCuandoOpciones, hoyLocal, textoDeDesde } from "./DesdeCuando";
 
 /* ==================================================================
@@ -82,6 +83,30 @@ interface Borrador {
   /* De qué regla es versión y desde cuándo cuentan sus ventas (lib/versiones-regla.ts): no se editan, se conservan. */
   versionDe?: string;
   inicioVentas?: string;
+  /* El % sube según el % de cierre de resell del mes (ConceptoPago.escala): `tasa` es el de base y cada escalón, «desde tanto de cierre, tanto». */
+  conEscala: boolean;
+  escalones: EscalonEscrito[];
+}
+
+/* Un escalón como se escribe: los dos % en texto y si es «desde» (incluido) o «más de». */
+interface EscalonEscrito { desde: string; tasa: string; estricto: boolean }
+
+const enPorciento = (f: number) => escribirMonto(Math.round(f * 1e6) / 1e4);
+const escalonesEscritos = (escala = ESCALA_DE_RESELL): EscalonEscrito[] =>
+  escala.escalones.map((t) => ({ desde: enPorciento(t.desde), tasa: enPorciento(t.tasa), estricto: Boolean(t.estricto) }));
+
+/* La escala sólo tiene sentido en la comisión de las ventas que cierra: las llamadas de resell son del closer. */
+const admiteEscala = (b: Pick<Borrador, "tipo" | "base" | "alcance">) =>
+  b.tipo === "porcentaje" && b.alcance === "closer" && (b.base === "cash" || b.base === "cash-neto");
+
+function escalaDelBorrador(b: Borrador) {
+  if (!admiteEscala(b) || !b.conEscala) return undefined;
+  return escalaNormal({
+    de: "resell",
+    escalones: b.escalones
+      .filter((t) => t.desde.trim() !== "" && t.tasa.trim() !== "")
+      .map((t) => ({ desde: leerMonto(t.desde) / 100, tasa: leerMonto(t.tasa) / 100, ...(t.estricto ? { estricto: true } : {}) })),
+  });
 }
 
 const alcanceDeRol = (m: MiembroEquipo): AlcanceVentas =>
@@ -96,6 +121,7 @@ function inicial(m: MiembroEquipo, c: ConceptoPago | null | undefined, base: Mon
       sinVentasSinComision: false, sinExcluidasMarketing: m.rol === "growth",
       profitPropio: false, soloVentasDesdeInicio: false, procesadoresDeTodas: false, descuentaComisionDe: [],
       utmSource: "", unidad: "", condicion: "", desde: "", hasta: "", notas: "",
+      conEscala: false, escalones: escalonesEscritos(),
     };
   }
   return {
@@ -111,6 +137,7 @@ function inicial(m: MiembroEquipo, c: ConceptoPago | null | undefined, base: Mon
     utmSource: c.utmSource ?? "", unidad: c.unidad ?? "", condicion: c.condicion ?? "",
     desde: c.desde ?? "", hasta: c.hasta ?? "", notas: c.notas ?? "",
     versionDe: c.versionDe, inicioVentas: c.inicioVentas,
+    conEscala: Boolean(escalaNormal(c.escala)), escalones: escalonesEscritos(escalaNormal(c.escala)),
   };
 }
 
@@ -146,6 +173,8 @@ function armar(b: Borrador, id: string, base: Moneda): ConceptoPago {
   };
   if (tipo === "fijo" || tipo === "bono" || tipo === "tramo" || tipo === "unidad") c.monto = leerMonto(b.monto) || 0;
   if (tipo === "porcentaje") c.tasa = (leerMonto(b.tasa) || 0) / 100;
+  const escala = escalaDelBorrador(b);
+  if (escala) c.escala = escala;
   if (tipo === "porcentaje" || tipo === "tramo") {
     c.base = b.base;
     if (tipo === "tramo") c.cada = leerMonto(b.cada) || 0;
@@ -196,7 +225,17 @@ function validar(paso: PasoId, b: Borrador): string | null {
     case "tasa": {
       /* 0% vale: es la forma de decir que alguien que vende ya no comisiona. */
       const t = leerMonto(b.tasa);
-      return t >= 0 && t <= 100 ? null : "Escribí un porcentaje entre 0 y 100";
+      if (!(t >= 0 && t <= 100)) return "Escribí un porcentaje entre 0 y 100";
+      if (admiteEscala(b) && b.conEscala) {
+        const llenos = b.escalones.filter((x) => x.desde.trim() !== "" || x.tasa.trim() !== "");
+        if (llenos.length === 0) return "Cargá al menos un escalón, o apagá la escala";
+        for (const x of llenos) {
+          const d = leerMonto(x.desde), p = leerMonto(x.tasa);
+          if (x.desde.trim() === "" || !(d >= 0 && d <= 100)) return "En cada escalón, el % de cierre va entre 0 y 100";
+          if (x.tasa.trim() === "" || !(p >= 0 && p <= 100)) return "En cada escalón, el % que cobra va entre 0 y 100";
+        }
+      }
+      return null;
     }
     case "tramo":
       if (!(leerMonto(b.cada) > 0)) return "Escribí cada cuánto";
@@ -619,16 +658,69 @@ function PasoDeQue({ b, set, e, miembro }: { b: Borrador; set: Poner; e: EstadoA
 /* ---------- Porcentaje ---------- */
 
 function PasoTasa({ b, set }: { b: Borrador; set: Poner }) {
+  const escala = admiteEscala(b);
+  const conEscala = escala && b.conEscala;
+  const cambiar = (k: number, cambios: Partial<EscalonEscrito>) => set({ escalones: b.escalones.map((x, j) => (j === k ? { ...x, ...cambios } : x)) });
+  const armada = escalaDelBorrador(b);
   return (
     <>
-      <Pregunta texto="¿Qué porcentaje?" sub={`Del ${infoBase(b.base).nombre.toLowerCase()} que elegiste. Se aceptan decimales: 12,5.`} />
+      <Pregunta
+        texto={conEscala ? "¿Qué porcentaje de base?" : "¿Qué porcentaje?"}
+        sub={conEscala
+          ? "Lo que cobra si su % de cierre no llega al primer escalón (o si ese mes no tuvo llamadas de resell). Se aceptan decimales: 7,5."
+          : `Del ${infoBase(b.base).nombre.toLowerCase()} que elegiste. Se aceptan decimales: 12,5.`}
+      />
       <div className="monto-grande">
         <input
           type="text" inputMode="decimal" autoComplete="off" value={b.tasa}
-          onChange={(ev) => set({ tasa: ev.target.value })} aria-label="Porcentaje" placeholder="0"
+          onChange={(ev) => set({ tasa: ev.target.value })} aria-label={conEscala ? "Porcentaje de base" : "Porcentaje"} placeholder="0"
         />
         <span className="monto-grande__signo">%</span>
       </div>
+      {escala && (
+        <div className="stack-2 con-escala">
+          <label className="row" style={{ gap: 10 }}>
+            <Switch checked={b.conEscala} onChange={(v) => set({ conEscala: v })} etiqueta="El % sube según su cierre de resell" />
+            <span className="t-sm">El % sube según su % de cierre de resell del mes</span>
+          </label>
+          {conEscala && (
+            <>
+              <p className="t-sm t-subtle">
+                % de cierre = personas que le compraron ese mes viniendo de una llamada de resell ÷ sus llamadas de resell que se hicieron
+                (sin las canceladas ni las de «No se presentó»). El % que alcance vale para todo lo que cobre ese mes de estas ventas.
+              </p>
+              <div className="con-escala__filas">
+                {b.escalones.map((x, k) => (
+                  <div className="con-escala__fila" key={k}>
+                    <select
+                      className="con-escala__como" value={x.estricto ? "mas" : "desde"} aria-label={`Escalón ${k + 1}: desde o más de`}
+                      onChange={(ev) => cambiar(k, { estricto: ev.target.value === "mas" })}
+                    >
+                      <option value="desde">Desde</option>
+                      <option value="mas">Con más de</option>
+                    </select>
+                    <span className="con-escala__campo">
+                      <input type="text" inputMode="decimal" autoComplete="off" value={x.desde} placeholder="25" aria-label={`Escalón ${k + 1}: % de cierre`} onChange={(ev) => cambiar(k, { desde: ev.target.value })} />
+                      <span>% de cierre</span>
+                    </span>
+                    <span className="con-escala__flecha" aria-hidden>→</span>
+                    <span className="con-escala__campo">
+                      <span>cobra</span>
+                      <input type="text" inputMode="decimal" autoComplete="off" value={x.tasa} placeholder="10" aria-label={`Escalón ${k + 1}: % que cobra`} onChange={(ev) => cambiar(k, { tasa: ev.target.value })} />
+                      <span>%</span>
+                    </span>
+                    <button type="button" className="link t-sm" onClick={() => set({ escalones: b.escalones.filter((_, j) => j !== k) })} aria-label={`Sacar el escalón ${k + 1}`}>Sacar</button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="link t-sm" style={{ alignSelf: "flex-start" }} onClick={() => set({ escalones: [...b.escalones, { desde: "", tasa: "", estricto: false }] })}>
+                + Sumar un escalón
+              </button>
+              {armada && <div className="con-frase con-frase--chica">{textoDeEscala(armada, (leerMonto(b.tasa) || 0) / 100)}</div>}
+            </>
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -761,6 +853,8 @@ function deQueTexto(b: Borrador, e: EstadoApp): string {
 }
 
 function montoTexto(c: ConceptoPago): string {
+  const escala = c.tipo === "porcentaje" ? escalaNormal(c.escala) : undefined;
+  if (escala) return `${rangoDeEscala(escala, c.tasa ?? 0)}, según su cierre de resell`;
   if (c.tipo === "porcentaje") return `${escribirMonto(Math.round((c.tasa ?? 0) * 1e6) / 1e4)}%`;
   if (c.tipo === "tramo") {
     const cada = infoBase(c.base).plata ? plata(c.cada ?? 0, c.moneda) : escribirMonto(c.cada ?? 0);

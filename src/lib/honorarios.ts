@@ -1,6 +1,6 @@
 import type {
   PagadoPorFuera,
-  AlcanceVentas, BaseMedicion, ConceptoPago, Devolucion, DesgloseLinea, EntradaLiquidacion, EsquemaPago, EstadoApp, ExtraLiquidacion,
+  AlcanceVentas, BaseMedicion, ConceptoPago, Devolucion, DesgloseLinea, EntradaLiquidacion, EscalaCierre, EsquemaPago, EstadoApp, ExtraLiquidacion,
   Gasto, ID, ItemDesglose, LineaLiquidada, Liquidacion, ListaDesglose, MiembroEquipo, Moneda, Pago, PersonaLiquidada,
   PasoDesglose, ResultadoLiquidacion, TasaVigente, TipoConcepto, Venta,
 } from "./types";
@@ -19,6 +19,7 @@ import {
 import { devolucionesDelMes, liquidadaEn, mesDeLiquidacion, reversasDeComision, type OpcionesDeReversas, type ParteReversa, type Reversa } from "./devoluciones";
 import { descuentaPorCierre, descuentoDesde, diaSinCierreDe, reglaDeCierre, ventasSinCierre } from "./cierre-del-dia";
 import { instanteDeAgenda } from "./resells-agendados";
+import { cierreDeResells, escalaNormal, rangoDeEscala, tasaDeEscala, textoDeEscala, textoDelCierre, type CierreDeResells } from "./escala-cierre";
 import { diaAnterior, diaSiguiente, reglasConHistoria } from "./versiones-regla";
 
 /* ==================================================================
@@ -231,7 +232,13 @@ export function describirConcepto(c: ConceptoPago, e: Catalogos, hermanos?: Conc
   switch (c.tipo) {
     case "fijo": frase = `${M(c.monto)} por mes`; break;
     case "bono": frase = `${M(c.monto)} si lo gana${c.condicion?.trim() ? ` (${c.condicion.trim()})` : ""}`; break;
-    case "porcentaje": frase = `${pct((c.tasa ?? 0) * 100, decimalesTasa(c.tasa))} ${queSeMide(c, e, undefined, hermanos)}`; break;
+    case "porcentaje": {
+      const escala = escalaDe(c);
+      frase = escala
+        ? `${rangoDeEscala(escala, c.tasa ?? 0)} ${queSeMide(c, e, undefined, hermanos)}, según su % de cierre de resell del mes (${textoDeEscala(escala, c.tasa ?? 0)})`
+        : `${pct((c.tasa ?? 0) * 100, decimalesTasa(c.tasa))} ${queSeMide(c, e, undefined, hermanos)}`;
+      break;
+    }
     case "tramo": frase = `${M(c.monto)} por cada ${queSeMide(c, e, c.cada ?? 0)}`; break;
     case "unidad": frase = `${M(c.monto)} por ${c.unidad?.trim() || "pieza"}`; break;
   }
@@ -271,7 +278,9 @@ function resumenDe(conceptos: ConceptoPago[]): string {
   const bonos = esq.conceptos.filter((c) => c.tipo === "bono").length;
   if (bonos) partes.push(bonos === 1 ? "bono" : `${bonos} bonos`);
   for (const c of esq.conceptos) {
-    if (c.tipo === "porcentaje") partes.push(`${pct((c.tasa ?? 0) * 100, decimalesTasa(c.tasa))} ${PORCENTAJE_CORTO[c.base ?? "cash"] ?? ""}`.trim());
+    if (c.tipo !== "porcentaje") continue;
+    const escala = escalaDe(c);
+    partes.push(`${escala ? `${rangoDeEscala(escala, c.tasa ?? 0)} según cierre` : pct((c.tasa ?? 0) * 100, decimalesTasa(c.tasa))} ${PORCENTAJE_CORTO[c.base ?? "cash"] ?? ""}`.trim());
   }
   const tramos = [...new Set(esq.conceptos.filter((c) => c.tipo === "tramo").map((c) => TRAMOS_DE[c.base ?? "manual"]))];
   if (tramos.length) partes.push(`tramos de ${tramos.join(" y ")}`);
@@ -326,6 +335,22 @@ export function inicioDeVentas(c: Pick<ConceptoPago, "soloVentasDesdeInicio" | "
 export const esComisionDeVentas = (c: ConceptoPago): boolean =>
   c.tipo === "porcentaje" && (c.base === "cash" || c.base === "cash-neto")
   && (c.alcance === "closer" || c.alcance === "setter" || c.alcance === "director");
+
+/** La escala de una comisión cuyo % sube según el % de cierre del mes (lib/escala-cierre.ts): sólo en la de las ventas que cierra
+ *  (las llamadas son del closer). undefined: es un % fijo. */
+export const escalaDe = (c: ConceptoPago) =>
+  c.tipo === "porcentaje" && c.alcance === "closer" && (c.base === "cash" || c.base === "cash-neto") ? escalaNormal(c.escala) : undefined;
+
+/** Los servicios que llevan escala en lo que cobra alguien (los que valen ese día, o todos): una venta de ésos es un cierre de resell
+ *  aunque no se la pueda atar a una llamada. La misma lista arma Finanzas desde `comisionHistorial`. */
+export function serviciosConEscala(conceptos: readonly ConceptoPago[], dia?: string): ID[] {
+  const out = new Set<ID>();
+  for (const c of conceptos) {
+    if (!escalaDe(c) || !c.productoIds?.length || (dia && !valeEl(c, dia))) continue;
+    for (const id of c.productoIds) out.add(id);
+  }
+  return [...out].sort();
+}
 
 const sonHermanas = (a: ConceptoPago, b: ConceptoPago) =>
   esComisionDeVentas(a) && esComisionDeVentas(b) && a.base === b.base && a.alcance === b.alcance;
@@ -437,7 +462,26 @@ export function historialParaFinanzas(m: Pick<MiembroEquipo, "rol">, esq: Esquem
     if (c.desde) bordes.add(c.desde.slice(0, 10));
     if (c.hasta) bordes.add(diaSiguiente(c.hasta.slice(0, 10)));
   }
-  if (bordes.size === 0) return [{ general: tasaParaFinanzas(m, esq) ?? 0, servicios: tasasPorServicio(m, esq) ?? {} }];
+  /* Los servicios con escala (el % sube según el cierre del mes): `servicios[id]` es su % de base y `escalas[id]`, la escala. */
+  const escalasDe = (vale: (c: ConceptoPago) => boolean): Record<ID, EscalaCierre> | undefined => {
+    const out: Record<ID, EscalaCierre> = {};
+    const visto = new Set<ID>();
+    for (const c of propias) {
+      if (!esComisionDeVentas(c) || !c.productoIds?.length || !vale(c)) continue;
+      const escala = escalaDe(c);
+      /* Si dos nombran el mismo servicio, vale la primera (con o sin escala). */
+      for (const id of c.productoIds) { if (!visto.has(id) && escala) out[id] = escala; visto.add(id); }
+    }
+    return Object.keys(out).length ? out : undefined;
+  };
+  const conEscalas = (t: TasaVigente, vale: (c: ConceptoPago) => boolean): TasaVigente => {
+    const escalas = escalasDe(vale);
+    return escalas ? { ...t, escalas } : t;
+  };
+  if (bordes.size === 0) {
+    const hoy = hoyIso();
+    return [conEscalas({ general: tasaParaFinanzas(m, esq) ?? 0, servicios: tasasPorServicio(m, esq) ?? {} }, (c) => valeEl(c, hoy))];
+  }
   const enDia = (dia: string): TasaVigente => {
     const general = propias.find((c) => !c.productoIds?.length && valeEl(c, dia));
     const servicios: Record<ID, number> = {};
@@ -445,7 +489,7 @@ export function historialParaFinanzas(m: Pick<MiembroEquipo, "rol">, esq: Esquem
       if (!esComisionDeVentas(c) || !c.productoIds?.length || !valeEl(c, dia)) continue;
       for (const id of c.productoIds) if (!(id in servicios)) servicios[id] = c.tasa ?? 0;
     }
-    return { general: general?.tasa ?? 0, servicios };
+    return conEscalas({ general: general?.tasa ?? 0, servicios }, (c) => valeEl(c, dia));
   };
   const xs = [...bordes].sort();
   const tramos: TasaVigente[] = [{ ...enDia(diaAnterior(xs[0])), hasta: diaAnterior(xs[0]) }];
@@ -458,7 +502,7 @@ export function historialParaFinanzas(m: Pick<MiembroEquipo, "rol">, esq: Esquem
   const juntos: TasaVigente[] = [];
   for (const t of tramos) {
     const ult = juntos[juntos.length - 1];
-    if (ult && Math.abs(ult.general - t.general) < 1e-12 && mismasTasas(ult.servicios, t.servicios)) {
+    if (ult && Math.abs(ult.general - t.general) < 1e-12 && mismasTasas(ult.servicios, t.servicios) && mismasEscalas(ult.escalas, t.escalas)) {
       if (t.hasta) ult.hasta = t.hasta; else delete ult.hasta;
     } else juntos.push({ ...t });
   }
@@ -466,6 +510,7 @@ export function historialParaFinanzas(m: Pick<MiembroEquipo, "rol">, esq: Esquem
     const out: TasaVigente = { general: t.general, servicios: t.servicios ?? {} };
     if (t.desde) out.desde = t.desde;
     if (t.hasta) out.hasta = t.hasta;
+    if (t.escalas) out.escalas = t.escalas;
     return out;
   });
 }
@@ -475,7 +520,16 @@ export function mismoHistorial(a: TasaVigente[] | undefined, b: TasaVigente[] | 
   const x = a ?? [], y = b ?? [];
   if (x.length !== y.length) return false;
   return x.every((t, i) => (t.desde ?? "") === (y[i].desde ?? "") && (t.hasta ?? "") === (y[i].hasta ?? "")
-    && Math.abs(t.general - y[i].general) < 1e-12 && mismasTasas(t.servicios, y[i].servicios));
+    && Math.abs(t.general - y[i].general) < 1e-12 && mismasTasas(t.servicios, y[i].servicios) && mismasEscalas(t.escalas, y[i].escalas));
+}
+
+/** Si dos mapas de escalas por servicio dicen lo mismo (sin escalas = vacío). */
+export function mismasEscalas(a: Record<ID, EscalaCierre> | undefined, b: Record<ID, EscalaCierre> | undefined): boolean {
+  const forma = (x: Record<ID, EscalaCierre> | undefined) => JSON.stringify(Object.keys(x ?? {}).sort().map((k) => {
+    const e = escalaNormal(x![k]);
+    return [k, (e?.escalones ?? []).map((t) => [t.desde, Boolean(t.estricto), t.tasa])];
+  }));
+  return forma(a) === forma(b);
 }
 
 /** Si dos mapas de % por servicio dicen lo mismo. */
@@ -764,6 +818,23 @@ const nombresDeLista = (cx: Contexto) => ({
     : undefined,
 });
 
+/** El % que le toca este mes a una comisión con escala, con el cierre del que sale; undefined si es un % fijo. Se mira el mes entero
+ *  (hasta el corte, si lo hay) aunque la regla haya empezado a mitad de mes: es la misma cuenta que hace Finanzas cobro por cobro. */
+function tasaDelMes(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, hermanos?: ConceptoPago[]): { tasa: number; escala: EscalaCierre; cierre: CierreDeResells } | undefined {
+  const escala = escalaDe(c);
+  if (!escala) return undefined;
+  const hasta = cx.corte && cx.corte.getTime() < cx.rango.hasta.getTime() ? cx.corte.getTime() : cx.rango.hasta.getTime();
+  const desdeDia = diaDe(cx.rango.desde.toISOString()), hastaDia = diaDe(new Date(hasta).toISOString());
+  /* Los servicios con escala que valen algún día del mes. */
+  const servicios = new Set<ID>();
+  for (const x of hermanos ?? [c]) {
+    if (!escalaDe(x) || (x.desde && x.desde.slice(0, 10) > hastaDia) || (x.hasta && x.hasta.slice(0, 10) < desdeDia)) continue;
+    for (const id of x.productoIds ?? []) servicios.add(id);
+  }
+  const cierre = cierreDeResells(cx.e, m, cx.rango.desde.getTime(), hasta, { productoIds: [...servicios].sort() });
+  return { tasa: tasaDeEscala(escala, c.tasa ?? 0, cierre.pct), escala, cierre };
+}
+
 function linea(
   cx: Contexto, m: MiembroEquipo, c: ConceptoPago, entrada: EntradaLiquidacion | undefined, prof?: Profit,
   /* Todo lo que cobra la persona: para que un cobro no entre en dos comisiones. */
@@ -883,9 +954,12 @@ function linea(
       medido = valor;
       const lo = medidoTexto(b, valor, cx.base, c.unidad);
       let veces = 0;
+      /* El % sube según el cierre del mes (resell): el que le toca con sus llamadas y sus ventas de este mes. */
+      const escalado = c.tipo === "porcentaje" ? tasaDelMes(cx, c, m, hermanos) : undefined;
+      const tasa = escalado?.tasa ?? c.tasa ?? 0;
       if (c.tipo === "porcentaje") {
-        monto = valor * (c.tasa ?? 0);
-        detalle = `${pct((c.tasa ?? 0) * 100, decimalesTasa(c.tasa))} de ${lo} (${origen})`;
+        monto = valor * tasa;
+        detalle = `${pct(tasa * 100, decimalesTasa(tasa))} de ${lo} (${origen})${escalado ? ` · ${textoDelCierre(escalado.cierre)}` : ""}`;
       } else {
         const cada = c.cada ?? 0;
         veces = cada > 0 ? Math.floor(valor / cada + 1e-9) : 0;
@@ -895,8 +969,12 @@ function linea(
       }
       desglose = desgloseMedido({
         regla, tipo: c.tipo, base: b, plataBase, monedaBase: cx.base, moneda: c.moneda, fuente, valor,
-        tasa: c.tasa, cada: c.cada, veces, montoPorTramo: c.monto, monto: r2(monto),
+        tasa, cada: c.cada, veces, montoPorTramo: c.monto, monto: r2(monto),
         unidad: c.unidad?.trim() || undefined, utm: c.utmSource,
+        ...(escalado ? { escala: {
+          texto: textoDeEscala(escalado.escala, c.tasa ?? 0), cierre: textoDelCierre(escalado.cierre),
+          llamadas: escalado.cierre.detalle.llamadas, ventas: escalado.cierre.detalle.ventas.map((v) => ({ ...v, servicio: nombresDeLista(cx).servicio(v.productoId) })),
+        } } : {}),
         ...((parcial || recortada) && b !== "manual" && b !== "profit" && entrada?.cantidad === undefined
           ? { vigencia: { desde: rm.desde.getDate(), hasta: rm.hasta.getDate(), mes: nombrePeriodo(cx.rango.clave) } }
           : {}),
@@ -970,7 +1048,7 @@ function lineaDeDescuento(
     if (d) dias.add(d);
   }
   valor = r2(valor); bruto = r2(bruto);
-  const tasa = c.tasa ?? 0;
+  const tasa = tasaDelMes(cx, c, m, hermanos)?.tasa ?? c.tasa ?? 0;
   const noSePaga = r2(valor * tasa);
   const monto = -noSePaga;
   if (cobros.length === 0 || Math.abs(monto) < 0.005) return null;

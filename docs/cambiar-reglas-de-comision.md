@@ -53,3 +53,24 @@ regla se ve «Cómo era antes», y en la solapa Reglas, «Cambios de reglas».
 
 Ver también `supabase/reglas-con-historia.sql` y
 `pruebas/reglas-con-historia.test.ts`.
+
+## Un % que sube según el % de cierre (resell)
+
+Desde el 26/11 una comisión de closer puede no ser un % fijo: «con menos de 25% de cierre 5%, entre 25% y 30% 10%, con más de 30% 12%».
+No hace falta programar nada para cambiarla:
+
+- **Dónde:** Equipo y honorarios → la persona → su comisión (la del servicio, por ejemplo «Comisión · Resell Mentoría») → paso
+  «Porcentaje» → «El % sube según su % de cierre de resell del mes». El % que se escribe arriba es el de base; cada escalón dice
+  «desde tanto de cierre, cobra tanto» («Con más de» para que recién valga al pasarlo).
+- **Tiene historia como cualquier regla:** al guardar pregunta «¿desde cuándo?» y lo de antes queda como estaba.
+- **Cómo se cuenta el % de cierre** (`src/lib/escala-cierre.ts`, `cierreDeResells`): personas que le compraron ese mes viniendo de una
+  llamada de resell ÷ sus llamadas de resell de ese mes que se hicieron (sin canceladas, sin «No se presentó», sin las reagendadas).
+  Una venta «viene de resell» si está atada a la llamada, si esa persona tuvo una llamada de resell con ese closer en los 60 días
+  anteriores, o si es de un servicio que lleva la escala.
+- **El % que alcanza vale para todo lo que cobra ese mes de ese servicio.** Sin llamadas en el mes, el de base.
+- **Una sola cuenta para todos:** la liquidación, Finanzas (comisiones venta por venta, estado de resultados, resultado de cada
+  webinar), las devoluciones y Mi panel del closer llaman a `cierreDeResells` y `tasaDeEscala`. En `equipo."comisionHistorial"` cada
+  tramo lleva `escalas` (servicio → escala) y `servicios[id]` es el % de base. Si hay que tocarla por SQL, escribir las dos cosas
+  (lo que cobra la persona y la historia del equipo) con lo que devuelven `conVersiones` e `historialParaFinanzas`, no a mano.
+- **Se ve** en «Cómo se calculó» de cada renglón (la escala, el cierre, quién compró y qué llamadas contaron), en el cuadro de
+  comisiones («5% a 12% · según cierre») y en Mi panel del closer («Tu comisión de resell»).

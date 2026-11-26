@@ -64,6 +64,9 @@
 .mp-seccion h2 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 650; letter-spacing: -0.02em; color: var(--ink); }
 .mp-seccion span { font-size: 14px; color: var(--ink-subtle); }
 
+/* La escala de resell, dicha debajo de sus números. */
+.mp-nota-escala { margin: 12px 0 0 4px; font-size: 13px; line-height: 20px; color: var(--ink-subtle); }
+
 /* ---------- arriba ---------- */
 
 .mp-arriba { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: stretch; }
