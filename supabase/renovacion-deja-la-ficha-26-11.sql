@@ -24,12 +24,17 @@
 --     («PIF 3000 USD» en quien ahora paga 1.500 en dos veces): se vacía y
 --     la app muestra el de las cuotas de la compra nueva (sugerido, como
 --     en cualquier alumno sin plan escrito);
+--   - el «Contrato firmado» de la ficha era el del contrato anterior
+--     («Firmado · DRIVE 28/9» en quien todavía no firmó el de Principals):
+--     pasa a «Pendiente» —así aparece en «Contrato sin firmar» del panel—
+--     salvo que el contrato de esta compra ya esté firmado; al firmarse
+--     vuelve a «Firmado» como siempre (fichaAlFirmar);
 --   - seguimiento_alumnos."cicloDeVenta" anota de qué compra son ese
---     programa, esa duración y ese plan de pago;
+--     programa, esa duración, ese plan de pago y ese contrato;
 --   - una pestaña abierta desde antes de la renovación guarda la fila
 --     entera del seguimiento («Se lo contactó», el follow-up): como trae la
---     marca de la compra anterior, su programa, su duración y su plan de
---     pago viejos NO pisan los de la compra nueva. Lo demás que escribió se guarda. Desde
+--     marca de la compra anterior, su programa, su duración, su plan de
+--     pago y su contrato viejos NO pisan los de la compra nueva. Lo demás que escribió se guarda. Desde
 --     una pestaña al día se pueden cambiar a mano como siempre.
 --
 -- Y un caso más de lo mismo: el alumno de antes que no tenía venta cargada
@@ -80,6 +85,24 @@ $$;
 
 /* El programa (Ajustes → Programas) al que pertenece un producto: el primero activo que lo tenga, como lib/programas.ts → programaDeProducto.
    Null si el producto no es de ningún programa (o todavía no hay programas guardados): la ficha no se toca. */
+create or replace function public.programa_entero_de_producto(p_producto text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select pr.p
+  from ajustes aj, jsonb_array_elements(case when jsonb_typeof(aj.programas) = 'array' then aj.programas else '[]'::jsonb end) with ordinality as pr(p, orden)
+  where aj.id = 1
+    and coalesce(pr.p ->> 'activo', 'true') <> 'false'
+    and coalesce(pr.p -> 'productos', '[]'::jsonb) ? p_producto
+    and nullif(btrim(pr.p ->> 'nombre'), '') is not null
+  order by pr.orden
+  limit 1;
+$$;
+
+/* Su nombre. */
 create or replace function public.programa_de_producto(p_producto text)
 returns text
 language sql
@@ -87,18 +110,37 @@ stable
 security definer
 set search_path = public
 as $$
-  select nullif(btrim(pr.p ->> 'nombre'), '')
-  from ajustes aj, jsonb_array_elements(case when jsonb_typeof(aj.programas) = 'array' then aj.programas else '[]'::jsonb end) with ordinality as pr(p, orden)
-  where aj.id = 1
-    and coalesce(pr.p ->> 'activo', 'true') <> 'false'
-    and coalesce(pr.p -> 'productos', '[]'::jsonb) ? p_producto
-  order by pr.orden
-  limit 1;
+  select btrim(public.programa_entero_de_producto(p_producto) ->> 'nombre');
 $$;
 
-/* La ficha de Servicio pasa a la compra nueva: su programa primero, su duración y el plan de pago en blanco (se muestra el de las cuotas de
-   esta compra). Devuelve lo que cambió (para la actividad) o null si no había nada que cambiar: sin ficha todavía (nace sugerida por la
-   venta) o ya era de esta compra. Si el producto no es de ningún programa de Ajustes, el programa y la duración quedan como estaban. */
+revoke all on function public.programa_entero_de_producto(text) from public, anon, authenticated;
+grant execute on function public.programa_entero_de_producto(text) to service_role;
+
+/* ¿El contrato de ESTA compra ya está firmado? El atado a esta venta o, si todavía no se ató (se mandó antes de cargar la venta), el del
+   mismo programa de estas semanas para ese alumno o esa persona (como lib/contratos.ts → contratoDeEstaCompra). El de la reserva no cuenta. */
+create or replace function public.contrato_de_la_compra_firmado(p_alumno text, p_venta text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from contratos c join ventas v on v.id = p_venta
+    where c.estado = 'firmado' and coalesce(c.modo, 'produccion') = 'produccion' and coalesce(c.datos ->> 'reserva', 'false') <> 'true'
+      and (c."ventaId" = v.id
+        or (c."ventaId" is null and c."creadoEn" > now() - interval '31 days'
+            and c.programa = (public.programa_entero_de_producto(v."productoId") ->> 'id')
+            and (c."alumnoId" = p_alumno or (c."leadId" is not null and c."leadId" = v."contactoId")))));
+$$;
+
+revoke all on function public.contrato_de_la_compra_firmado(text, text) from public, anon, authenticated;
+grant execute on function public.contrato_de_la_compra_firmado(text, text) to service_role;
+
+/* La ficha de Servicio pasa a la compra nueva: su programa primero, su duración, el plan de pago en blanco (se muestra el de las cuotas de
+   esta compra) y el contrato «Pendiente» hasta que se firme el de esta compra. Devuelve lo que cambió (para la actividad) o null si no
+   había nada que cambiar: sin ficha todavía (nace sugerida por la venta) o ya era de esta compra. Si el producto no es de ningún programa
+   de Ajustes (no tiene contrato propio), el programa, la duración y el contrato quedan como estaban. */
 create or replace function public.ficha_del_ciclo_nuevo(p_alumno text, p_venta text)
 returns text
 language plpgsql
@@ -112,6 +154,8 @@ declare
   v_programas jsonb;
   v_ya boolean;
   v_plan text;
+  v_contrato text;
+  v_estado_contrato text;
   v_partes text[] := '{}';
 begin
   if not exists (select 1 from ventas v where v.id = p_venta) then return null; end if;
@@ -121,12 +165,26 @@ begin
 
   v_programas := case when jsonb_typeof(s.programas) = 'array' then s.programas else '[]'::jsonb end;
   v_meses := s."duracionMeses";
+  v_contrato := s."contratoFirmado";
+  v_estado_contrato := s."estadoContrato";
   if v_programa is not null then
     v_meses := public.meses_de_programa(v_programa);
     select exists (select 1 from jsonb_array_elements_text(v_programas) x where public.familia_de_programa(x) = public.familia_de_programa(v_programa)) into v_ya;
     if not v_ya then v_programas := jsonb_build_array(v_programa) || v_programas; end if;
     v_partes := array_append(v_partes, 'su ficha de Servicio queda en ' || v_programa || ', ' || v_meses || ' meses'
       || case when s."duracionMeses" is not null and s."duracionMeses" <> v_meses then ' (antes ' || s."duracionMeses" || ')' else '' end);
+    /* El contrato firmado que figura es el de la compra anterior, salvo que el de ésta ya esté firmado (se mandó antes de cargar la venta). */
+    if public.contrato_de_la_compra_firmado(p_alumno, p_venta) then
+      v_contrato := 'Firmado';
+      v_estado_contrato := 'Firmado en PandaDoc';
+    else
+      if btrim(coalesce(s."contratoFirmado", '')) = 'Firmado' then
+        v_partes := array_append(v_partes, 'el contrato de esta compra queda pendiente de firma (el firmado'
+          || case when btrim(coalesce(s."estadoContrato", '')) <> '' then ', «' || btrim(s."estadoContrato") || '»,' else '' end || ' era el de la compra anterior)');
+      end if;
+      v_contrato := 'Pendiente';
+      v_estado_contrato := '';
+    end if;
   end if;
   v_plan := btrim(coalesce(s."planDePago", ''));
   if v_plan <> '' then
@@ -135,10 +193,11 @@ begin
 
   /* El disparador de abajo deja pasar el cambio de compra sólo a quien lo hace desde acá. */
   perform set_config('apicanta.ciclo_nuevo', p_venta, true);
-  update seguimiento_alumnos set programas = v_programas, "duracionMeses" = v_meses, "planDePago" = '', "cicloDeVenta" = p_venta where id = s.id;
+  update seguimiento_alumnos set programas = v_programas, "duracionMeses" = v_meses, "planDePago" = '',
+    "contratoFirmado" = v_contrato, "estadoContrato" = v_estado_contrato, "cicloDeVenta" = p_venta where id = s.id;
   perform set_config('apicanta.ciclo_nuevo', '', true);
 
-  return nullif(array_to_string(v_partes, ' y '), '');
+  return nullif(array_to_string(v_partes, '; '), '');
 end;
 $$;
 
@@ -147,8 +206,8 @@ grant execute on function public.ficha_del_ciclo_nuevo(text, text) to service_ro
 revoke all on function public.programa_de_producto(text) from public, anon;
 grant execute on function public.programa_de_producto(text) to authenticated, service_role;
 
-/* Una fila que llega con la marca de OTRA compra (la pestaña se abrió antes de la renovación) no devuelve el programa, la duración y el plan
-   de pago a los de la compra anterior: se quedan los de la compra en curso. Todo lo demás que trae se guarda. */
+/* Una fila que llega con la marca de OTRA compra (la pestaña se abrió antes de la renovación) no devuelve el programa, la duración, el plan
+   de pago y el contrato a los de la compra anterior: se quedan los de la compra en curso. Todo lo demás que trae se guarda. */
 create or replace function public.seguimiento_es_de_la_compra_en_curso()
 returns trigger
 language plpgsql
@@ -159,6 +218,8 @@ begin
     new.programas := old.programas;
     new."duracionMeses" := old."duracionMeses";
     new."planDePago" := old."planDePago";
+    new."contratoFirmado" := old."contratoFirmado";
+    new."estadoContrato" := old."estadoContrato";
     new."cicloDeVenta" := old."cicloDeVenta";
   end if;
   return new;

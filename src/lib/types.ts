@@ -409,9 +409,9 @@ export interface SeguimientoAlumno {
   /* Para qué inicio se escribió `fechaEgreso` (día de Argentina). Si el alumno renovó y su inicio cambió, ese fin es del ciclo anterior y
      no cuenta (Juan Ignacio Ledesma, 24/11: renovó a Principals y le quedó el fin del Upgrade AI). Sin marca: las filas de antes. */
   egresoDelInicio?: string | null;
-  /* De qué compra (venta) son `programas`, `duracionMeses` y `planDePago`. Lo escribe la base cuando una compra nueva pasa a ser el servicio del alumno
+  /* De qué compra (venta) son `programas`, `duracionMeses`, `planDePago`, `contratoFirmado` y `estadoContrato`. Lo escribe la base cuando una compra nueva pasa a ser el servicio del alumno
      (Liliana, 26/11: los que renovaron a Principals seguían con «Hackear IA, 3 meses»; supabase/renovacion-deja-la-ficha-26-11.sql) y la app
-     sólo lo devuelve tal cual: una pestaña que trae la marca de la compra anterior no pisa el programa, la duración ni el plan de pago de la nueva. */
+     sólo lo devuelve tal cual: una pestaña que trae la marca de la compra anterior no pisa el programa, la duración, el plan de pago ni el contrato de la nueva. */
   cicloDeVenta?: string | null;
   /* 0, 1, 2 o 3 sesiones con el mentor, según lo acordado con el closer. */
   sesionesMentor: number | null;

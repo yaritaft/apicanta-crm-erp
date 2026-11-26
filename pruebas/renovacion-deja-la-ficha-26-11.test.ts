@@ -124,7 +124,10 @@ async function banco(): Promise<Pg> {
     create table public.ajustes (id int primary key, programas jsonb);
     create table public.leads (id text primary key, "contactoId" text);
     create table public.seguimiento_alumnos (id text primary key, "alumnoId" text not null unique, programas jsonb not null default '[]'::jsonb, "duracionMeses" integer,
-      "ultimoContacto" text, "followUp" text default '', "planDePago" text not null default '');
+      "ultimoContacto" text, "followUp" text default '', "planDePago" text not null default '',
+      "contratoFirmado" text not null default '', "estadoContrato" text not null default '');
+    create table public.contratos (id text primary key, "ventaId" text, "leadId" text, "alumnoId" text, programa text not null default '', modo text not null default 'produccion',
+      estado text not null default 'creando', datos jsonb not null default '{}'::jsonb, "creadoEn" timestamptz not null default now());
     create table public.actividad (id text primary key, accion text, actor text, entidad text, "entidadId" text, titulo text, fecha timestamptz, detalle text);
     insert into public.productos (id, nombre, tipo) values ('prod_hackear_ai', 'Hackear AI', 'principal'), ('prod_principals', 'Principals', 'principal'),
       ('prod_resell', 'Resell Mentoría', 'principal'), ('prod_biz', 'Hackear Biz', 'principal'), ('prod_downsell', 'Downsell', 'downsell'),
@@ -149,7 +152,9 @@ async function conAlumnoDeHackearAi(db: Pg, programas = '["HACKEAR IA"]', duraci
   await db.exec(`
     insert into public.ventas (id, "contactoId", "productoId", fecha) values ('ven_ai', 'lead_1', 'prod_hackear_ai', now() - interval '70 days');
     insert into public.alumnos (id, nombre, plan, inicio, "leadId", "ventaId") values ('alu_1', 'Betsabeth Prueba', 'Hackear AI', now() - interval '70 days', 'lead_1', 'ven_ai');
-    insert into public.seguimiento_alumnos (id, "alumnoId", programas, "duracionMeses", "ultimoContacto", "planDePago") values ('seg_1', 'alu_1', '${programas}'::jsonb, ${duracion === null ? "null" : duracion}, '2026-11-01', 'PIF 3000 USD');
+    insert into public.seguimiento_alumnos (id, "alumnoId", programas, "duracionMeses", "ultimoContacto", "planDePago", "contratoFirmado", "estadoContrato")
+      values ('seg_1', 'alu_1', '${programas}'::jsonb, ${duracion === null ? "null" : duracion}, '2026-11-01', 'PIF 3000 USD', 'Firmado', 'DRIVE 28/9');
+    insert into public.contratos (id, "ventaId", "alumnoId", programa, estado, "creadoEn") values ('ctr_ai', 'ven_ai', 'alu_1', 'hackear-ai', 'firmado', now() - interval '70 days');
   `);
 }
 
@@ -163,7 +168,7 @@ test("renovar a Principals deja la ficha en «Principals · HACKEAR IA», 12 mes
   assert.deepEqual({ plan: a.plan, ventaId: a.ventaId, dia: a.dia }, { plan: "Principals", ventaId: "ven_pr", dia: await hoyArg(db) });
   assert.deepEqual(a.extra.ventasAnteriores, ["ven_ai"]);
   const nota = (await db.query<{ detalle: string }>(`select detalle from public.actividad where id = 'act_compra_alu_1_ven_pr'`)).rows[0].detalle;
-  assert.match(nota, /compró Principals: su servicio pasa a ser Principals \(antes Hackear AI\), su programa arranca el .* su ficha de Servicio queda en Principals, 12 meses \(antes 3\) y su plan de pago pasa a ser el de esta compra \(el escrito era «PIF 3000 USD»\)\./);
+  assert.match(nota, /compró Principals: su servicio pasa a ser Principals \(antes Hackear AI\), su programa arranca el .* su ficha de Servicio queda en Principals, 12 meses \(antes 3\); el contrato de esta compra queda pendiente de firma \(el firmado, «DRIVE 28\/9», era el de la compra anterior\); su plan de pago pasa a ser el de esta compra \(el escrito era «PIF 3000 USD»\)\./);
   /* Volver a pasarla no cambia nada (ni repite el programa). */
   assert.equal(await pasar(db, "alu_1", "ven_pr"), false);
   assert.deepEqual((await fichaDe(db, "alu_1")).programas, ["Principals", "HACKEAR IA"]);
@@ -263,6 +268,66 @@ test("sin venta, pero no es una renovación: el que espera la venta, una venta v
   const tarde = await alumnoDe(db, "alu_tarde");
   assert.deepEqual({ estado: tarde.estado, plan: tarde.plan, ventaId: tarde.ventaId, dia: tarde.dia }, { estado: "baja", plan: "", ventaId: "ven_tarde", dia: "2025-01-17" });
   assert.equal((await alumnoDe(db, "alu_nuevo")).plan, "Hackear AI");
+});
+
+/* ---------- el contrato firmado de la ficha es el de UNA compra ---------- */
+
+const contratoDe = async (db: Pg, alumno: string) =>
+  (await db.query<{ contratoFirmado: string; estadoContrato: string }>(`select "contratoFirmado", "estadoContrato" from public.seguimiento_alumnos where "alumnoId" = $1`, [alumno])).rows[0];
+
+test("al renovar, el contrato de la ficha queda «Pendiente»: el firmado era el de la compra anterior (Betsabeth: «Firmado · DRIVE 28/9» sin firmar el de Principals)", { skip: saltear }, async () => {
+  const db = await banco();
+  await conAlumnoDeHackearAi(db);
+  /* Tiene firmados el de su compra anterior y uno de reserva de esta: ninguno es el contrato de esta compra. */
+  await db.exec(`
+    insert into public.ventas (id, "contactoId", "productoId") values ('ven_pr', 'lead_1', 'prod_principals');
+    insert into public.contratos (id, "ventaId", "alumnoId", programa, estado, datos) values ('ctr_res', 'ven_pr', 'alu_1', 'principals', 'firmado', '{"reserva":true}');
+    insert into public.contratos (id, "ventaId", "alumnoId", programa, estado) values ('ctr_pr', 'ven_pr', 'alu_1', 'principals', 'enviado');
+    insert into public.contratos (id, "alumnoId", programa, estado, modo) values ('ctr_prueba', 'alu_1', 'principals', 'firmado', 'prueba');`);
+  await pasar(db, "alu_1", "ven_pr");
+  assert.deepEqual(await contratoDe(db, "alu_1"), { contratoFirmado: "Pendiente", estadoContrato: "" });
+  /* La pestaña vieja de Lili guarda la fila entera con «Firmado · DRIVE 28/9»: no vuelve. */
+  await db.exec(`update public.seguimiento_alumnos set "contratoFirmado" = 'Firmado', "estadoContrato" = 'DRIVE 28/9', "cicloDeVenta" = null, "followUp" = 'Onboarding' where id = 'seg_1'`);
+  assert.deepEqual(await contratoDe(db, "alu_1"), { contratoFirmado: "Pendiente", estadoContrato: "" });
+  assert.equal((await fichaDe(db, "alu_1")).followUp, "Onboarding");
+  /* Cuando firma, el servidor lo marca (sin marca de compra, como fichaAlFirmar) y pasa. */
+  await db.exec(`update public.seguimiento_alumnos set "contratoFirmado" = 'Firmado', "estadoContrato" = 'Firmado en PandaDoc' where id = 'seg_1'`);
+  assert.deepEqual(await contratoDe(db, "alu_1"), { contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc" });
+});
+
+test("si el contrato de esta compra ya estaba firmado cuando se carga la venta (se mandó antes), la ficha queda «Firmado»", { skip: saltear }, async () => {
+  const db = await banco();
+  await conAlumnoDeHackearAi(db);
+  await db.exec(`
+    insert into public.ventas (id, "contactoId", "productoId") values ('ven_pr', 'lead_1', 'prod_principals');
+    insert into public.contratos (id, "leadId", programa, estado, "creadoEn") values ('ctr_antes', 'lead_1', 'principals', 'firmado', now() - interval '2 days');`);
+  await pasar(db, "alu_1", "ven_pr");
+  assert.deepEqual(await contratoDe(db, "alu_1"), { contratoFirmado: "Firmado", estadoContrato: "Firmado en PandaDoc" });
+});
+
+test("no cuentan como el contrato de esta compra: uno del mismo programa de hace meses, ni el de otro programa", { skip: saltear }, async () => {
+  const db = await banco();
+  await conAlumnoDeHackearAi(db);
+  await db.exec(`
+    insert into public.ventas (id, "contactoId", "productoId") values ('ven_pr', 'lead_1', 'prod_principals');
+    insert into public.contratos (id, "alumnoId", programa, estado, "creadoEn") values
+      ('ctr_viejo', 'alu_1', 'principals', 'firmado', now() - interval '200 days'), ('ctr_otro', 'alu_1', 'hackear-ai', 'firmado', now() - interval '2 days');`);
+  await pasar(db, "alu_1", "ven_pr");
+  assert.deepEqual(await contratoDe(db, "alu_1"), { contratoFirmado: "Pendiente", estadoContrato: "" });
+});
+
+test("un producto sin programa (no tiene contrato propio) no toca el contrato de la ficha; y quien no tenía nada anotado también queda «Pendiente»", { skip: saltear }, async () => {
+  const db = await banco();
+  await conAlumnoDeHackearAi(db);
+  await db.exec(`insert into public.ventas (id, "contactoId", "productoId") values ('ven_up', 'lead_1', 'prod_upsell')`);
+  await pasar(db, "alu_1", "ven_up");
+  assert.deepEqual(await contratoDe(db, "alu_1"), { contratoFirmado: "Firmado", estadoContrato: "DRIVE 28/9" });
+  await db.exec(`
+    insert into public.alumnos (id, nombre, plan, estado, inicio) values ('alu_l', 'Luis Carlos Prueba', '', 'baja', '2025-01-17T15:00:00Z');
+    insert into public.seguimiento_alumnos (id, "alumnoId") values ('seg_l', 'alu_l');
+    insert into public.ventas (id, "contactoId", "productoId") values ('ven_l', 'lead_l', 'prod_principals');`);
+  await pasar(db, "alu_l", "ven_l");
+  assert.deepEqual(await contratoDe(db, "alu_l"), { contratoFirmado: "Pendiente", estadoContrato: "" });
 });
 
 test("la base y la app cuentan igual: el nombre de siempre de cada programa, sus meses y el programa de cada producto", { skip: saltear }, async () => {
