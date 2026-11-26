@@ -7,7 +7,8 @@ import { Badge, Button, Chip } from "@/components/ui/ui";
 import { acciones, nuevoId } from "@/lib/store";
 import { isoDia, money } from "@/lib/format";
 import { diaDeNegocio } from "@/lib/dia-negocio";
-import { efectoEnCaja, hayQueAvisarDeCaja } from "@/lib/efecto-en-caja";
+import { mediodia } from "@/lib/carga-gasto";
+import { conLoViejoHoy, efectoEnCaja, esAnteriorAlUltimoCierre, hayQueAvisarDeCaja } from "@/lib/efecto-en-caja";
 import { AvisoDeCaja } from "./AvisoDeCaja";
 import { fechaDePago } from "@/lib/gastos";
 import { esExportDeMercury, pagosDeTarjetaDelRango, sumaDe } from "@/lib/gastos-mercury";
@@ -63,6 +64,8 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
   const [filtro, setFiltro] = useState<Filtro>("todas");
   const [categoriaMasiva, setCategoriaMasiva] = useState("");
   const [quitarPagos, setQuitarPagos] = useState(true);
+  /* «Que salgan de la caja hoy»: lo de fecha anterior al último cierre queda en su mes y la caja lo toma hoy. */
+  const [viejosHoy, setViejosHoy] = useState(false);
 
   const tabla = useMemo(() => parsearPegado(texto), [texto]);
   const conTitulos = titulosElegido ?? tieneTitulos(tabla);
@@ -116,10 +119,13 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
      (Aldana, 25/11: retiros de junio a septiembre de la Financiera). */
   const enCaja = useMemo(() => {
     if (resumen.aCargar === 0) return null;
-    const datos = gastosDeFilas(filas, e, "lote_por_cargar").map((g, k) => ({ ...g, id: `gasto_por_cargar_${k}` }) as Gasto);
+    const leidos = gastosDeFilas(filas, e, "lote_por_cargar").map((g, k) => ({ ...g, id: `gasto_por_cargar_${k}` }) as Gasto);
+    /* Los de fecha anterior al último cierre: la caja de hoy no los ve, salvo que se elija que salgan hoy (lib/efecto-en-caja.ts). */
+    const viejos = leidos.filter((g) => esAnteriorAlUltimoCierre(e, g)).length;
+    const datos = viejosHoy ? conLoViejoHoy(e, leidos, mediodia(new Date())) : leidos;
     const efecto = efectoEnCaja(e, datos, quitarPagos ? pagosAReemplazar.map((g) => g.id) : []);
-    return hayQueAvisarDeCaja(efecto) ? { efecto, cuantos: datos.length } : null;
-  }, [filas, e, resumen.aCargar, quitarPagos, pagosAReemplazar]);
+    return viejos > 0 || hayQueAvisarDeCaja(efecto) ? { efecto, cuantos: datos.length, viejos } : null;
+  }, [filas, e, resumen.aCargar, quitarPagos, pagosAReemplazar, viejosHoy]);
   const sinCategoria = filas.filter((f) => f.incluir && !f.categoria.trim());
   /* Lo pegado con el monto en negativo se toma como plata que volvió; en un extracto del banco es lo contrario, y se lo avisa para dar vuelta de un toque. */
   const negativasComoIngreso = useMemo(
@@ -155,7 +161,9 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
   function cargar() {
     if (resumen.aCargar === 0) return;
     const loteId = nuevoId("lote");
-    const datos = gastosDeFilas(filas, e, loteId);
+    const leidos = gastosDeFilas(filas, e, loteId);
+    /* Lo viejo que se eligió regularizar: queda en su mes y sale de la caja hoy. */
+    const datos = viejosHoy ? conLoViejoHoy(e, leidos, mediodia(new Date())) : leidos;
     const r = acciones.cargarGastosEnLote(datos, loteId);
     const quitados = quitarPagos && pagosAReemplazar.length
       ? acciones.quitarGastos(pagosAReemplazar.map((g) => g.id), `se reemplazan por las compras de la tarjeta cargadas una por una (carga ${loteId})`)
@@ -371,7 +379,12 @@ export function CargaDeGastosMasiva({ e, onCerrar, onListo }: {
             </div>
           )}
 
-          {enCaja && <AvisoDeCaja efecto={enCaja.efecto} base={e.ajustes.monedaBase} cuantos={enCaja.cuantos} />}
+          {enCaja && (
+            <AvisoDeCaja
+              efecto={enCaja.efecto} base={e.ajustes.monedaBase} cuantos={enCaja.cuantos}
+              regularizar={{ activo: viejosHoy && enCaja.viejos > 0, cuantos: enCaja.viejos, alCambiar: setViejosHoy }}
+            />
+          )}
 
           {hayAlgo && (
             <p className="t-sm" role="status" style={{ margin: 0 }}>

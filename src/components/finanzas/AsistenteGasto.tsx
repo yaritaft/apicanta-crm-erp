@@ -11,7 +11,7 @@ import {
   GRUPOS_GASTO, aMonedaBase, categoriaDe, categoriasDisponibles, gastosParecidos, infoGrupo, leerMonto, normalizar, sugerirCategoria,
 } from "@/lib/gastos";
 import {
-  borradorInicial, cambiosAlRepetir, datosDelGasto, esCategoriaDeEquipo, esProveedorValido, modoDeCarga,
+  borradorInicial, cambiosAlRepetir, datosDelGasto, esCategoriaDeEquipo, esProveedorValido, mediodia, modoDeCarga,
   mostrarGrilla, opcionesProveedor, pasosDeCarga, problemaDelPaso, problemasDelGasto, textoParaCategoria, tipoCambioDeAjustes,
   type BorradorGasto, type ModoCarga, type OpcionProveedor, type PasoId,
 } from "@/lib/carga-gasto";
@@ -108,14 +108,22 @@ export function AsistenteGasto({ gasto, inicial, onCerrar, onListo }: {
 
   /* Qué le hace a la caja con esa fecha de pago: si cae en un cierre ya hecho (o antes del primero), se dice antes de guardar. */
   const enRevision = paso.id === "revisar";
+  const [regularizo, setRegularizo] = useState(false);
   const avisoDeCaja = useMemo(() => {
     if (!enRevision || !(montoNum > 0)) return null;
     const datos = datosDelGasto(b, { base, previo: gasto, opciones });
     const efecto = efectoEnCaja(e, [{ ...datos, id: gasto?.id ?? "gasto_por_cargar" } as Gasto], gasto ? [gasto.id] : []);
     /* Al corregir un gasto ya cargado sólo se avisa si de verdad mueve un cierre (cambió el día, el monto o la cuenta): abrirlo para tocarle
        el nombre no tiene que decir nada. */
-    return (gasto ? efecto.cierres.length > 0 : hayQueAvisarDeCaja(efecto)) ? <AvisoDeCaja efecto={efecto} base={base} /> : null;
-  }, [enRevision, montoNum, b, base, gasto, opciones, e]);
+    /* «Que salga de la caja hoy»: queda en su mes en el estado de resultados (la fecha no se toca) y el día que se pagó pasa a ser hoy. */
+    const regularizar = { activo: false, cuantos: 1, alCambiar: () => { set({ fechaPago: mediodia(new Date()) }); setRegularizo(true); } };
+    if (gasto ? efecto.cierres.length > 0 : hayQueAvisarDeCaja(efecto)) return <AvisoDeCaja efecto={efecto} base={base} regularizar={regularizar} />;
+    /* Recién elegido: se dice qué va a pasar, y se puede volver atrás. */
+    if (regularizo && b.fechaPago && efecto.hoy === 1) {
+      return <AvisoDeCaja efecto={efecto} base={base} regularizar={{ activo: true, cuantos: 1, alCambiar: () => { set({ fechaPago: "" }); setRegularizo(false); } }} />;
+    }
+    return null;
+  }, [enRevision, montoNum, b, base, gasto, opciones, e, regularizo, set]);
 
   function guardar() {
     if (problemaDelPaso("revisar", b, base, e.procesadores)) return;

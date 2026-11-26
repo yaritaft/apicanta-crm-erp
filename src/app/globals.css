@@ -1791,7 +1791,7 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 .aviso-caja:not([data-cambia]) { border-color: var(--border-strong); background: var(--surface-200); }
 .aviso-caja:not([data-cambia]) > svg { color: var(--ink-subtle); }
 .aviso-caja .mes-cerrado__texto { gap: var(--space-1); }
-.aviso-caja__regla { color: var(--ink-subtle); }
+.aviso-caja__opcion { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border); }
 
 /* Cargar una devolución: las opciones con interruptor y lo que pasa al cargarla. */
 .devol-opciones { display: flex; flex-direction: column; gap: var(--space-2); }

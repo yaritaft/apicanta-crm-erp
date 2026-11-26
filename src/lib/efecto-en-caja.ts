@@ -98,3 +98,21 @@ export function efectoEnCaja(e: EstadoApp, nuevos: readonly Gasto[], sacar: read
 
 /** Si hay algo para avisar: lo de todos los días (un pago posterior al último cierre) no necesita aviso. */
 export const hayQueAvisarDeCaja = (x: EfectoEnCaja): boolean => !x.sinCierres && (x.entreCierres > 0 || x.antesDelPrimero > 0 || x.cierres.length > 0);
+
+/* ---------- «Que salga de la caja hoy» ---------- */
+
+/** Si el día en que un gasto sale de la caja es anterior (o igual) al último cierre: la caja de hoy no lo ve. Sin cierres, ninguno. */
+export function esAnteriorAlUltimoCierre(e: Pick<EstadoApp, "arqueos">, g: Pick<Gasto, "fecha" | "extra"> & Partial<Pick<Gasto, "fechaPago">>): boolean {
+  let ultimo = -Infinity;
+  for (const a of e.arqueos ?? []) ultimo = Math.max(ultimo, Date.parse(a.fecha));
+  return Number.isFinite(ultimo) && esPago(g) && Date.parse(fechaDePago(g as Gasto)) <= ultimo;
+}
+
+/**
+ * Los gastos con lo viejo regularizado: los que salían de la caja antes del último cierre conservan su fecha (el mes en que restan del
+ * estado de resultados) y pasan a salir de la caja `hoy`. Lo demás queda igual. Es lo que hace falta cuando la plata salió hace meses,
+ * nunca se cargó y el saldo que se venía contando no la tenía descontada (Aldana, 26/11).
+ */
+export function conLoViejoHoy<G extends Pick<Gasto, "fecha" | "extra"> & Partial<Pick<Gasto, "fechaPago">>>(e: Pick<EstadoApp, "arqueos">, gastos: readonly G[], hoy: string): G[] {
+  return gastos.map((g) => (esAnteriorAlUltimoCierre(e, g) ? { ...g, fechaPago: hoy } : g));
+}

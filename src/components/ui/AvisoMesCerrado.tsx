@@ -18,7 +18,7 @@ export type QueSeCarga = "gasto" | "devolucion" | "cobro";
 
 const QUE_PASA: Record<QueSeCarga, (mes: string, siguiente: string) => string> = {
   gasto: (mes, siguiente) =>
-    `Este gasto va a ${mes} en el estado de resultados: cambia el profit de ${mes}, pero la liquidación cerrada no se reescribe. Si preferís que no mueva ${mes}, pasalo a ${siguiente}: la plata sale de la caja igual el día que se pagó.`,
+    `Este gasto va a ${mes} en el estado de resultados: cambia el profit de ${mes}, pero la liquidación cerrada no se reescribe. Si preferís que no mueva ${mes}, pasalo a ${siguiente}: la plata sale de la caja igual el día que se pagó. Esto es por la liquidación (sueldos y comisiones), no por el cierre de caja: se puede cargar igual.`,
   devolucion: (mes, siguiente) =>
     `La devolución resta en Finanzas con la fecha que pusiste (${mes}), pero lo que se le descuenta al closer entra en la liquidación de ${siguiente}: lo cerrado no se reescribe.`,
   cobro: (mes, siguiente) =>

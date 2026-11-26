@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { arqueoVivo } from "@/lib/arqueo";
 import { cuentaEnLaCajaDeHoy } from "@/lib/caja";
-import { efectoEnCaja, hayQueAvisarDeCaja } from "@/lib/efecto-en-caja";
+import { conLoViejoHoy, efectoEnCaja, esAnteriorAlUltimoCierre, hayQueAvisarDeCaja } from "@/lib/efecto-en-caja";
+import { fechaDePago } from "@/lib/gastos";
+import { periodoDeFecha } from "@/lib/periodos";
 import { saldosEsperados } from "@/lib/traspasos";
 import type { Arqueo, EstadoApp, Gasto } from "@/lib/types";
 import { estadoDeYari } from "./estado-devolucion";
@@ -151,4 +153,53 @@ test("con fecha de pago aparte, manda el día que se pagó y no el mes al que co
   const x = efectoEnCaja(estado(), [g]);
   assert.equal(x.antesDelPrimero, 0);
   assert.equal(x.cierres[0]?.arqueo.id, "a2");
+});
+
+/* ---------- «Que salga de la caja hoy» (Aldana, 26/11) ----------
+   Los retiros de junio a septiembre nunca se cargaron y el saldo que se venía contando no los tenía descontados: con su fecha, la caja de
+   hoy no se entera. Ella los había cargado todos juntos con fecha de hoy («Ajuste de saldo»), y eso ensuciaba noviembre. Lo que hace falta:
+   cada uno en su mes en el estado de resultados, y que la caja los tome hoy. */
+
+const HOY = "2026-11-26T15:00:00.000Z";
+
+test("regularizar: cada retiro viejo conserva su fecha (su mes en resultados) y pasa a salir de la caja hoy", () => {
+  const e = estado();
+  const retiros = [enPesos("r1", "2026-08-27T15:00:00.000Z", 3000000), enPesos("r2", "2026-07-14T15:00:00.000Z", 100000), enPesos("r3", "2026-06-02T15:00:00.000Z", 200000)];
+  const hechos = conLoViejoHoy(e, retiros, HOY);
+  assert.deepEqual(hechos.map((g) => periodoDeFecha(g.fecha)), ["2026-08", "2026-07", "2026-06"], "en resultados, cada uno en su mes");
+  assert.deepEqual(hechos.map((g) => fechaDePago(g)), [HOY, HOY, HOY], "en la caja, hoy");
+  /* La caja de hoy ahora sí los ve: el saldo esperado de la Financiera en pesos baja justo lo que suman. */
+  const antes = saldosEsperados(e, TERCERO, HOY).get("proc_fin_ars")!.esperado!;
+  const despues = saldosEsperados(estado(hechos), TERCERO, HOY).get("proc_fin_ars")!.esperado!;
+  assert.equal(antes - despues, 3300000);
+  /* Y ningún cierre ya hecho se toca. */
+  const x = efectoEnCaja(e, hechos);
+  assert.deepEqual([x.hoy, x.entreCierres, x.antesDelPrimero], [3, 0, 0]);
+  assert.deepEqual(x.cierres, []);
+  assert.equal(hayQueAvisarDeCaja(x), false);
+  const con = estado(hechos);
+  assert.equal(dif(con, SEGUNDO), -500);
+  assert.equal(dif(con, TERCERO), 0);
+});
+
+test("regularizar no toca lo que ya es posterior al último cierre ni lo que no es un pago", () => {
+  const e = estado();
+  const deHoy = gasto("h", "2026-11-25T15:00:00.000Z", 100);
+  const liq = gasto("liq", "2026-10-20T15:00:00.000Z", 500, { extra: { liquidacionId: "liq_2026-10" } });
+  const entre = gasto("m", "2026-10-20T15:00:00.000Z", 500);
+  const [a, b, c] = conLoViejoHoy(e, [deHoy, liq, entre], HOY);
+  assert.equal(a.fechaPago, undefined);
+  assert.equal(b.fechaPago, undefined);
+  assert.equal(c.fechaPago, HOY, "el que caía dentro de un cierre ya hecho también pasa a hoy: ese cierre no se toca");
+  assert.equal(esAnteriorAlUltimoCierre(e, deHoy), false);
+  assert.equal(esAnteriorAlUltimoCierre(e, entre), true);
+  assert.equal(esAnteriorAlUltimoCierre(estado([], []), entre), false, "sin cierres no hay nada que regularizar");
+  assert.deepEqual(efectoEnCaja(e, [c]).cierres, []);
+});
+
+test("un gasto de un mes viejo que ya dice que se pagó después del último cierre no se vuelve a mover", () => {
+  const e = estado();
+  const g = gasto("g", "2026-09-30T15:00:00.000Z", 500, { fechaPago: "2026-11-24T15:00:00.000Z" } as Partial<Gasto>);
+  assert.equal(esAnteriorAlUltimoCierre(e, g), false);
+  assert.equal(conLoViejoHoy(e, [g], HOY)[0].fechaPago, "2026-11-24T15:00:00.000Z");
 });
