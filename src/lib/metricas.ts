@@ -4,6 +4,7 @@ import { inicioSemana, mesClave, nombreMes } from "./format";
 import { calcularPyL, cashCollected, porCobrarTotal } from "./finanzas";
 import { diaDeNegocio } from "./dia-negocio";
 import { finDelDia } from "./periodos";
+import { alumnosActivos as activosDeVerdad } from "./situacion-alumno";
 
 /* Todo lo que la app calcula vive acá: una sola fuente de verdad
    para los números del panel, finanzas, marketing y metas. */
@@ -77,8 +78,9 @@ export function porCobrar(e: EstadoApp): number {
   return porCobrarTotal(e);
 }
 
+/** Los alumnos activos de verdad: sin reservas, sin Outboarding y sin ventas canceladas o reembolsadas (lib/situacion-alumno.ts). */
 export function alumnosActivos(e: EstadoApp) {
-  return e.alumnos.filter((a) => a.estado === "activo");
+  return activosDeVerdad(e);
 }
 
 export function mrr(e: EstadoApp): number {
@@ -242,7 +244,7 @@ export function valorMetrica(e: EstadoApp, metrica: MetricaClave, m: RangoMes): 
     case "inscriptos": return inscriptosMes(e, m).length;
     /* Las llamadas de venta hechas: las sesiones 1 a 1 con el mentor son un bono del contrato, no cuentan (lib/llamadas-de-venta.ts). */
     case "sesiones-hechas": return e.sesiones.filter((s) => s.estado === "hecha" && enMes(s.inicia, m) && !esSesionUnoAUno(s)).length;
-    case "alumnos-activos": return e.alumnos.filter((a) => a.estado === "activo").length;
+    case "alumnos-activos": return alumnosActivos(e).length;
     case "registrados-webinar": return e.webinars.filter((w) => enMes(w.fecha, m)).reduce((a, w) => a + w.registrados, 0);
     case "margen": {
       const i = ingresosMes(e, m), g = egresosMes(e, m);

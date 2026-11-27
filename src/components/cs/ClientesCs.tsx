@@ -15,10 +15,11 @@ import { useEscribirURL } from "@/lib/useParamsURL";
 import { configSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
 import {
   CONTRATOS, coincideCliente, EDITOR_CLIENTE, filasClientes, JUEGOS_CLIENTES, listasCs,
-  MOTOR_CLIENTES, ORDEN_CLIENTES, ORDEN_REPORTE, OPCIONES_ESTADO_ALUMNO, POR_QUE_NO_CLIENTE, resumenClientes,
+  MOTOR_CLIENTES, ORDEN_CLIENTES, ORDEN_REPORTE, POR_QUE_NO_CLIENTE, resumenClientes,
   valorEditableCliente, type ClaveCliente, type FilaCliente,
 } from "@/lib/clientes-cs";
 import { ETAPAS_DEL_ALUMNO, etapaDelFollowUp } from "@/lib/panel-servicio";
+import { SITUACION_ALUMNO, SITUACIONES_ALUMNO } from "@/lib/situacion-alumno";
 import { MenuMas } from "./MenuMas";
 import { ResumenCs } from "./ResumenCs";
 import { SI } from "@/lib/tabla-cs";
@@ -63,7 +64,7 @@ export function ClientesCs({ onNuevo }: { onNuevo: () => void }) {
   /* Los valores de cada lista, en el orden en que se cargaron: así se ordena y se filtra. */
   const ordenValores = useMemo(() => ({
     stack: listas.stacks, acceso: listas.accesos, followUp: listas.followUps, contrato: CONTRATOS, estadoContrato: listas.estadosContrato,
-    reporte: ORDEN_REPORTE as string[], estadoAlumno: OPCIONES_ESTADO_ALUMNO.map((o) => o.texto),
+    reporte: ORDEN_REPORTE as string[], estadoAlumno: SITUACIONES_ALUMNO.map((k) => SITUACION_ALUMNO[k].texto),
     programa: listas.programas,
   }), [listas]);
 
@@ -75,7 +76,8 @@ export function ClientesCs({ onNuevo }: { onNuevo: () => void }) {
   };
   const alternarAtajo = (clave: ClaveCliente, valores: string[]) =>
     escribir({ ...MOTOR_CLIENTES.filtroAURL(clave, atajo(clave, valores) ? null : { modo: "solo", valores }), [MOTOR_CLIENTES.paramPagina]: null });
-  const activos = filas.filter((f) => f.alumno.estado === "activo");
+  /* Los activos de verdad (lib/situacion-alumno.ts): los mismos que trae el atajo y que cuenta Alumnos. */
+  const activos = filas.filter((f) => f.situacionAlumno === "activo");
   const cuenta = (p: (f: FilaCliente) => boolean) => activos.filter(p).length;
   const atajos = (
     <div className="cs-atajos">
@@ -154,7 +156,8 @@ export function ClientesCs({ onNuevo }: { onNuevo: () => void }) {
     );
   };
 
-  const filaAcciones = puede ? (f: FilaCliente) => (f.alumno.estado === "activo" ? (
+  /* Los gestos del seguimiento, para quien está en él: los activos y las reservas (el primer contacto también se les hace). */
+  const filaAcciones = puede ? (f: FilaCliente) => (f.situacionAlumno === "activo" || f.situacionAlumno === "reserva" ? (
     <span className="row" style={{ gap: 2 }}>
       <IconButton etiqueta={`Lo contacté: el próximo toca en ${f.cadencia} días`} onClick={() => gestos.contacte(f)}><PhoneCall size={15} /></IconButton>
       <IconButton etiqueta="No contestó: se vuelve a probar en unos días" onClick={() => gestos.noContesto(f, cfg)}><PhoneMissed size={15} /></IconButton>

@@ -28,6 +28,7 @@ import {
 } from "@/lib/reportes";
 import { fechaLarga, num, pct } from "@/lib/format";
 import { alumnosConProgramaSinReconocer, formulariosDelAlumnoCon, programasSinReconocer } from "@/lib/reporte-formularios";
+import { indiceDeSituaciones } from "@/lib/situacion-alumno";
 import type { EstadoReporte, Reporte } from "@/lib/types";
 
 type Vista = "dashboard" | "tabla" | "alumnos" | "sin-alumno";
@@ -120,8 +121,10 @@ export default function Reportes() {
      sin completar el reporte, contando para atrás desde la última semana. */
   const enRiesgo = useMemo(() => {
     const rachas = rachasHasta(e, ultimaSemana);
+    const situacionDe = indiceDeSituaciones(e);
     return e.alumnos
-      .filter((a) => a.estado === "activo" && (rachas.get(a.id) ?? 0) >= 2)
+      /* Los activos de verdad (lib/situacion-alumno.ts): el que está en Outboarding, la reserva o la venta reembolsada no deben el reporte. */
+      .filter((a) => situacionDe(a) === "activo" && (rachas.get(a.id) ?? 0) >= 2)
       .map((a) => ({ alumno: a, semanas: rachas.get(a.id) ?? 0 }))
       .sort((x, y) => y.semanas - x.semanas || x.alumno.nombre.localeCompare(y.alumno.nombre, "es"));
   }, [e, ultimaSemana]);

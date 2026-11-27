@@ -8,7 +8,8 @@ import { etapaDelAlumno, etapasDeServicio } from "@/lib/alumnos";
 import { rachasAHoy } from "@/lib/reportes";
 import { money, relativo } from "@/lib/format";
 import type { Alumno } from "@/lib/types";
-import { ESTADO_ALUMNO, MoverA, PuntoEtapa, cuandoEmpezo } from "./comun";
+import { MoverA, PuntoEtapa, cuandoEmpezo } from "./comun";
+import { indiceDeSituaciones, SITUACION_ALUMNO } from "@/lib/situacion-alumno";
 
 /* ==================================================================
    El pipeline de servicio: una columna por etapa, una tarjeta por alumno.
@@ -26,6 +27,8 @@ export function PipelineServicio({ alumnos, onAbrir }: {
   onAbrir: (id: string) => void;
 }) {
   const e = useEstado();
+  /* En qué está cada uno de verdad (lib/situacion-alumno.ts): la misma regla que la lista de Alumnos. */
+  const situacionDe = useMemo(() => indiceDeSituaciones(e), [e]);
   const toast = useToast();
   const [arrastrando, setArrastrando] = useState<string | null>(null);
   const [sobre, setSobre] = useState<string | null>(null);
@@ -107,7 +110,8 @@ export function PipelineServicio({ alumnos, onAbrir }: {
                 <p className="column-empty">Nadie en esta etapa</p>
               ) : (
                 items.map((a) => {
-                  const sinReportar = a.estado === "activo" ? rachas.get(a.id) ?? 0 : 0;
+                  const situacion = situacionDe(a);
+                  const sinReportar = situacion === "activo" ? rachas.get(a.id) ?? 0 : 0;
                   return (
                     <article
                       key={a.id}
@@ -146,9 +150,9 @@ export function PipelineServicio({ alumnos, onAbrir }: {
                       <span className="hk-deal__row">
                         <span className="truncate">{cuandoEmpezo(relativo(a.inicio))}</span>
                       </span>
-                      {(a.estado !== "activo" || sinReportar >= 2) && (
+                      {(situacion !== "activo" || sinReportar >= 2) && (
                         <span className="alu-card__marcas">
-                          {a.estado !== "activo" && <Tag>{ESTADO_ALUMNO[a.estado].texto}</Tag>}
+                          {situacion !== "activo" && <Tag>{SITUACION_ALUMNO[situacion].texto}</Tag>}
                           {sinReportar >= 2 && (
                             <span className={`alu-card__alerta${sinReportar >= 3 ? " alu-card__alerta--mal" : ""}`}>
                               {sinReportar} semanas sin reportar

@@ -1,6 +1,6 @@
 import type { EstadoApp, ID } from "./types";
 import { DIAS_PARA_CERRAR_RESELL, DURACION_POR_DEFECTO, esDeTestimonio, estadosDeResell, faltaDeLaLlamada, faltaDelTestimonio, familiasParaFiltrar, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, opcionesDePrograma, resellAbierto, sumarMeses, testimonioNoSeGraba } from "./clientes-cs";
-import { contactosDeIngreso, DIA_CONTACTO_SEMANAL, DIAS_DEL_INGRESO, diasEntre, formatoDia, sumarDias, terminoElServicio } from "./seguimiento";
+import { contactosDeIngreso, DIA_CONTACTO_SEMANAL, DIAS_DEL_INGRESO, diasEntre, formatoDia, sumarDias } from "./seguimiento";
 import { diasDe } from "./pausas";
 import { alumnoDeVenta, ventaPendienteDe } from "./alumnos";
 import { bajaResuelta, pedidosDeBaja, queFaltaDeLaBaja } from "./bajas-falta-de-pago";
@@ -92,7 +92,7 @@ export interface PanelDeServicio {
   hoy: string;
   /* Alumnos en servicio (activos y con el contrato vigente o recién terminado): la base de todo. */
   activos: number;
-  /* Figuran como activos pero su Follow Up ya dice «outboarding» (como en el Airtable de Lili): terminaron el programa y no entran al panel. «Caso de éxito» no cuenta: puede seguir con el contrato vigente. */
+  /* El campo dice activo pero ya cerraron: su Follow Up dice «outboarding» (como en el Airtable de Lili) o su venta se canceló o se reembolsó. Cuentan como bajas (lib/situacion-alumno.ts) y no entran al panel. «Caso de éxito» no cuenta: puede seguir con el contrato vigente. */
   enOutboarding: number;
   /* Figuran como activos, no están en outboarding y su contrato terminó hace más de `DIAS_DE_GRACIA` días: no entran al panel; Lili los actualiza (Follow Up, egreso o estado). */
   desactualizados: number;
@@ -211,10 +211,11 @@ export interface ContratoPendiente {
 
 export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Date(), pendientes: readonly ContratoPendiente[] = []): PanelDeServicio {
   const clientes = filasClientes(e, hoy);
-  const figuranActivos = clientes.filter((c) => c.alumno.estado === "activo");
-  /* En la app siguen «activos» pero en el Follow Up de Lili ya cerraron: el estado se deja como está y lo actualiza ella. */
-  const enOutboarding = figuranActivos.filter((c) => terminoElServicio(c.followUp)).length;
-  const activosTodos = figuranActivos.filter((c) => !terminoElServicio(c.followUp));
+  /* Quiénes siguen en el programa sale de la regla única (lib/situacion-alumno.ts): los activos y las reservas (que reciben la
+     bienvenida). El campo dice «activo» en los que ya cerraron (Follow Up en Outboarding, o la venta se canceló o se reembolsó): en toda
+     la app cuentan como bajas; acá se cuentan aparte para decirlo. El campo no se toca. */
+  const enOutboarding = clientes.filter((c) => c.alumno.estado === "activo" && c.situacionAlumno === "baja").length;
+  const activosTodos = clientes.filter((c) => c.situacionAlumno === "activo" || c.situacionAlumno === "reserva");
   /* Los que figuran activos pero terminaron hace mucho (casi todos, histórico cargado del Airtable) no son trabajo de hoy. */
   const vencidoHaceMucho = (c: (typeof activosTodos)[number]) => {
     /* Sin fecha de fin ni duración se cuenta lo normal del programa (3 meses): así el que empezó hace un año y quedó «activo» por no tener el dato no llena el panel. */
@@ -282,8 +283,8 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
 
   /* ---------- Esperan la venta del closer (lib/alumnos.ts → ventaPendienteDe) ----------
      Lili los dio de alta porque compraron y el closer todavía no cargó la venta. Se van de la lista solos cuando la carga. */
-  const esperanVenta = figuranActivos.flatMap((c): ItemServicio[] => {
-    const v = ventaPendienteDe(c.alumno);
+  const esperanVenta = clientes.flatMap((c): ItemServicio[] => {
+    const v = c.alumno.estado === "activo" ? ventaPendienteDe(c.alumno) : null;
     if (!v) return [];
     const d = diasEntre(diaDeNegocio(v.desde), hoy);
     return [{

@@ -27,6 +27,7 @@ import { BloqueServicio, FilaServicio } from "./FilaServicio";
 import { FormSesionUnoAUno } from "./FormSesionUnoAUno";
 import { PausasAlumno } from "./PausasAlumno";
 import { BienvenidaAlumno } from "@/components/contratos/BienvenidaAlumno";
+import { esVentaDeBaja } from "@/lib/contratos-de-baja";
 import { AvisoAlumnoRepetido } from "./AvisoAlumnoRepetido";
 import { NotaDeCharla } from "./NotaDeCharla";
 import { SimulacrosAlumno } from "@/components/simulacros/Simulacros";
@@ -283,7 +284,9 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
     : f.situacion === "fuera"
       ? (alumno.estado !== "activo"
         ? `Está ${f.estadoAlumno.toLowerCase()}: no entra al seguimiento.`
-        : `Su Follow Up dice «${f.followUp}»: terminó el programa y no entra en «A contactar hoy». Si seguís en contacto, cambiá el Follow Up.`)
+        : f.venta && esVentaDeBaja(f.venta.estado)
+          ? `Su venta está ${f.venta.estado}: cuenta como baja y no entra en «A contactar hoy». Si sigue en el programa, que Finanzas reactive la venta.`
+          : `Su Follow Up dice «${f.followUp}»: terminó el programa, cuenta como baja y no entra en «A contactar hoy». Si seguís en contacto, cambiá el Follow Up.`)
       : null;
   /* «Contar desde» (Ajustes): lo de antes de que arrancara la app se cuenta desde ese día, no desde el último contacto. */
   const desdeLaApp = cfg.contarDesde && f.ultimoContacto && f.ultimoContacto < cfg.contarDesde && f.proximo === sumarDias(cfg.contarDesde, f.cadencia)

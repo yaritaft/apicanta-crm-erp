@@ -1,6 +1,8 @@
 import { claveEmail } from "./contactos";
 import { diaDeNegocio } from "./dia-negocio";
 import { indiceDeReservas } from "./reservas";
+import { esVentaDeBaja } from "./contratos-de-baja";
+import { situacionDelAlumno } from "./situacion-alumno";
 import type { Alumno, ConfigSeguimiento, Contacto, EstadoApp, ID, ListasCs, SeguimientoAlumno } from "./types";
 
 /* ==================================================================
@@ -299,21 +301,16 @@ export function indiceDeContactos(e: Pick<EstadoApp, "contactos" | "leads">) {
   };
 }
 
-/** Lili ya lo pasó a «outboarding» en el Follow Up (como en su Airtable): terminó el programa, aunque en la app siga «activo». Se lo
- *  trata como fuera del servicio hasta que ella lo actualice: no se toca el estado del alumno.
- *
- *  «Caso de éxito» NO es terminar: un caso de éxito puede seguir con el contrato vigente y entonces hay que seguir contactándolo
- *  (Lili, 10/11: «que no se me anule el próximo contacto»). Antes contaba igual que outboarding: al marcarlo, el alumno salía de «A
- *  contactar hoy» y del servicio. Cuando su contrato termina, sale como cualquier otro (por la fecha de egreso, panel-servicio.ts). */
-export function terminoElServicio(followUp: string | null | undefined): boolean {
-  const f = (followUp ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  return f.startsWith("outboarding") || f.startsWith("outbording");
-}
+/* Quién terminó el servicio (Follow Up en Outboarding) y en qué está cada alumno: la regla única vive en lib/situacion-alumno.ts. */
+export { terminoElServicio } from "./situacion-alumno";
 
 /** La situación de un alumno según cuándo le toca el próximo contacto. */
-export function situacionDe(estado: Alumno["estado"], dejoDeContestar: boolean, atraso: number, followUp?: string | null, enReserva = false): SituacionSeguimiento {
-  if (estado !== "activo" || terminoElServicio(followUp)) return "fuera";
-  if (enReserva) return "reserva";
+export function situacionDe(estado: Alumno["estado"], dejoDeContestar: boolean, atraso: number, followUp?: string | null, enReserva = false, ventaDeBaja = false): SituacionSeguimiento {
+  /* La misma regla que cuenta los activos en toda la app (lib/situacion-alumno.ts): la reserva todavía no arrancó; outboarding, una
+     venta cancelada o reembolsada y lo marcado a mano (pausado, egresado, baja) quedan fuera del seguimiento. */
+  const s = situacionDelAlumno({ estado, followUp, enReserva, ventaDeBaja });
+  if (s === "reserva") return "reserva";
+  if (s !== "activo") return "fuera";
   if (dejoDeContestar) return "no-contesta";
   return atraso > 0 ? "vencido" : atraso === 0 ? "hoy" : "al-dia";
 }
@@ -324,6 +321,7 @@ export function filasDeSeguimiento(e: EstadoApp, hoy: string): FilaSeguimiento[]
   const contactoDe = indiceDeContactos(e);
   const seg = new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const));
   const esReserva = indiceDeReservas(e.cuotas ?? []);
+  const ventasDeBaja = new Set((e.ventas ?? []).filter((v) => esVentaDeBaja(v.estado)).map((v) => v.id));
   return e.alumnos.map((a): FilaSeguimiento => {
     const s = seg.get(a.id) ?? null;
     const base = s ?? seguimientoVacio(a.id, cfg);
@@ -340,7 +338,7 @@ export function filasDeSeguimiento(e: EstadoApp, hoy: string): FilaSeguimiento[]
       ultimoContacto: base.ultimoContacto,
       proximoContacto: proximo,
       atraso,
-      situacion: situacionDe(a.estado, base.dejoDeContestar, atraso, base.followUp, esReserva(a, base.followUp)),
+      situacion: situacionDe(a.estado, base.dejoDeContestar, atraso, base.followUp, esReserva(a, base.followUp), Boolean(a.ventaId && ventasDeBaja.has(a.ventaId))),
       intentosSinRespuesta: base.intentosSinRespuesta,
       sugerirDejoDeContestar: !base.dejoDeContestar && base.intentosSinRespuesta >= cfg.intentosHastaDejar,
       dejoDeContestar: base.dejoDeContestar,

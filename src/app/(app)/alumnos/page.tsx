@@ -22,7 +22,7 @@ import { ResellsCs } from "@/components/cs/ResellsCs";
 import { RevisionCvCs } from "@/components/cs/RevisionCvCs";
 import { SesionesZoomGeneral } from "@/components/alumnos/SesionesZoomGeneral";
 import { TestimoniosCs } from "@/components/cs/TestimoniosCs";
-import { ESTADO_ALUMNO, ESTADOS_ALUMNO } from "@/components/alumnos/comun";
+import { indiceDeSituaciones, SITUACION_ALUMNO, SITUACIONES_ALUMNO, type SituacionAlumno } from "@/lib/situacion-alumno";
 import { acciones, useEstado } from "@/lib/store";
 import { useAbrirDesdeURL } from "@/lib/useQuery";
 import { CopiarLink } from "@/components/ui/Filtros";
@@ -34,7 +34,7 @@ import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { rachasAHoy } from "@/lib/reportes";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { num } from "@/lib/format";
-import type { Alumno, EstadoAlumno } from "@/lib/types";
+import type { Alumno } from "@/lib/types";
 
 type Vista = "lista" | "pipeline" | "clientes" | "hoy" | "testimonios" | "resells" | "cvs" | "zoom";
 const VISTAS: Vista[] = ["lista", "pipeline", "clientes", "hoy", "testimonios", "resells", "cvs", "zoom"];
@@ -47,7 +47,8 @@ const VISTAS: Vista[] = ["lista", "pipeline", "clientes", "hoy", "testimonios", 
      resells (la agenda), cvs (la revisión de CVs de Aldana) y zoom (la asistencia a las clases). No va en ?vista, que es de la ficha de una persona:
      abrir una desde el pipeline pasaba el fondo a la lista. Un link viejo con
      ?vista=pipeline o ?seccion=seguimiento se sigue entendiendo.
-   - estado: activo, pausado, egresado o baja
+   - estado: activo, reserva, pausado, graduado o baja: la situación de verdad (lib/situacion-alumno.ts), no el campo crudo. Liliana,
+     27/11: «Activos» traía 701 con los de Outboarding y las reservas adentro; un link viejo con ?estado=activo ahora trae los de verdad.
    - programa: el programa contratado (Hackear IT, Hackear AI, Downsell…; lib/clientes-cs.ts, familiaDePrograma)
    - q: nombre, correo, cohorte, plan o país
    - orden: la columna, con "-" adelante si va de mayor a menor. Sin orden,
@@ -75,8 +76,8 @@ export default function Alumnos() {
     if (enURL.vista === "pipeline") setEnURL({ seccion: "pipeline", vista: null });
   }, [enURL.vista, setEnURL]);
   const [q, setQ] = useBusquedaURL("q", ["pag"]);
-  const estado: "todos" | EstadoAlumno = ESTADOS_ALUMNO.includes(enURL.estado as EstadoAlumno) ? (enURL.estado as EstadoAlumno) : "todos";
-  const setEstado = (v: "todos" | EstadoAlumno) => setEnURL({ estado: v, pag: null });
+  const estado: "todos" | SituacionAlumno = SITUACIONES_ALUMNO.includes(enURL.estado as SituacionAlumno) ? (enURL.estado as SituacionAlumno) : "todos";
+  const setEstado = (v: "todos" | SituacionAlumno) => setEnURL({ estado: v, pag: null });
   const programa = enURL.programa;
   const setPrograma = (v: string) => setEnURL({ programa: v || null, pag: null, etapa: null });
   const orden = ordenDeURL(enURL.orden, COLUMNAS_QUE_ORDENAN, SIN_ORDEN);
@@ -97,19 +98,21 @@ export default function Alumnos() {
   /* La misma cuenta que Reportes: una semana que se debía y no tiene reporte
      también es una semana sin reportar. */
   const rachas = useMemo(() => rachasAHoy(e), [e]);
-  const sinReportar = (a: Alumno) => (a.estado === "activo" ? rachas.get(a.id) ?? 0 : 0);
+  /* En qué está cada uno de verdad (activo, reserva, baja…): la misma regla que el menú, el Dashboard y Clientes. */
+  const situacionDe = useMemo(() => indiceDeSituaciones(e), [e]);
+  const sinReportar = (a: Alumno) => (situacionDe(a) === "activo" ? rachas.get(a.id) ?? 0 : 0);
 
   /* Los programas del alumno con su nombre de siempre: el de su ficha de Customer Success (que ya mira la cartera) o, sin él, su plan. */
   const programasDe = (a: Alumno) => familiasParaFiltrar(carteraDe.get(a.id)?.programa || a.plan);
   const opcionesPrograma = useMemo(
-    () => opcionesDePrograma(e.alumnos.filter((a) => estado === "todos" || a.estado === estado).map((a) => carteraDe.get(a.id)?.programa || a.plan)),
-    [e.alumnos, estado, carteraDe],
+    () => opcionesDePrograma(e.alumnos.filter((a) => estado === "todos" || situacionDe(a) === estado).map((a) => carteraDe.get(a.id)?.programa || a.plan)),
+    [e.alumnos, estado, carteraDe, situacionDe],
   );
   const filtrados = useMemo(() => {
     const t = normal(q.trim());
     return e.alumnos
       .filter((a) => {
-        if (estado !== "todos" && a.estado !== estado) return false;
+        if (estado !== "todos" && situacionDe(a) !== estado) return false;
         if (programa && !programasDe(a).includes(programa)) return false;
         if (!t) return true;
         return [a.nombre, a.email, a.cohorte, a.plan, a.pais].some((x) => x && normal(x).includes(t));
@@ -118,7 +121,13 @@ export default function Alumnos() {
          recién llegados son los que hay que atender primero. */
       .sort((x, y) => +new Date(y.inicio) - +new Date(x.inicio));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e.alumnos, q, estado, programa, carteraDe]);
+  }, [e.alumnos, q, estado, programa, carteraDe, situacionDe]);
+
+  const porSituacion = useMemo(() => {
+    const n: Record<SituacionAlumno, number> = { activo: 0, reserva: 0, pausado: 0, graduado: 0, baja: 0 };
+    for (const a of e.alumnos) n[situacionDe(a)] += 1;
+    return n;
+  }, [e.alumnos, situacionDe]);
 
   const hayFiltros = q.trim() !== "" || estado !== "todos" || programa !== "";
   const limpiarFiltros = () => { setQ(""); setEnURL({ estado: null, programa: null, pag: null }, { q: null }); };
@@ -160,7 +169,7 @@ export default function Alumnos() {
         return (
           <span className="row" style={{ gap: 6 }}>
             {f?.followUp ? <span className={`ps-follow ps-follow--${f.etapa}`}>{f.followUp}</span> : <span className="t-subtle">—</span>}
-            {a.estado !== "activo" && <Tag>{ESTADO_ALUMNO[a.estado].texto}</Tag>}
+            {situacionDe(a) !== "activo" && <Tag>{SITUACION_ALUMNO[situacionDe(a)].texto}</Tag>}
           </span>
         );
       },
@@ -172,7 +181,7 @@ export default function Alumnos() {
     {
       clave: "reporte", titulo: "Reportes", orden: (a) => sinReportar(a),
       celda: (a) => {
-        if (a.estado !== "activo") return <span className="t-sm t-subtle">—</span>;
+        if (situacionDe(a) !== "activo") return <span className="t-sm t-subtle">—</span>;
         const s = sinReportar(a);
         /* Estar al día es lo normal: sólo se marca el que se atrasó. */
         return s === 0
@@ -189,12 +198,19 @@ export default function Alumnos() {
         placeholder="Buscá por nombre, cohorte o plan…" aria-label="Buscar alumnos"
       />
       <FiltroPrograma valor={programa} onCambiar={setPrograma} opciones={opcionesPrograma} />
-      <Chip activo={estado === "todos"} onClick={() => setEstado("todos")} count={e.alumnos.length}>Todos</Chip>
-      {ESTADOS_ALUMNO.map((k) => {
-        const n = e.alumnos.filter((a) => a.estado === k).length;
-        return n > 0 || estado === k ? <Chip key={k} activo={estado === k} onClick={() => setEstado(k)} count={n}>{ESTADO_ALUMNO[k].texto}</Chip> : null;
-      })}
     </>
+  );
+  /* En qué está cada uno, en su propia fila (como los atajos de Clientes): con Reservas y Bajas a la vista ya no entran al lado del buscador. */
+  const filtrosSituacion = (abajo: string | number) => (
+    <div className="row" role="group" aria-label="Filtrar por situación" style={{ gap: 6, flexWrap: "wrap", marginBottom: abajo }}>
+      <Chip activo={estado === "todos"} onClick={() => setEstado("todos")} count={e.alumnos.length}>Todos</Chip>
+      {SITUACIONES_ALUMNO.map((k) => {
+        const n = porSituacion[k];
+        return n > 0 || estado === k
+          ? <Chip key={k} activo={estado === k} onClick={() => setEstado(k)} count={n} title={SITUACION_ALUMNO[k].ayuda}>{SITUACION_ALUMNO[k].plural}</Chip>
+          : null;
+      })}
+    </div>
   );
 
   const vacio = (
@@ -240,7 +256,8 @@ export default function Alumnos() {
       {vista === "lista" && (
         <Card className="cs-t" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "var(--space-4) var(--space-4) 0" }}>
-            <div className="toolbar">{filtrosBarra}{botones()}</div>
+            <div className="toolbar" style={{ marginBottom: "var(--space-3)" }}>{filtrosBarra}{botones()}</div>
+            {filtrosSituacion("var(--space-4)")}
           </div>
           <DataTable
             filas={filtrados} columnas={columnas} alto={620} porPagina={50}
@@ -289,6 +306,7 @@ export default function Alumnos() {
               </>,
             )}
           </div>
+          {filtrosSituacion(0)}
           {filtrados.length === 0
             ? <Card>{vacio}</Card>
             : <PipelineServicio alumnos={filtrados} onAbrir={(id) => abrirFicha(id, "servicio")} />}

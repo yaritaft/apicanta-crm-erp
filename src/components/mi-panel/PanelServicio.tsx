@@ -416,8 +416,8 @@ export function PanelServicio({ miembro, viendoOtro }: { miembro: MiembroEquipo;
         </Link>
         {panel.enOutboarding > 0 && (
           <button type="button" className="ps-dato" onClick={() => { cambiar({ lista: null, etapa: "outboarding", base: "todos", fu: null }); irACartera(); }}
-            title="Su Follow Up dice outboarding o caso de éxito: no entran a «Para hoy». Su estado de alumno no se tocó.">
-            <b>{panel.enOutboarding}</b> figuran activos y ya cerraron el programa
+            title="Su Follow Up dice Outboarding, o su venta se canceló o se reembolsó: cuentan como bajas en toda la app y no entran a «Para hoy».">
+            <b>{panel.enOutboarding}</b> ya cerraron el programa: cuentan como bajas
           </button>
         )}
         {panel.desactualizados > 0 && (

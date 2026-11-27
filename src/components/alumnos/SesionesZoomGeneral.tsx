@@ -9,7 +9,6 @@ import { Avance, Segmentado } from "@/components/finanzas/visual/visual";
 import "@/components/cs/cs.css";
 import { useToast } from "@/components/ui/Toast";
 import { useAbrirFicha } from "@/components/ficha/abrir";
-import { ESTADO_ALUMNO } from "@/components/alumnos/comun";
 import { cabeceras } from "@/components/webinars/useYoutube";
 import { useEstado } from "@/lib/store";
 import { nube } from "@/lib/supabase";
@@ -17,7 +16,7 @@ import { num } from "@/lib/format";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { programaDeProducto, programasDe } from "@/lib/programas";
 import { resumenGeneralZoom, type AsistenciaZoom, type ClaseZoom, type FilaAlumnoZoom } from "@/lib/zoom-asistencia";
-import type { EstadoAlumno } from "@/lib/types";
+import { indiceDeSituaciones, SITUACION_ALUMNO, type SituacionAlumno } from "@/lib/situacion-alumno";
 
 /* ==================================================================
    Alumnos → Sesiones Zoom (Juan Cruz, 23/10): lo general de las clases de
@@ -80,11 +79,13 @@ export function SesionesZoomGeneral() {
   const g = useMemo(() => {
     if (!datos || datos === "sin-tablas") return null;
     const productoDe = new Map(e.ventas.map((v) => [v.id, v.productoId] as const));
+    /* La situación de verdad (lib/situacion-alumno.ts): «activos» acá son los mismos que en la lista de Alumnos. */
+    const situacionDe = indiceDeSituaciones(e);
     return resumenGeneralZoom(datos.clases, datos.asistencias, e.alumnos.filter((a) => a.email).map((a) => ({
-      id: a.id, nombre: a.nombre, email: a.email, estado: a.estado, inicio: a.inicio,
+      id: a.id, nombre: a.nombre, email: a.email, estado: situacionDe(a), inicio: a.inicio,
       reuniones: programaDeProducto(programas, a.ventaId ? productoDe.get(a.ventaId) : undefined)?.zoom,
     })));
-  }, [datos, e.alumnos, e.ventas, programas]);
+  }, [datos, e, programas]);
 
   const normal = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const filas = useMemo(() => {
@@ -112,7 +113,7 @@ export function SesionesZoomGeneral() {
 
   const columnasAlumnos: Columna<FilaAlumnoZoom & { id: string }>[] = [
     { clave: "nombre", titulo: "Alumno", tipo: "primary", celda: (f) => f.nombre, orden: (f) => f.nombre.toLowerCase() },
-    { clave: "estado", titulo: "Estado", celda: (f) => { const s = ESTADO_ALUMNO[f.estado as EstadoAlumno]; return s ? <Badge variante={s.variante}>{s.texto}</Badge> : f.estado; }, orden: (f) => f.estado },
+    { clave: "estado", titulo: "Estado", celda: (f) => { const s = SITUACION_ALUMNO[f.estado as SituacionAlumno]; return s ? <Badge variante={s.variante}>{s.texto}</Badge> : f.estado; }, orden: (f) => f.estado },
     { clave: "clases", titulo: "Clases", tipo: "num", celda: (f) => `${f.asistio} de ${f.deClases}`, orden: (f) => f.asistio },
     {
       clave: "pct", titulo: "Asistencia", tipo: "num", orden: (f) => f.pct,

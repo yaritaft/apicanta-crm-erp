@@ -21,6 +21,7 @@ import { diaDeNegocio } from "./dia-negocio";
 import type { QueDesglosar } from "@/components/panel/Desglose";
 import { esSoloReserva } from "./angelo";
 import { esSesionUnoAUno } from "./llamadas-de-venta";
+import { alumnosActivos } from "./situacion-alumno";
 
 /* ==================================================================
    Dashboard & KPIs: la tabla maestra del negocio.
@@ -829,10 +830,12 @@ export function catalogo(e: EstadoApp): DefKpi[] {
 
   /* ================= Servicio ================= */
 
-  const activos = (c: Contexto) => c.e.alumnos.filter((a) => a.estado === "activo");
+  /* Los activos de verdad (lib/situacion-alumno.ts): sin reservas, sin Outboarding y sin ventas canceladas o reembolsadas. El mismo
+     número que el filtro «Activos» de Alumnos y el del menú (Liliana, 27/11: acá contaba el campo crudo y daba 701). */
+  const activos = (c: Contexto) => alumnosActivos(c.e);
   add("servicio", "Alumnos", [
     { id: "s_activos", etiqueta: "Alumnos activos", formato: "cantidad", mejor: "sube", foto: true, href: "/alumnos",
-      ayuda: "Alumnos con estado activo.", valor: (c) => g(c, () => activos(c).length) },
+      ayuda: "Alumnos que cursan hoy: sin las reservas (todavía no arrancaron), sin los que están en Outboarding y sin las ventas canceladas o reembolsadas.", valor: (c) => g(c, () => activos(c).length) },
     { id: "s_nuevos", etiqueta: "Alumnos nuevos", formato: "cantidad", mejor: "sube", href: "/alumnos",
       ayuda: "Alumnos que empezaron en el período.", valor: (c) => g(c, () => c.e.alumnos.filter((a) => c.enDias(a.inicio)).length) },
     { id: "s_mrr", etiqueta: "MRR", formato: "moneda", mejor: "sube", foto: true, href: "/alumnos", desglose: { tipo: "mrr" },

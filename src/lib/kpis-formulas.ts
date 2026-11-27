@@ -387,9 +387,9 @@ const EXPLICACIONES: Record<string, ExplicacionKpi> = {
   },
 
   /* ===== Servicio ===== */
-  s_activos: { formula: "Alumnos que hoy tienen el estado activo" },
+  s_activos: { formula: "Alumnos que cursan hoy (lib/situacion-alumno.ts): sin las reservas, sin los que tienen el Follow Up en Outboarding y sin las ventas canceladas o reembolsadas" },
   s_nuevos: { formula: "Alumnos cuya fecha de inicio cae dentro del período" },
-  s_mrr: { formula: "Suma de la cuota mensual de cada alumno activo" },
+  s_mrr: { formula: "Suma de la cuota mensual de cada alumno activo (los que cursan hoy)" },
   s_progreso: { formula: "Promedio del progreso de los alumnos activos, sobre el total del programa" },
   s_sinreportar: { formula: "Alumnos activos que llevan dos semanas seguidas o más sin mandar su reporte semanal" },
 };

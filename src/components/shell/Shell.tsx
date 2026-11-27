@@ -27,6 +27,7 @@ import { elegirVerComo, useAcceso, useVerComo } from "@/lib/acceso";
 import { areaDeRuta, esCuentaDeCloser, nivelDeRuta, nivelEn, queEsTabla } from "@/lib/permisos";
 import { diaDeNegocio, enRangoDeDias } from "@/lib/dia-negocio";
 import { aContactarHoy, filasDeSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
+import { alumnosActivos } from "@/lib/situacion-alumno";
 import { useRecordarVistas } from "@/lib/recordarVistas";
 import { Avatar, Button, Card, Empty, IconButton } from "@/components/ui/ui";
 import { useToast } from "@/components/ui/Toast";
@@ -258,9 +259,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
     [acceso, alumnosCS, seguimientosCS, contactosCS, leadsCS, estado.ajustes.seguimiento],
   );
 
+  const { cuotas: cuotasCS, ventas: ventasCS } = estado;
+  const activosDeVerdad = useMemo(
+    () => alumnosActivos({ alumnos: alumnosCS, seguimientos: seguimientosCS, cuotas: cuotasCS, ventas: ventasCS }).length,
+    [alumnosCS, seguimientosCS, cuotasCS, ventasCS],
+  );
+
   const contadores: Record<string, number> = {
     "/leads": estado.leads.length,
-    "/alumnos": estado.alumnos.filter((a) => a.estado === "activo").length,
+    /* Los activos de verdad (lib/situacion-alumno.ts): el mismo número que el filtro «Activos» de la lista. */
+    "/alumnos": activosDeVerdad,
     "/alumnos?seccion=hoy": aContactar,
     "/agenda": estado.sesiones.filter((s) => s.estado === "agendada" && new Date(s.inicia) >= new Date()).length,
     "/mis-llamadas": llamadasDeHoy,

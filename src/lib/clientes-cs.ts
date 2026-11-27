@@ -11,6 +11,8 @@ import {
 import { crearMotor, numeroComoValor, siNo, SI, NO, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
 import { finConPausas, inicioReal, pausaEnCurso, pausasDelCiclo, pausasNormales } from "./pausas";
 import { followUpDeReserva, reservaSinCompletar } from "./reservas";
+import { esVentaDeBaja } from "./contratos-de-baja";
+import { SITUACION_ALUMNO, situacionDelAlumno, terminoElServicio, type SituacionAlumno } from "./situacion-alumno";
 import { alumnoDeResell, indiceDeAlumnos } from "./resell-alumno";
 import type {
   Alumno, ConfigSeguimiento, Contacto, Cuota, EstadoApp, ID, ListasCs, PausaServicio, Resell, SeguimientoAlumno, SesionUnoAUno, Testimonio, Venta,
@@ -476,6 +478,8 @@ export interface FilaCliente {
   linkedin: boolean;
   responsableCv: string;
   estadoAlumno: string;
+  /* En qué está de verdad (lib/situacion-alumno.ts): la regla única con la que se cuentan los activos en toda la app. */
+  situacionAlumno: SituacionAlumno;
   etapa: string;
   /* Cómo viene su testimonio: el estado del video, o dónde va la llamada, o «Sin testimonio». */
   testimonio: string;
@@ -577,6 +581,8 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
     const proximo = proximoConPausas(proximoDe(seg, a, cfg.contarDesde), seg.pausas ?? [], hoy);
     const atraso = diasEntre(proximo, hoy);
     const testimonio = testimonioDe.get(a.id);
+    const ventaDeBaja = Boolean(venta && esVentaDeBaja(venta.estado));
+    const situacionAlumno = situacionDelAlumno({ estado: a.estado, followUp: seg.followUp, enReserva, ventaDeBaja });
 
     return {
       id: a.id, alumno: a, seg, tieneSeg: Boolean(guardado), contacto, venta,
@@ -597,10 +603,12 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
       closer: closerVenta || seg.closerNombre, closerDeVenta: closerVenta !== "",
       reporte: reporteDeCliente(a, seg, conReportes.has(a.id), rachas.get(a.id)),
       ultimoContacto: seg.ultimoContacto, proximo, atraso,
-      situacion: situacionDe(a.estado, seg.dejoDeContestar, atraso, seg.followUp, enReserva), enReserva,
+      situacion: situacionDe(a.estado, seg.dejoDeContestar, atraso, seg.followUp, enReserva, ventaDeBaja), enReserva,
       cadencia: seg.cadenciaDias, intentos: seg.intentosSinRespuesta,
       cv: seg.cvCorregido, linkedin: seg.linkedinCorregido, responsableCv: seg.responsableCv,
-      estadoAlumno: enReserva && a.estado === "activo" ? "Reserva" : ESTADO_ALUMNO_TEXTO[a.estado] ?? a.estado,
+      /* Lo que se ve y se filtra es la situación de verdad (Outboarding o la venta de baja dicen «Baja», la reserva dice «Reserva»):
+         así el atajo «Activos» trae lo mismo que cuenta. Elegir un estado en la celda sigue escribiendo el campo del alumno. */
+      estadoAlumno: SITUACION_ALUMNO[situacionAlumno].texto, situacionAlumno,
       etapa: (a.etapaServicioId ? etapas.get(a.etapaServicioId) : undefined) ?? primeraEtapa,
       testimonio: testimonio ? testimonio.estadoVideo || testimonio.followUp || SIN_TESTIMONIO : SIN_TESTIMONIO,
     };
@@ -779,7 +787,15 @@ export function escrituraCliente(f: FilaCliente, clave: ClaveCliente, valor: str
     case "pais": return { tipo: "alumno", cambios: { pais: v || undefined }, detalle: `País: ${v || "vacío"}.` };
     case "estadoAlumno": {
       const o = OPCIONES_ESTADO_ALUMNO.find((x) => x.texto === v || x.valor === v);
-      return o ? { tipo: "alumno", cambios: { estado: o.valor }, detalle: `Estado del alumno: ${o.texto}.` } : { tipo: "no", motivo: "Elegí uno de los estados." };
+      if (!o) return { tipo: "no", motivo: "Elegí uno de los estados." };
+      /* «Activo» no alcanza si lo que lo saca es otra cosa (lib/situacion-alumno.ts): se dice qué hay que cambiar en vez de guardar algo
+         que no se va a ver. */
+      if (o.valor === "activo" && f.situacionAlumno !== "activo") {
+        if (f.venta && esVentaDeBaja(f.venta.estado)) return { tipo: "no", motivo: `Su venta está ${f.venta.estado}: para que vuelva a contar como activo, Finanzas tiene que reactivarla.` };
+        if (terminoElServicio(f.followUp)) return { tipo: "no", motivo: `Su Follow Up dice «${f.followUp}»: para que vuelva a contar como activo, cambiá el Follow Up.` };
+        if (f.situacionAlumno === "reserva" && f.alumno.estado === "activo") return { tipo: "no", motivo: "Es una reserva: pasa a activo solo cuando paga lo que falta (o cuando le sacás «Reserva» del Follow Up)." };
+      }
+      return { tipo: "alumno", cambios: { estado: o.valor }, detalle: `Estado del alumno: ${o.texto}.` };
     }
     case "numero": {
       /* No se vacía: cada alumno tiene el suyo («Numerar» se lo da a los que todavía no tienen). */
@@ -1187,7 +1203,8 @@ export interface ResumenClientes {
 }
 
 export function resumenClientes(filas: readonly FilaCliente[]): ResumenClientes {
-  const activas = filas.filter((f) => f.alumno.estado === "activo");
+  /* Los activos de verdad (lib/situacion-alumno.ts): los mismos que trae el atajo «Activos» y que cuenta Alumnos. */
+  const activas = filas.filter((f) => f.situacionAlumno === "activo");
   return {
     activos: activas.length,
     vencidos: activas.filter((f) => f.situacion === "vencido").length,
