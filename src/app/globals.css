@@ -1244,6 +1244,13 @@ button.cuadro-com__persona:hover { color: var(--brand); text-decoration: underli
 .cobro-linea .hk-input { height: 38px; font-size: 14px; }
 /* Cada cobro: una línea con medio, monto y fecha, y debajo cómo se prueba
    (conciliado contra la pasarela, o con su comprobante). */
+/* El pago está en otra pasarela que la elegida (lib/pasarela-equivocada.ts). */
+.aviso-pasarela {
+  display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3); border: 1px solid var(--warning);
+  border-radius: var(--radius-md); background: var(--warning-soft); color: var(--ink); font-size: 13px; line-height: 20px;
+}
+.aviso-pasarela > svg { flex: none; margin-top: 2px; color: var(--warning); }
+.aviso-pasarela__texto { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); min-width: 0; overflow-wrap: anywhere; }
 .cobro-item { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px dashed var(--border); }
 .cobro-item:last-of-type { border-bottom: 0; padding-bottom: 0; }
 .cobro-prueba { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2); }

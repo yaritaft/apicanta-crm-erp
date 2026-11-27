@@ -17,7 +17,7 @@ import { resumenDePases } from "@/lib/traspasos";
 import { useChequeos } from "@/lib/chequeos-finanzas";
 import { diasDelEod } from "@/lib/eod-finanzas";
 import {
-  acciones, alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, reiniciarCarga, tablaSinCrear, useEstado, useSync, useTema,
+  acciones, alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, refrescarSiHaceRato, reiniciarCarga, tablaSinCrear, useEstado, useSync, useTema,
 } from "@/lib/store";
 import { claveDe } from "@/lib/chat-equipo";
 import { aplazarFoto, fotoAplazadaHoy, fotoDe, mapaDeFotos } from "@/lib/fotos-perfil";
@@ -40,6 +40,9 @@ import { AvisoVersion } from "./AvisoVersion";
 import { useAvisoDeTope } from "@/components/avisos/useAvisoDeTope";
 import { PedirAccesoPantalla, PedirPermisoParaEditar } from "./PedirAcceso";
 import { pedirAcceso } from "@/lib/pedir-acceso";
+
+/* Cuánto tiene que haber pasado desde la última carga para volver a traer todo al volver a la pestaña. */
+const MINUTOS_PARA_REFRESCAR = 3;
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const ruta = usePathname();
@@ -158,6 +161,15 @@ export function Shell({ children }: { children: React.ReactNode }) {
     reiniciarCarga();
     void cargarDeLaNube();
   }, [sesion.email]);
+
+  /* Al volver a una pestaña que quedó abierta un rato, lo de los demás (y lo de otras pestañas) se vuelve a traer: si no, se trabajaba con lo
+     que había al abrirla (Aldana, 27/11: el arqueo contaba un cobro que ella misma ya había pasado de Stripe a Whop en otra pestaña). */
+  useEffect(() => {
+    const alVolver = () => { if (document.visibilityState === "visible") refrescarSiHaceRato(MINUTOS_PARA_REFRESCAR * 60000); };
+    document.addEventListener("visibilitychange", alVolver);
+    window.addEventListener("focus", alVolver);
+    return () => { document.removeEventListener("visibilitychange", alVolver); window.removeEventListener("focus", alVolver); };
+  }, []);
 
   /* También con la búsqueda: ir de Alumnos a su pipeline no cambia la ruta, y
      en el teléfono el menú se quedaba abierto tapando la pantalla. */

@@ -1,8 +1,8 @@
 "use client";
 
-import { cuentasPorUso, opcionesDeCuenta } from "@/lib/cuentas-por-uso";
+import { opcionesDeCuenta } from "@/lib/cuentas-por-uso";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link2, Plus, Trash2, Unlink } from "lucide-react";
+import { AlertTriangle, Link2, Plus, Trash2, Unlink } from "lucide-react";
 import { Button, IconButton, Input, Select } from "@/components/ui/ui";
 import { InputMonto } from "@/components/ui/InputMonto";
 import { AvisoMesCerrado } from "@/components/ui/AvisoMesCerrado";
@@ -13,12 +13,13 @@ import { nuevoId, useEstado } from "@/lib/store";
 import { faltanLosPesos, textoDePesosQueFaltan } from "@/lib/pesos-reales";
 import { fechaLarga, isoDia, money } from "@/lib/format";
 import { medioDeMovimiento, procesadorDeMovimiento } from "@/lib/conciliacion";
+import { pagoEnOtraPasarela } from "@/lib/pasarela-equivocada";
 import { descartarComprobante } from "@/lib/comprobantes";
 import { nombrePasarela } from "@/lib/pasarelas";
 import { fuenteDe, useBlue } from "@/lib/dolar";
 import { esCuentaEnPesos } from "@/lib/reporteFinanciera";
 import { cambioQueResulta, enMoneda, MONEDAS_LOCALES, monedaPropuesta, nombreDeMoneda, pideMonedaLocal, textoDeCambio, textoDeMonedaLocalQueFalta } from "@/lib/moneda-local";
-import type { Comprobante, EstadoApp, ID, Procesador } from "@/lib/types";
+import type { Comprobante, EstadoApp, ID, Movimiento, Procesador } from "@/lib/types";
 
 /* ==================================================================
    Los cobros de UNA cuota: uno por medio de pago.
@@ -187,7 +188,6 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
   liberar?: { pagoId: ID; movimientoId?: ID };
 }) {
   /* Las más usadas primero (lib/cuentas-por-uso.ts). */
-  const procesadores = useMemo(() => cuentasPorUso(e), [e.procesadores, e.pagos]); // eslint-disable-line react-hooks/exhaustive-deps
   const mon = e.ajustes.monedaBase;
   const [eligiendo, setEligiendo] = useState<string | null>(null);
   const ver = (parte: ParteCobro) => partes.includes(parte);
@@ -230,7 +230,10 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
      a ser los reales; el monto, lo que ese pago cubre de lo que falta. */
   function elegirPago({ mov, disponible }: PagoDisponible) {
     const cobro = cobros.find((p) => p.id === eligiendo);
-    if (!cobro) { setEligiendo(null); return; }
+    if (cobro) atar(cobro, mov, disponible);
+    setEligiendo(null);
+  }
+  function atar(cobro: CobroBorrador, mov: Movimiento, disponible: number) {
     const falta = redondear(objetivo - sumar(cobros.filter((p) => p.id !== cobro.id)));
     const monto = redondear(Math.min(disponible, falta > 0.01 ? falta : cobro.monto || disponible));
     editar(cobro.id, {
@@ -238,7 +241,6 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
       procesadorId: procesadorDeMovimiento(e, mov)?.id ?? cobro.procesadorId,
       fecha: mov.fecha, referencia: mov.referencia, monto,
     });
-    setEligiendo(null);
   }
 
   const elegido = cobros.find((p) => p.id === eligiendo);
@@ -276,6 +278,28 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
                   </IconButton>
                 )}
               </div>
+            )}
+
+            {/* Eligió una pasarela y el pago está en otra (Aldana, 27/11: cargaban en Stripe lo de Whop). */}
+            {ver("cuenta") && (() => {
+              const otra = pagoEnOtraPasarela(p, e.procesadores, e.movimientos, cliente, (m) => disponibleDe(m, e.pagos, usadoSin(p.id)));
+              if (!otra || !proc) return null;
+              return (
+                <div className="aviso-pasarela" role="alert">
+                  <AlertTriangle size={16} aria-hidden />
+                  <div className="aviso-pasarela__texto">
+                    <span>
+                      <b>En {proc.nombre} no hay ningún pago de {cliente.nombre?.trim() || "esta persona"}.</b> En {otra.procesador.nombre} sí:{" "}
+                      {otra.mov.clienteNombre || "sin nombre"} · {fechaLarga(otra.mov.fecha)} · {money(otra.mov.monto, otra.mov.moneda ?? mon, 2)}.
+                    </span>
+                    <Button sm variante="secondary" onClick={() => atar(p, otra.mov, otra.disponible)}>Fue por {otra.procesador.nombre}: usar ese pago</Button>
+                  </div>
+                </div>
+              );
+            })()}
+            {/* Las dos financieras se parecen: se elige mirando el comprobante (Aldana, 27/11: cargaban en la primera que aparecía). */}
+            {ver("cuenta") && esFinanciera(proc) && !p.movimientoId && (
+              <span className="hk-help">Fijate en el comprobante a qué cuenta transfirió: {e.procesadores.filter((x) => x.activo && esFinanciera(x)).map((x) => x.nombre).join(", ")} son cuentas distintas.</span>
             )}
 
             {/* Un cobro con fecha de un mes ya liquidado: se avisa, no se bloquea. */}
@@ -363,7 +387,7 @@ export function EditorCobros({ e, cobros, onCambio, objetivo, cliente, usadoFuer
       {ver("cuenta") && !unico && (
         <Button
           sm variante="ghost" icono={<Plus size={14} />} style={{ alignSelf: "flex-start" }}
-          onClick={() => onCambio((xs) => agregarMedio(xs, objetivo, procesadores[0]?.id ?? ""))}
+          onClick={() => onCambio((xs) => agregarMedio(xs, objetivo, ""))}
         >
           Agregar otra cuenta recaudadora
         </Button>

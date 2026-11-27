@@ -146,7 +146,7 @@ test("el paso «Arreglar los cobros rechazados» dice en el panel de qué closer
   const aviso = panel.avisos.find((a) => a.clave === "rc|pag_rechazado");
   assert.ok(aviso, "el cobro rechazado está en «Para vos»");
   assert.equal(aviso!.tono, "danger");
-  assert.match(aviso!.texto, /rechazado por Aldana \(hace 2 días\): «Ya está registrado y conciliado»\. Corregilo/);
+  assert.match(aviso!.texto, /rechazado por Aldana \(hace 2 días\): «Ya está registrado y conciliado»\. Hasta que lo corrijas no te suma comisión/);
   assert.match(aviso!.texto, /US\$ 49/);
 });
 

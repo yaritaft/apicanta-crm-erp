@@ -433,7 +433,13 @@ export function DetalleVista({ embebido = false, seccion: seccionFija, rangoFijo
                           {M(c.comisionCloser, 2)} <Badge variante="warning">−{M(c.descuentoCierre, 2)} por cierre del día</Badge>
                         </span>
                       )
-                      : M(c.comisionCloser, 2),
+                      : c.porRechazo
+                        ? (
+                          <span title="El comprobante de algún cobro de esta venta está rechazado: eso no le comisiona al closer hasta que lo corrija.">
+                            {M(c.comisionCloser, 2)} <Badge variante="danger">−{M(c.porRechazo.comision, 2)} comprobante rechazado</Badge>
+                          </span>
+                        )
+                        : M(c.comisionCloser, 2),
                 },
                 { clave: "comiDir", titulo: "Director", tipo: "num", orden: (c) => c.comisionDirector, celda: (c) => c.sinComision ? "—" : M(c.comisionDirector, 2) },
               ]}

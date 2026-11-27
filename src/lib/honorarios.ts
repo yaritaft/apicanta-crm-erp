@@ -6,6 +6,7 @@ import type {
 } from "./types";
 import type { RangoMes } from "./metricas";
 import { calcularPyL, closerDeCuota, cobraEnFecha, costosDelMes, pagosDelMes, parteMarketing, tasaDeComision, ventasDelMes } from "./finanzas";
+import { comprobanteRechazado } from "./comision";
 import { esPeriodo, finDelDia, moverPeriodo, nombrePeriodo, periodoDe, rangoDePeriodo } from "./periodos";
 import { aMonedaBase, categoriaDe, normalizar } from "./gastos";
 import { totalMarcados } from "./pagos-equipo";
@@ -658,6 +659,7 @@ function veredicto(cx: Contexto, c: ConceptoPago, m: MiembroEquipo, v: Venta | u
   }
   if (alcance === "closer" && (p ? cx.closerDeCuota.get(p.cuotaId) : v.closerId) !== m.id) return { cuenta: false };
   if (p && (alcance === "closer" || alcance === "director") && !cobraEnFecha(m, p.fecha)) return no("Se cobró después de su salida");
+  if (p && alcance === "closer" && comprobanteRechazado(p)) return no("El comprobante está rechazado: comisiona cuando se corrija");
   if (alcance === "setter" && v.setterId !== m.id) return { cuenta: false };
   if (alcance === "director" && v.directorId !== m.id) return { cuenta: false };
   if (c.productoIds?.length && !(v.productoId && c.productoIds.includes(v.productoId)) && !(v.embudoId && c.siempreEmbudoIds?.includes(v.embudoId))) {

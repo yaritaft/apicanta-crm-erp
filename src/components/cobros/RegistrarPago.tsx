@@ -101,7 +101,7 @@ export function RegistrarPago({ cuota, onCerrar, onGuardado, embebido = false, p
     : undefined;
 
   const [cobros, setCobros] = useState<CobroBorrador[]>(
-    () => (editando ? [borradorDe(editando, pideMonedaLocal(e.procesadores.find((x) => x.id === editando.procesadorId)))] : agregarMedio([], resta, e.procesadores.find((p) => p.activo)?.id ?? "")),
+    () => (editando ? [borradorDe(editando, pideMonedaLocal(e.procesadores.find((x) => x.id === editando.procesadorId)))] : agregarMedio([], resta, "")),
   );
   const [borrando, setBorrando] = useState(false);
   /* El mes cerrado sólo lo sabe quien ve las liquidaciones (los dueños); para

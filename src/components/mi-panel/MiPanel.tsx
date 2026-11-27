@@ -182,6 +182,7 @@ export function MiPanel() {
                 notas={[
                   { texto: esDirector ? `Como director: ${money(datos.comisionDirector, "USD", 2)}` : `Sobre ${money(datos.cobradoRango, "USD", 0)} cobrados` },
                   ...(datos.descuentoCierre > 0 ? [{ texto: `Sin ${money(datos.descuentoCierre, "USD", 2)} por días sin cierre`, tono: "aviso" as const }] : []),
+                  ...(datos.porRechazo > 0 ? [{ texto: `Sin ${money(datos.porRechazo, "USD", 2)} de cobros con el comprobante rechazado: vuelven al corregirlos`, tono: "aviso" as const }] : []),
                 ]}
                 aparte={datos.strikes.total > 0 ? `${plural(datos.strikes.total, "día", "días")} sin cierre cargado` : undefined}
                 onAbrir={() => setVerComisiones(true)}

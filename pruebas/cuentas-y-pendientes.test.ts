@@ -20,9 +20,23 @@ test("sin cobros todavía, las cuentas salen por nombre", () => {
   assert.deepEqual(cuentasPorUso(e as never).map((p) => p.id), ["a", "s", "w"]);
 });
 
-test("el asistente de venta y Registrar pago usan la misma lista", () => {
-  for (const f of ["src/components/ventas/AsistenteVenta.tsx", "src/components/cobros/EditorCobros.tsx"]) {
-    assert.match(readFileSync(f, "utf8"), /cuentasPorUso\(e\)/, f);
+test("el asistente de venta y Registrar pago usan la misma lista (la del editor de cobros, por uso)", () => {
+  assert.match(readFileSync("src/components/cobros/EditorCobros.tsx", "utf8"), /opcionesDeCuenta\(e, /);
+  for (const f of ["src/components/ventas/AsistenteVenta.tsx", "src/components/cobros/RegistrarPago.tsx"]) {
+    assert.match(readFileSync(f, "utf8"), /<EditorCobros/, f);
+  }
+});
+
+/* Aldana (27/11): «cargan las ventas con la primera opción que aparece, que es Stripe, en vez de buscar Whop». El cobro arrancaba con la cuenta más
+   usada ya puesta. Ahora arranca sin cuenta y no se puede guardar hasta elegirla (problemaDeCuenta). */
+test("ningún cobro nuevo arranca con una cuenta elegida: se elige a propósito", () => {
+  for (const f of ["src/components/ventas/AsistenteVenta.tsx", "src/components/cobros/EditorCobros.tsx", "src/components/cobros/RegistrarPago.tsx"]) {
+    const s = readFileSync(f, "utf8");
+    assert.ok(!/agregarMedio\([^)]*procesadores(\[0\]|\.find)/.test(s), `${f} no arranca con la primera cuenta`);
+    for (const m of s.matchAll(/agregarMedio\(([^)]*)\)/g)) {
+      if (/procesadorId: string/.test(m[1])) continue; /* la definición */
+      assert.match(m[1], /,\s*""$/, `${f}: ${m[0]}`);
+    }
   }
 });
 

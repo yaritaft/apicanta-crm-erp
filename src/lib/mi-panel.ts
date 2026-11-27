@@ -128,6 +128,8 @@ export interface MiPanel {
   cobradoRango: number;
   comisionCloser: number;
   descuentoCierre: number;
+  /* Lo que no se le paga porque el comprobante de esos cobros está rechazado: vuelve cuando lo corrija. */
+  porRechazo: number;
   comisionDirector: number;
   comisionSetter: number;
   /* Venta por venta, lo que le toca en el rango. */
@@ -234,6 +236,8 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
   const suyas = delRango.filter((c) => c.closerId === m.id);
   const comisionCloser = r2(suyas.reduce((a, c) => a + c.comisionCloser, 0));
   const descuentoCierre = r2(suyas.reduce((a, c) => a + (c.descuentoCierre ?? 0), 0));
+  /* Lo que no cobra porque el comprobante está rechazado (se paga cuando lo corrija). */
+  const porRechazo = r2(suyas.reduce((a, c) => a + (c.porRechazo?.comision ?? 0), 0));
   const comisionDirector = r2(delRango.filter((c) => c.directorId === m.id).reduce((a, c) => a + c.comisionDirector, 0));
   const cobradoRango = r2(suyas.reduce((a, c) => a + c.cobradoEnMes, 0));
 
@@ -313,7 +317,7 @@ export function miPanelDe(e: EstadoApp, m: MiembroEquipo, rango: RangoMes, ahora
 
   return {
     miembro: m, vista, rango,
-    cobradoRango, comisionCloser, descuentoCierre, comisionDirector, comisionSetter: r2(comisionSetter), comisiones,
+    cobradoRango, comisionCloser, descuentoCierre, porRechazo, comisionDirector, comisionSetter: r2(comisionSetter), comisiones,
     ventasDelRango, porCobrar, porCobrarTotal, mesa, rendimiento,
     llamadas, llamadasDeHoy, porVenirHoy, dia, strikes, avisos, pedidos, totalAvisos, llamadasParaCerrar: paraCerrar,
     cobros, controlDeCobros,
@@ -382,7 +386,7 @@ function avisosDe(
     const r = rechazoDeCobro(c.equipo, x.pago, c.ahora);
     avisos.push({
       clave: `rc|${x.pago.id}`, tono: "danger", resaltado: x.venta?.contactoNombre ?? "Un cobro",
-      texto: `tiene un cobro de US$ ${Math.round(x.pago.monto).toLocaleString("es-AR")} rechazado por ${r.quien} (${r.cuando}): «${r.nota.replace(/[.\s]+$/, "")}». Corregilo, o avisale que está bien.`,
+      texto: `tiene un cobro de US$ ${Math.round(x.pago.monto).toLocaleString("es-AR")} rechazado por ${r.quien} (${r.cuando}): «${r.nota.replace(/[.\s]+$/, "")}». Hasta que lo corrijas no te suma comisión.`,
       accion: x.venta ? { texto: "Ver", ir: "ficha", id: x.venta.id } : undefined,
     });
   }

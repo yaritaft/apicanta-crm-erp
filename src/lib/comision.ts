@@ -84,6 +84,13 @@ export const tasaDeSetterEnVenta = (
     ? propio : tasaDeComision(setter, venta.productoId, venta.fecha ? diaArgentina(venta.fecha) : undefined);
 };
 
+/** Si el comprobante de un cobro está rechazado (por finanzas o por el director): mientras lo esté, ese cobro no le deja comisión al closer
+ *  (Aldana, 27/11: «cuando se rechace el comprobante, que no les sume comisión»; cargaban en Stripe lo que entró por Whop). Al corregirlo, el cobro
+ *  vuelve a «por chequear» (la base borra los chequeos) y comisiona de nuevo. La plata sigue contando en el Cash Collected: lo rechazado es lo
+ *  que dice el closer, no que la plata no exista. */
+export const comprobanteRechazado = (p: { chequeoFinanzas?: string | null; chequeoDirector?: string | null }): boolean =>
+  p.chequeoFinanzas === "rechazado" || p.chequeoDirector === "rechazado";
+
 /** Quién comisiona los cobros de una cuota: el que la heredó o, si nadie,
  *  el closer de la venta. */
 export const closerDeCuota = (v: { closerId?: string }, c?: { closerId?: string }) => c?.closerId || v.closerId;

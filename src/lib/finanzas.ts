@@ -2,7 +2,7 @@ import { fechaDeAcreditacion, retenciones } from "./acreditacion";
 import type { Cuota, EstadoApp, Gasto, MiembroEquipo, Pago, Venta } from "./types";
 import type { RangoMes } from "./metricas";
 import { esSoloReserva } from "./angelo";
-import { cobraDirector, cobraEnFecha, closerDeCuota, diaArgentina, tasaDeComision, tasaDeSetterEnVenta } from "./comision";
+import { cobraDirector, cobraEnFecha, closerDeCuota, comprobanteRechazado, diaArgentina, tasaDeComision, tasaDeSetterEnVenta } from "./comision";
 import { devolucionesDelMes, reversasDelMes, totalDevuelto, type Reversa } from "./devoluciones";
 import { fechaDePago } from "./gastos";
 import { resolverDeCierre } from "./escala-cierre";
@@ -129,6 +129,9 @@ export interface ComisionVenta {
      llamada de un día sin cierre cargado ese mismo día (el interruptor de
      Ajustes → CRM, lib/cierre-del-dia.ts). Sólo está si es más que cero. */
   descuentoCierre?: number;
+  /* Lo que no se le paga porque el comprobante de esos cobros está rechazado (lib/comision.ts, comprobanteRechazado): cuántos y cuánto
+     habrían dejado. Se paga cuando se corrigen. Sólo está si hay alguno. */
+  porRechazo?: { cobros: number; comision: number };
   directorId?: string;
   tasaDirector: number;
   comisionDirector: number;
@@ -228,7 +231,10 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
         if (tasas.every((t) => t === tasas[0])) return neto(xs) * (tasas[0] ?? 0);
         return xs.reduce((a, p, i) => a + (p.monto - p.feeMonto) * tasas[i], 0);
       };
-      const delCloser = pagos.filter((p) => cobraEnFecha(closer, p.fecha));
+      /* Lo que tiene el comprobante rechazado no le comisiona al closer hasta que lo corrija (lib/comision.ts). */
+      const enFecha = pagos.filter((p) => cobraEnFecha(closer, p.fecha));
+      const delCloser = enFecha.filter((p) => !comprobanteRechazado(p));
+      const rechazados = enFecha.filter((p) => comprobanteRechazado(p));
       const delDirector = pagos.filter((p) => cobraDirector(director, p.fecha));
       /* El % que se muestra: el de esos cobros (si cambió en el medio del mes, el que da la cuenta). */
       const tasaDe = (quien: typeof closer, xs: typeof pagos) => {
@@ -253,6 +259,7 @@ export function comisionesDelMes(e: EstadoApp, m: RangoMes): ComisionVenta[] {
         tasaCloser,
         comisionCloser: comisionBruta - descuento,
         ...(descuento > 0 ? { descuentoCierre: descuento } : {}),
+        ...(!sinComision && rechazados.length ? { porRechazo: { cobros: rechazados.length, comision: comisionDe(closer, rechazados) } } : {}),
         directorId: v.directorId,
         tasaDirector,
         comisionDirector: sinComision ? 0 : comisionDe(director, delDirector),

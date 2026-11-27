@@ -55,8 +55,8 @@ export function DetalleComisiones({ datos, e, comoOtro, esDueno, onCerrar }: { d
                   <span className="t-muted">{productoDe(c.productoId)}</span>
                   <span className="mp-det__der">{money(c.cobradoEnMes, "USD", 2)}</span>
                   <span className="mp-det__der">{c.sinComision ? "—" : `${Math.round(tasa * 1000) / 10}%`}</span>
-                  <span className="mp-det__der t-strong" title={c.descuentoCierre ? `Se descontaron ${money(c.descuentoCierre, "USD", 2)} por un día sin cierre` : undefined}>
-                    {money(toca, "USD", 2)}{c.descuentoCierre ? "*" : ""}
+                  <span className="mp-det__der t-strong" title={c.descuentoCierre ? `Se descontaron ${money(c.descuentoCierre, "USD", 2)} por un día sin cierre` : c.closerId === m.id && c.porRechazo ? `${money(c.porRechazo.comision, "USD", 2)} no se pagan: el comprobante está rechazado` : undefined}>
+                    {money(toca, "USD", 2)}{c.descuentoCierre ? "*" : ""}{c.closerId === m.id && c.porRechazo ? "†" : ""}
                   </span>
                   <span className="mp-det__der">
                     {venta && puedeDisputar && <Button sm variante="ghost" onClick={() => setDisputa(venta.id)}>Disputar</Button>}
@@ -68,6 +68,7 @@ export function DetalleComisiones({ datos, e, comoOtro, esDueno, onCerrar }: { d
         </div>
       )}
       {datos.descuentoCierre > 0 && <p className="t-sm t-subtle" style={{ marginTop: 12 }}>* Hay {money(datos.descuentoCierre, "USD", 2)} que no se pagan por llamadas de un día sin el cierre del día cargado.</p>}
+      {datos.porRechazo > 0 && <p className="t-sm t-subtle" style={{ marginTop: 12 }}>† Hay {money(datos.porRechazo, "USD", 2)} que no se pagan porque el comprobante de esos cobros está rechazado: corregilos (la cuenta, el monto o el comprobante) y vuelven a sumar.</p>}
       <Disputas e={e} nombre={m.nombre} />
       {disputa && <ModalDisputa ventaId={disputa} rango={datos.rango.etiqueta} onCerrar={() => setDisputa(null)} />}
     </Modal>

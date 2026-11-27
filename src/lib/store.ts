@@ -612,6 +612,21 @@ async function traerCostosWpp(db: NonNullable<typeof nube>): Promise<{ dia: stri
   } catch { return undefined; }
 }
 
+/* Cuándo se terminó de traer todo por última vez (ms). */
+let ultimaCarga = 0;
+
+/** Vuelve a traer todo si lo que hay en esta pestaña tiene más de `masDe` ms y no queda nada por guardar (Aldana, 27/11: contó el arqueo en una
+ *  pestaña abierta desde antes de corregir un cobro de Stripe a Whop, y Stripe le daba US$ 2.427 de más). La app trae todo al entrar y después sólo
+ *  cuando ESA pestaña guarda algo: lo que cambió otra persona, u otra pestaña, no llegaba. Con escrituras en la cola no se trae (pisaría lo que todavía
+ *  no subió: lo mismo que resincronizarAlVaciarse). Devuelve si salió a buscar. */
+export function refrescarSiHaceRato(masDe = 0): boolean {
+  if (!nube || cola.length > 0 || drenando || sync === "cargando" || sync === "error") return false;
+  if (Date.now() - ultimaCarga < masDe) return false;
+  reiniciarCarga();
+  void cargarDeLaNube();
+  return true;
+}
+
 export async function cargarDeLaNube(): Promise<void> {
   if (!nube || yaCargo) return;
   const db = nube;
@@ -745,6 +760,7 @@ export async function cargarDeLaNube(): Promise<void> {
       actividad: (porTabla.actividad as Actividad[])
         .sort((a, b) => +new Date(b.fecha) - +new Date(a.fecha)),
     });
+    ultimaCarga = Date.now();
     marcar("listo");
   } catch (err) {
     /* Si la nube falla, la app sigue con lo local. Nunca pantalla en blanco. */

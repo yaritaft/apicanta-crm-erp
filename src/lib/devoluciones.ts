@@ -1,6 +1,6 @@
 import type { Devolucion, EstadoApp, ID, Liquidacion, MiembroEquipo, Pago, Sesion, Venta } from "./types";
 import type { RangoMes } from "./metricas";
-import { closerDeCuota, cobraDirector, cobraEnFecha, tasaPonderada } from "./comision";
+import { closerDeCuota, cobraDirector, cobraEnFecha, comprobanteRechazado, tasaPonderada } from "./comision";
 import { moverPeriodo, periodoDeFecha, rangoDePeriodo } from "./periodos";
 import { resolverDeCierre } from "./escala-cierre";
 import { descuentaPorCierre, ventasSinCierre } from "./cierre-del-dia";
@@ -274,11 +274,12 @@ export function reversasDeComision(e: EstadoDeReversas, opciones: OpcionesDeReve
         const closer = k ? miembro.get(k) : undefined;
         const regla = closer ? opciones.propia?.(closer, "closer", venta) : undefined;
         partes.push(parteDe(
-          `c:${k}`, "closer", cobrosDelCloser.filter((p) => (regla ? regla.cuentaCobro(p) : cobraEnFecha(closer, p.fecha))),
+          /* Un cobro con el comprobante rechazado no le comisionó (lib/comision.ts): no hay qué revertirle. */
+          `c:${k}`, "closer", cobrosDelCloser.filter((p) => (regla ? regla.cuentaCobro(p) : cobraEnFecha(closer, p.fecha) && !comprobanteRechazado(p))),
           closer ? { id: closer.id, nombre: closer.nombre } : undefined,
           (regla ? false : sinComision) || descuentaPorCierre(sinCierre, venta, k) ? 0 : regla ? regla.tasa
             /* Cada cobro con el % que valía ese día: se revierte lo que de verdad se le comisionó. */
-            : tasaPonderada(closer, venta.productoId, cobrosDelCloser.filter((p) => cobraEnFecha(closer, p.fecha)), cierre),
+            : tasaPonderada(closer, venta.productoId, cobrosDelCloser.filter((p) => cobraEnFecha(closer, p.fecha) && !comprobanteRechazado(p)), cierre),
           k && k !== venta.closerId ? deLaVenta?.nombre ?? "otro closer" : undefined,
           Boolean(regla),
         ));

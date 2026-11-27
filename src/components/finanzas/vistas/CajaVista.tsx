@@ -10,7 +10,7 @@ import { Cascada, Medidor, Plegable, type PasoCascada } from "@/components/finan
 import { DataTable } from "@/components/ui/DataTable";
 import { Confirmar, Modal, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
-import { acciones, nuevoId, useEstado } from "@/lib/store";
+import { acciones, nuevoId, refrescarSiHaceRato, useEstado } from "@/lib/store";
 import { fechaLarga, money, num } from "@/lib/format";
 import { aMonedaBase, escribirMonto, fechaDePago, leerMonto } from "@/lib/gastos";
 import {
@@ -418,6 +418,9 @@ function NuevoArqueo({ e, onCerrar, onListo, traerAlAbrir = false }: { e: Estado
   const [automaticos, setAutomaticos] = useState<Record<string, { fuente: string; al: string; nota?: string; ajuste?: { delBanco: number; nota: string } }>>({});
   const [leyendo, setLeyendo] = useState(false);
   const [avisos, setAvisos] = useState<string[]>([]);
+  /* Contar con lo último que hay en la base: lo que se cargó o corrigió en otra pestaña, o lo cargó otra persona, entra antes de comparar
+     (Aldana, 27/11: el arqueo de una pestaña vieja todavía tenía en Stripe un cobro que ya era de Whop). Lo escrito acá no se pierde. */
+  useEffect(() => { refrescarSiHaceRato(30000); }, []);
 
   /* Si es hoy, ahora; si es otro día, el final de ese día (a las 20 dejaba afuera los cobros de la noche: Aldana, 01/11). */
   const fecha = dia === diaAr(hoyIso()) ? hoyIso() : finDelDiaDeNegocio(dia);
