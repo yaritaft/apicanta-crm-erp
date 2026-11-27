@@ -115,7 +115,7 @@ async function banco(): Promise<Pg> {
   await db.exec(`
     alter table public.alumnos add column nombre text, add column estado text default 'activo';
     alter table public.actividad add column accion text, add column actor text, add column titulo text, add column fecha timestamptz, add column detalle text;
-    create table public.seguimiento_alumnos (id text primary key, "alumnoId" text unique, "followUp" text not null default '');
+    create table public.seguimiento_alumnos (id text primary key, "alumnoId" text unique, "followUp" text not null default '', "cicloDeVenta" text);
     insert into public.ventas (id, estado) values ('v_ok', 'activa'), ('v_reemb', 'reembolsada');
     insert into public.alumnos (id, nombre, estado, "ventaId") values
       ('a_egr', 'Egresado Outb', 'graduado', 'v_ok'),

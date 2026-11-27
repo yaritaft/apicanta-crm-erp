@@ -137,6 +137,8 @@ async function banco(): Promise<Pg> {
   await db.exec(TOMA_EL_SERVICIO);
   await db.exec(sqlDe("renovacion-deja-la-ficha-26-11.sql"));
   await db.exec(sqlDe("renovacion-deja-la-ficha-26-11.sql")); // se puede volver a correr
+  /* Lo que también corre en producción sobre estas tablas: Outboarding es baja (27/11). */
+  await db.exec(sqlDe("outboarding-es-baja-27-11.sql"));
   return db;
 }
 
@@ -248,7 +250,8 @@ test("Luis Carlos en la base: de baja desde 2025 y sin venta → activo, Princip
   const a = await alumnoDe(db, "alu_l");
   assert.deepEqual({ estado: a.estado, plan: a.plan, ventaId: a.ventaId, leadId: a.leadId, dia: a.dia }, { estado: "activo", plan: "Principals", ventaId: "ven_l", leadId: "lead_l", dia: await hoyArg(db) });
   assert.ok(!("ventasAnteriores" in a.extra), "no tenía venta: no hay anterior que anotar");
-  assert.deepEqual(await fichaDe(db, "alu_l"), { programas: ["Principals"], duracionMeses: 12, cicloDeVenta: "ven_l", ultimoContacto: null, followUp: "Outboarding", planDePago: "" });
+  /* Renovar saca de Outboarding (27/11): pasa a «Onboarding», lo que Lili tuvo que hacer a mano con él el 26/11. */
+  assert.deepEqual(await fichaDe(db, "alu_l"), { programas: ["Principals"], duracionMeses: 12, cicloDeVenta: "ven_l", ultimoContacto: null, followUp: "Onboarding", planDePago: "" });
   const nota = (await db.query<{ detalle: string }>(`select detalle from public.actividad where id = 'act_compra_alu_l_ven_l'`)).rows[0].detalle;
   assert.match(nota, /vuelve a estar activo/);
 });
@@ -354,4 +357,40 @@ test("la app devuelve la marca tal cual: la ficha completa la conserva y no la i
   const cfg = configSeguimiento(undefined);
   assert.equal(seguimientoCompleto({ alumnoId: "alu_1", cicloDeVenta: "ven_pr" }, cfg).cicloDeVenta, "ven_pr");
   assert.ok(!("cicloDeVenta" in seguimientoCompleto({ alumnoId: "alu_1" }, cfg)), "una fila de antes no manda la columna: la base la deja como está");
+});
+
+/* ---------- Renovar saca de Outboarding (27/11, pruebas/outboarding-es-baja-27-11.test.ts) ----------
+   Outboarding es baja; si el alumno vuelve a comprar, la renovación lo deja activo y su Follow Up pasa a «Onboarding» (como hizo Lili a
+   mano con Luis Carlos J. el 26/11). Una pestaña de antes de la renovación no lo devuelve a Outboarding. */
+test("renovar a alguien en Outboarding: el Follow Up pasa a Onboarding y vuelve a estar activo; una pestaña vieja no lo devuelve a Outboarding", { skip: saltear }, async () => {
+  const db = await banco();
+  await conAlumnoDeHackearAi(db);
+  await db.exec(`update public.seguimiento_alumnos set "followUp" = 'OUTBOARDING' where id = 'seg_1'`);
+  assert.equal((await alumnoDe(db, "alu_1")).estado, "baja", "Outboarding es baja");
+  await db.exec(`insert into public.ventas (id, "contactoId", "productoId") values ('ven_pr', 'lead_1', 'prod_principals')`);
+  assert.equal(await pasar(db, "alu_1", "ven_pr"), true);
+  const f = await fichaDe(db, "alu_1");
+  assert.deepEqual([f.followUp, f.cicloDeVenta, f.duracionMeses], ["Onboarding", "ven_pr", 12]);
+  assert.equal((await alumnoDe(db, "alu_1")).estado, "activo");
+  /* Lili, con la app abierta desde antes de la renovación, guarda la fila entera (trae Outboarding y la marca vieja). */
+  await db.query(
+    `insert into public.seguimiento_alumnos (id, "alumnoId", programas, "duracionMeses", "cicloDeVenta", "ultimoContacto", "followUp", "planDePago") values ('seg_1', 'alu_1', '["HACKEAR IA"]'::jsonb, 3, null, '2026-11-27', 'OUTBOARDING', 'PIF 3000 USD')
+     on conflict (id) do update set programas = excluded.programas, "duracionMeses" = excluded."duracionMeses", "cicloDeVenta" = excluded."cicloDeVenta",
+       "ultimoContacto" = excluded."ultimoContacto", "followUp" = excluded."followUp", "planDePago" = excluded."planDePago"`);
+  const g = await fichaDe(db, "alu_1");
+  assert.deepEqual([g.followUp, g.cicloDeVenta, g.ultimoContacto], ["Onboarding", "ven_pr", "2026-11-27"], "lo demás sí se guarda");
+  assert.equal((await alumnoDe(db, "alu_1")).estado, "activo");
+  /* Con la pestaña al día, pasarlo a Outboarding sí se puede. */
+  await db.exec(`update public.seguimiento_alumnos set "followUp" = 'OUTBOARDING' where id = 'seg_1'`);
+  assert.equal((await alumnoDe(db, "alu_1")).estado, "baja");
+});
+
+test("renovar a alguien que cursa no le toca el Follow Up ni el estado", { skip: saltear }, async () => {
+  const db = await banco();
+  await conAlumnoDeHackearAi(db);
+  await db.exec(`update public.seguimiento_alumnos set "followUp" = 'Módulo 4' where id = 'seg_1'`);
+  await db.exec(`insert into public.ventas (id, "contactoId", "productoId") values ('ven_pr', 'lead_1', 'prod_principals')`);
+  await pasar(db, "alu_1", "ven_pr");
+  assert.equal((await fichaDe(db, "alu_1")).followUp, "Módulo 4");
+  assert.equal((await alumnoDe(db, "alu_1")).estado, "activo");
 });

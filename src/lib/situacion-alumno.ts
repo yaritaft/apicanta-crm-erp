@@ -27,7 +27,8 @@ import { esVentaDeBaja } from "./contratos-de-baja";
    del Airtable del 19/10, que marcó «egresado» a quien tenía la fecha de egreso vencida sin mirar el Follow Up; y como lo marcado a
    mano mandaba, el Outboarding no se veía. Además, para que el campo no vuelva a contradecir al Follow Up, la base lo acompaña
    (supabase/outboarding-es-baja-27-11.sql, con la misma regla que `estadoPorFollowUp`): pasar a Outboarding deja el estado en baja, y
-   sacarlo de Outboarding lo vuelve a activo.
+   sacarlo de Outboarding lo vuelve a activo. Si alguien en Outboarding vuelve a comprar, la renovación lo pasa a «Onboarding» (también
+   en ese SQL).
    ================================================================== */
 
 export type SituacionAlumno = "activo" | "reserva" | "pausado" | "graduado" | "baja";
