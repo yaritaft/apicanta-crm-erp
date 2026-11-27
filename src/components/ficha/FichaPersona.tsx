@@ -28,7 +28,7 @@ import { VistaLlamadas } from "./VistaLlamadas";
 import { SeccionContrato, useContratosDe } from "@/components/contratos/ContratoEnLaFicha";
 import { usePlegado } from "./Plegable";
 import type { VistaFicha } from "./abrir";
-import { acciones, cuotasQueCancelaLaBaja, useEstado, useSync } from "@/lib/store";
+import { acciones, cuotasQueCancelaLaBaja, useEstado, useSync, ventaVigenteDe } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { nivelEn, puedeEditar, veElServicio, type MiAcceso } from "@/lib/permisos";
 import { CeldaEditable } from "@/components/crm-tabla/CeldaEditable";
@@ -563,6 +563,9 @@ function ConfirmarBaja({ e, venta, estado, onCerrar }: {
         ? ` Ojo: lo cobrado (${M(cobrado)}) sigue contando como cobrado. Si la venta estaba mal cargada o repetida, usá «Eliminar venta».`
         : " Lo cobrado queda como historial.")
       + (reembolso ? " La plata devuelta cargala como gasto en Reembolsos." : "")
+      + (ventaVigenteDe(e, venta)
+        ? " Tiene otra venta activa: su servicio, su contrato y sus accesos siguen con esa."
+        : " Si tiene un contrato sin firmar, se anula (ya no lo va a poder firmar) y se le sacan los accesos que le dio la app. Servicio recibe el aviso.")
       + " Se puede reactivar.";
     boton = reembolso ? "Marcar reembolsada" : "Cancelar la venta";
     detalle = `${reembolso ? "Se marcó como reembolsada" : "Se canceló"} la venta de ${nombre}${cuotas.length ? `: ${cuotas.length === 1 ? `1 cuota por ${M(monto)} queda cancelada` : `${cuotas.length} cuotas por ${M(monto)} quedan canceladas`}` : ""}.`;

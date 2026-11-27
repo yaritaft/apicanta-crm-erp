@@ -429,6 +429,8 @@ export function armarBienvenida(a: {
   /* ¿Al firmar se dan los accesos solos? (prendidos en Ajustes). Si no, no hay nada que esperar: se los da el equipo. */
   accesosAutomaticos: boolean;
   guia?: GuiaBienvenida | null;
+  /* Su venta se canceló o se reembolsó (lib/contratos-de-baja.ts): firmado o no, no hay accesos que mostrar. */
+  deBaja?: boolean;
 }): Bienvenida {
   const nombre = (a.contrato.destinatario.nombre ?? "").trim().split(/\s+/)[0] ?? "";
   /* La guía (roadmap, formulario y soporte) se muestra recién firmado. */
@@ -437,6 +439,7 @@ export function armarBienvenida(a: {
   if (a.contrato.estado !== "firmado") return { ...base, fase: "firmar" };
   /* La reserva no da accesos: reservó su lugar y los recibe con el contrato del programa. */
   if (a.contrato.datos?.reserva) return { ...base, fase: "reserva" };
+  if (a.deBaja) return { ...base, guia: null, fase: "terminado" };
   if (!a.contrato.accesosEn) return { ...base, fase: a.accesosAutomaticos ? "preparando" : "sin-accesos" };
   const vigentes = a.accesos.filter((x) => x.estado !== "quitado");
   if (a.accesos.length > 0 && vigentes.length === 0) return { ...base, fase: "terminado" };

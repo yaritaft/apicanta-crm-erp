@@ -8,6 +8,7 @@ import { hayTelegram, revisarGruposDeTelegram, telegram } from "@/lib/accesos-se
 import { leerWebhookTelegram, RUTA_WEBHOOK_TELEGRAM } from "@/lib/accesos-alumnos";
 import { pasarOutboardings } from "@/lib/outboarding-servidor";
 import { pasarBajasPorFaltaDePago } from "@/lib/bajas-falta-de-pago-servidor";
+import { pasarBajasDeVentas } from "@/lib/contratos-de-baja-servidor";
 import { pasarCortes } from "@/lib/accesos-vencimientos-servidor";
 import { avisarFinesDeBaja } from "@/lib/baja-a-downsell-servidor";
 import { completarNombresDeCuentas } from "@/lib/telegram-identidades-servidor";
@@ -64,6 +65,9 @@ export async function GET(req: Request) {
       console.error("[cron contratos]", c.id, e instanceof Error ? e.message : String(e));
     }
   }
+  /* Las ventas canceladas o reembolsadas: su contrato sin firmar se anula y los accesos de la app se sacan (Liliana, 27/11). Apenas se da
+     de baja lo hace /api/contratos/baja desde la pantalla; esto es por si ese pedido no salió. */
+  const ventasDeBaja = await pasarBajasDeVentas(db).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
   /* Después de los contratos: un alumno que firmó y ya estaba en outboarding no recibe y pierde accesos en la misma pasada. */
   const outboarding = await pasarOutboardings(db).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
   /* La baja por falta de pago que pidió un closer: a quien tiene accesos de la app se los saca ya, sin esperar el fin del programa. */
@@ -72,7 +76,7 @@ export async function GET(req: Request) {
   const cortes = await pasarCortes(db).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
   /* Quien pasó a Downsell por falta de pago con accesos que no dio la app: el día que termina, Customer Success saca el contenido a mano. */
   const finesDeBaja = await avisarFinesDeBaja(db).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
-  return NextResponse.json({ ok: true, aviso, bot, grupos, cuentas, revisados: lista.length, cambiaron, fallaron, outboarding, bajas, cortes, finesDeBaja, ...(sueltos.error ? { sueltos: sueltos.error.message } : {}) });
+  return NextResponse.json({ ok: true, aviso, bot, grupos, cuentas, revisados: lista.length, cambiaron, fallaron, ventasDeBaja, outboarding, bajas, cortes, finesDeBaja, ...(sueltos.error ? { sueltos: sueltos.error.message } : {}) });
 }
 
 /* El aviso de PandaDoc de producción se conecta solo la primera vez (Juan Cruz, 20/10: «dejalo listo»): la clave

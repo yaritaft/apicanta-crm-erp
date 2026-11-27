@@ -16,6 +16,7 @@ import { conCodigoDelAlumno, esPerfil, guiaDeBienvenida, htmlDeBienvenida, perfi
 import { codigoDeAlumno, configResend, enviarPorResend, estadoEnResend, leerMailEnResend } from "./reporte-servidor";
 import { diaDeNegocio } from "./dia-negocio";
 import { marcaDeBaja, type MarcaDeBaja } from "./baja-a-downsell";
+import { avisarFirmaDeBaja, bajaQueFrena } from "./ventas-de-baja-servidor";
 
 /* ==================================================================
    Los contratos del lado del servidor: lo que se hace con PandaDoc y lo
@@ -438,6 +439,14 @@ export async function alFirmar(db: SupabaseClient, c: Contrato, opciones: { quie
 
   const alumnoId = await alumnoDelContrato(db, c);
   if (alumnoId && c.alumnoId !== alumnoId) await guardar(db, c.id, { alumnoId });
+  /* Su venta ya está cancelada o reembolsada y no tiene otra activa (lib/contratos-de-baja.ts, Liliana 27/11): ni bienvenida, ni
+     ficha, ni accesos; Customer Success se entera. No se marca nada: si la venta se reactiva, la pasada de cada hora sigue de acá. */
+  const baja = await bajaQueFrena(db, c, alumnoId);
+  if (baja) {
+    await eventoDeEspera(db, c.id, baja);
+    await avisarFirmaDeBaja(db, c, baja);
+    return { accesos: null };
+  }
   const { programas, config } = await programasGuardados(db);
   /* La reserva no toca la ficha ni da accesos: eso lo hace el contrato del programa cuando avanza. */
   await mandarBienvenida(db, c, alumnoId).catch((e) => console.error("[contratos] no salió el mail de bienvenida", c.id, mensajeDe(e)));
@@ -549,7 +558,11 @@ export async function darAccesosAhora(db: SupabaseClient, c: Contrato, quien: st
   const { config } = await programasGuardados(db);
   if (!accesosAlFirmar(config.estado, c.modo)) throw new Error("Los accesos de los contratos están apagados (Ajustes → Integraciones).");
   const atado = await vincular(db, c);
-  if (!(await alumnoDelContrato(db, atado))) throw new Error("Todavía no está cargada su venta (o su servicio): cargala y probá de nuevo.");
+  const alumnoId = await alumnoDelContrato(db, atado);
+  if (!alumnoId) throw new Error("Todavía no está cargada su venta (o su servicio): cargala y probá de nuevo.");
+  /* Una venta cancelada o reembolsada no da accesos ni a mano desde el contrato (Liliana, 27/11). */
+  const baja = await bajaQueFrena(db, atado, alumnoId);
+  if (baja) throw new Error(baja);
   if (atado.accesosEn) {
     /* Los que se quitaron a mano no cuentan: quien los saca (Lili con Luis Mejía, 27/10) y después quiere volver a darlos. */
     const dados = await db.from("accesos_alumno").select("id", { count: "exact", head: true }).eq("contratoId", c.id).neq("estado", "quitado");

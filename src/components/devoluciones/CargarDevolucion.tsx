@@ -10,7 +10,7 @@ import { InfoMetrica } from "@/components/ui/InfoMetrica";
 import { AvisoMesCerrado } from "@/components/ui/AvisoMesCerrado";
 import { CampoComprobante } from "@/components/cobros/CampoComprobante";
 import { useToast } from "@/components/ui/Toast";
-import { acciones, tablaSinCrear, useEstado } from "@/lib/store";
+import { acciones, tablaSinCrear, useEstado, ventaVigenteDe } from "@/lib/store";
 import { useAcceso } from "@/lib/acceso";
 import { alumnoDeVenta } from "@/lib/alumnos";
 import { accesosQuitables, avisoDeAccesosQuitados, resumenDeAccesos } from "@/lib/accesos-de-devolucion";
@@ -125,6 +125,9 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
     return () => { vivo = false; };
   }, [alumno?.id, accesosPrendidos, Boolean(previa)]); // eslint-disable-line react-hooks/exhaustive-deps
   const conAccesos = accesosQuitables(accesos ?? []).length > 0;
+  /* Darla de baja ya anula su contrato sin firmar y le saca los accesos de la app (lib/contratos-de-baja.ts, Liliana 27/11), salvo que
+     tenga otra venta activa: ahí su servicio sigue con esa. */
+  const otraVigente = venta ? ventaVigenteDe(e, venta) : null;
   const [dia, setDia] = useState(() => diaDe(base?.fecha ?? new Date().toISOString()) || hoyDia());
   const fechaIso = mediodia(dia);
   const devolvible = venta ? devolvibleDeVenta(e, venta.id, fechaIso, previa?.id) : null;
@@ -135,6 +138,7 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   const [subiendo, setSubiendo] = useState(false);
   const [noDescontar, setNoDescontar] = useState(base?.noDescontarAlCloser ?? false);
   const [darDeBaja, setDarDeBaja] = useState(false);
+  const bajaSaca = puedeBaja && darDeBaja && venta?.estado === "activa" && !otraVigente;
   /* «¿Le quitamos los accesos?»: no va solo (a veces se reembolsa sólo para cambiar el medio de pago). */
   const [quitarAccesos, setQuitarAccesos] = useState(false);
   const [marcarLlamada, setMarcarLlamada] = useState(!previa);
@@ -212,7 +216,7 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
       if (!id) return;
       toast(`Devolución cargada: resta ${M(montoNum)} de ${mes}${noDescontar ? "; el closer cobra igual" : ""}.`);
       /* Los accesos se sacan aparte: si fallan, la devolución ya quedó cargada y se avisa qué hacer. */
-      if (quitarAccesos && alumno && conAccesos) {
+      if (quitarAccesos && alumno && conAccesos && !bajaSaca) {
         void quitarTodosLosAccesos(alumno.id)
           .then((r) => { const a = avisoDeAccesosQuitados(r); toast(a.texto, a.error ? "err" : "ok"); })
           .catch((err) => toast(`La devolución quedó cargada, pero no pude quitar los accesos: ${err instanceof Error ? err.message : "error"}. Quitalos desde la ficha → Servicio → Accesos.`, "err"));
@@ -369,8 +373,10 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
   const opcionesPosteriores: string[] = [];
   if (!previa) {
     if (marcarLlamada) opcionesPosteriores.push("dejar la llamada en «Devolución» en el CRM");
-    if (quitarAccesos && alumno && conAccesos) opcionesPosteriores.push("quitarle los accesos");
-    if (darDeBaja && puedeBaja && venta?.estado === "activa") opcionesPosteriores.push("dar de baja la venta");
+    if (quitarAccesos && alumno && conAccesos && !bajaSaca) opcionesPosteriores.push("quitarle los accesos");
+    if (darDeBaja && puedeBaja && venta?.estado === "activa") {
+      opcionesPosteriores.push(bajaSaca ? "dar de baja la venta (anula su contrato sin firmar y le saca los accesos de la app)" : "dar de baja la venta");
+    }
   }
   const hoy = hoyDia();
   const ayer = diaDe(new Date(Date.now() - 86400000).toISOString());
@@ -569,7 +575,7 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
               </div>
               <Switch checked={marcarLlamada} onChange={setMarcarLlamada} etiqueta="Dejar la llamada en Devolución" />
             </div>
-            {alumno && accesosPrendidos && conAccesos && (
+            {alumno && accesosPrendidos && conAccesos && !bajaSaca && (
               <div className="devol-opcion">
                 <div>
                   <div className="t-strong">¿Le quitamos los accesos?</div>
@@ -585,7 +591,11 @@ function Formulario({ pedido }: { pedido: PedidoDevolucion }) {
               <div className="devol-opcion">
                 <div>
                   <div className="t-strong">Dar de baja la venta {esTotal ? "" : "(es una devolución parcial)"}</div>
-                  <div className="t-sm t-subtle">Queda como reembolsada: sus cuotas sin pagos se cancelan y el servicio del alumno pasa a baja.</div>
+                  <div className="t-sm t-subtle">
+                    {otraVigente
+                      ? "Queda como reembolsada: sus cuotas sin pagos se cancelan. Tiene otra venta activa: su servicio, su contrato y sus accesos siguen con esa."
+                      : `Queda como reembolsada: sus cuotas sin pagos se cancelan, el servicio del alumno pasa a baja, se anula su contrato si no lo firmó y se le sacan los accesos que le dio la app${conAccesos ? ` (hoy tiene ${resumenDeAccesos(accesos ?? [])})` : ""}. Servicio recibe el aviso.`}
+                  </div>
                 </div>
                 <Switch checked={darDeBaja} onChange={setDarDeBaja} etiqueta="Dar de baja la venta" />
               </div>

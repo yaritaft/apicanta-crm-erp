@@ -1368,6 +1368,33 @@ const ESTADO_ANTES_DE_LA_BAJA = "estadoAntesDeLaBaja";
 
 export const esBaja = (v: Pick<Venta, "estado">) => v.estado === "cancelada" || v.estado === "reembolsada";
 
+/* La baja también anula el contrato que no firmó y le saca los accesos que dio la app (lib/contratos-de-baja.ts, Liliana 27/11).
+   Lo hace el servidor (el único que habla con PandaDoc, Wisboo, Telegram y Zoom) apenas la baja llega a la base, y el Shell le cuenta
+   a quien la dio de baja qué se hizo. Si este pedido no sale (sin conexión, pestaña cerrada), la pasada de cada hora lo hace igual. */
+export interface ResultadoDeBaja { texto: string; error: boolean }
+const oyentesBaja = new Set<(r: ResultadoDeBaja) => void>();
+export function alResolverseUnaBaja(f: (r: ResultadoDeBaja) => void): () => void {
+  oyentesBaja.add(f);
+  return () => { oyentesBaja.delete(f); };
+}
+function pedirSalidaPorBaja(ventaId: ID) {
+  if (!nube || typeof window === "undefined") return;
+  const cliente = nube;
+  void (async () => {
+    await esperarGuardado(20_000);
+    const token = (await cliente.auth.getSession()).data.session?.access_token;
+    if (!token) return;
+    const r = await fetch("/api/contratos/baja", {
+      method: "POST", cache: "no-store",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ ventaId }),
+    });
+    const j = (await r.json().catch(() => ({}))) as { resultado?: { aviso?: ResultadoDeBaja | null } | null; error?: string };
+    const aviso = r.ok ? j.resultado?.aviso ?? null
+      : { texto: `La venta quedó dada de baja, pero no pude anular su contrato ni revisar sus accesos (${j.error ?? `error ${r.status}`}). Se vuelve a intentar solo en menos de una hora.`, error: true };
+    if (aviso) oyentesBaja.forEach((f) => f(aviso));
+  })().catch(() => { /* Sin red: lo hace la pasada de cada hora. */ });
+}
+
 /** Las cuotas que cancelaría dar de baja la venta: pendientes y sin nada pagado. */
 export function cuotasQueCancelaLaBaja(e: EstadoApp, ventaId: ID): Cuota[] {
   const pagado = new Map<ID, number>();
@@ -1585,6 +1612,7 @@ export const acciones = {
     if (baja?.cuotas.length) empujarEnLotes("cuotas", baja.cuotas);
     if (baja?.alumnos.length) empujar({ tipo: "upsert", tabla: "alumnos", filas: baja.alumnos });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
+    if (baja && esBaja(baja.venta)) pedirSalidaPorBaja(id);
   },
 
   /* Como actualizar, pero a la base va sólo lo que cambió (un UPDATE de esas
@@ -3833,6 +3861,7 @@ export const acciones = {
     }
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     empujarTanda(t);
+    if (baja) pedirSalidaPorBaja(venta.id);
     return id;
   },
 

@@ -17,7 +17,7 @@ import { resumenDePases } from "@/lib/traspasos";
 import { useChequeos } from "@/lib/chequeos-finanzas";
 import { diasDelEod } from "@/lib/eod-finanzas";
 import {
-  acciones, alNegarseEscritura, cargarDeLaNube, fijarAcceso, hayNube, refrescarSiHaceRato, reiniciarCarga, tablaSinCrear, useEstado, useSync, useTema,
+  acciones, alNegarseEscritura, alResolverseUnaBaja, cargarDeLaNube, fijarAcceso, hayNube, refrescarSiHaceRato, reiniciarCarga, tablaSinCrear, useEstado, useSync, useTema,
 } from "@/lib/store";
 import { claveDe } from "@/lib/chat-equipo";
 import { aplazarFoto, fotoAplazadaHoy, fotoDe, mapaDeFotos } from "@/lib/fotos-perfil";
@@ -79,6 +79,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
       });
     });
   }, [toast]);
+  /* Lo que hizo el servidor con una venta recién dada de baja: contrato anulado, accesos sacados (Liliana, 27/11). */
+  useEffect(() => alResolverseUnaBaja((r) => toast(r.texto, r.error ? "err" : "ok")), [toast]);
   /* El inicio es el Dashboard; quien no lo ve arranca en su primera pantalla. */
   useEffect(() => {
     if (acceso && nivelRuta === 0 && ruta === "/panel" && inicio !== "/panel") router.replace(inicio);

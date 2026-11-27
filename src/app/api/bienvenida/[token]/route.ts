@@ -7,6 +7,7 @@ import { programaPorId } from "@/lib/programas";
 import { conCodigoDelAlumno, guiaDeBienvenida } from "@/lib/bienvenida-alumno";
 import { codigoDeAlumno } from "@/lib/reporte-servidor";
 import { origenDeLaApp } from "@/lib/reporte-enlace";
+import { bajaQueFrena } from "@/lib/ventas-de-baja-servidor";
 
 /* ==================================================================
    GET /api/bienvenida/<código> — lo que ve el alumno apenas firma (PandaDoc lo manda a /bienvenida/<código>).
@@ -45,6 +46,10 @@ export async function GET(peticion: Request, ctx: { params: Promise<{ token?: st
   const { programas, config } = await programasGuardados(db);
   const accesosAutomaticos = accesosAlFirmar(config.estado, c.modo);
   const programa = programaPorId(programas, c.programa)?.nombre ?? c.plantillaNombre;
+  /* Firmó, pero su venta se canceló o se reembolsó (Liliana, 27/11): no se le muestran links, guía ni soporte. */
+  if (c.estado === "firmado" && !c.datos.reserva && (await bajaQueFrena(db, c, c.alumnoId ?? null))) {
+    return NextResponse.json(armarBienvenida({ contrato: c, programa, accesos: [], linkWisboo: null, accesosAutomaticos, deBaja: true }), { headers: sinCache });
+  }
   let accesos: AccesoParaBienvenida[] = [];
   let linkWisboo: string | null = null;
   if (c.estado === "firmado" && c.accesosEn && c.alumnoId) {
