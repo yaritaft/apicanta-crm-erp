@@ -43,6 +43,7 @@ import { otrosEmails } from "@/lib/duplicados";
 import { fechaLarga, money } from "@/lib/format";
 import { momentoDe } from "@/lib/momento-webinar";
 import type { Alumno, Cuota, EstadoApp, EstadoVenta, Lead, Pago, Venta } from "@/lib/types";
+import { indiceDeSituaciones, SITUACION_ALUMNO } from "@/lib/situacion-alumno";
 
 /* ==================================================================
    La ficha de una persona. La misma, se abra desde donde se abra.
@@ -182,7 +183,9 @@ function Cabecera({ e, p, vista, vistas, onVista, onCerrar }: {
         <div className="row-wrap" style={{ gap: 6, marginTop: 4 }}>
           {/* Las canceladas no son compras (Diana Olivera, 21/10: una venta cargada tres veces y dos canceladas decía «3 compras»). */}
           {comprasVigentes(p) > 0 && <Badge variante="success"><ShoppingBag size={12} />{comprasVigentes(p) === 1 ? "Cliente" : `Cliente · ${comprasVigentes(p)} compras`}</Badge>}
-          {alumno && <Badge variante="brand"><GraduationCap size={12} />Alumno {alumno.estado}</Badge>}
+          {/* La situación de verdad (lib/situacion-alumno.ts), no el campo crudo: decía «Alumno graduado» a quien estaba en Outboarding
+              (Liliana, 27/11). */}
+          {alumno && <Badge variante="brand"><GraduationCap size={12} />Alumno · {SITUACION_ALUMNO[indiceDeSituaciones(e)(alumno)].texto}</Badge>}
         </div>
       </div>
       <div className="ficha__acciones">

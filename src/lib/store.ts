@@ -57,6 +57,8 @@ import { porcentajeDelSetterMarcado, setterDeAgendas } from "./setter-agendas";
 import { paseDeLaVenta, responsableTrasPase } from "./pasar-llamadas";
 import { rearmarPlan } from "./cambio-de-plan";
 import { planParaCompletar, problemaDeCompletar } from "./reservas";
+import { estadoPorFollowUp } from "./situacion-alumno";
+import { esVentaDeBaja } from "./contratos-de-baja";
 import { anotarRechazo, motivoDeLaBase, olvidarRechazo } from "./rechazos";
 import {
   cambiosDeChequeo, conChequeo, conComprobanteNuevo, puedeCambiarComprobante, puedeUsarCasillero,
@@ -421,6 +423,21 @@ function empujar(op: Op) {
   if (acceso && !puedeEditar(acceso, op.tabla)) { negada(op.tabla); return; }
   cola.push(op.tipo === "upsert" && op.tabla === "pagos" ? { ...op, filas: op.filas.map(sinColumnasDelControl) } : op);
   void drenar();
+}
+
+/* El estado del alumno acompaña al Follow Up (lib/situacion-alumno.ts → estadoPorFollowUp; la base hace lo mismo con un disparador,
+   así una pestaña que cambia el Follow Up ve el estado nuevo sin recargar). Liliana, 27/11: «que todos los que sean outboarding estén
+   como baja». Sólo se manda el campo `estado` (no la fila entera): no pisa nada que haya cambiado otra pestaña. */
+function estadoTrasFollowUp(e: EstadoApp, alumno: Alumno, antes: string | null | undefined, despues: string | null | undefined):
+  { estado: Alumno["estado"]; alumnos: Alumno[]; texto: string } | null {
+  const venta = alumno.ventaId ? e.ventas.find((v) => v.id === alumno.ventaId) : undefined;
+  const estado = estadoPorFollowUp({ estado: alumno.estado, antes, despues, ventaDeBaja: esVentaDeBaja(venta?.estado) });
+  if (!estado) return null;
+  return {
+    estado,
+    alumnos: e.alumnos.map((a) => (a.id === alumno.id ? { ...a, estado } : a)),
+    texto: estado === "baja" ? " Queda como baja: su Follow Up dice Outboarding." : " Vuelve a estar activo: salió de Outboarding.",
+  };
 }
 
 /* El mismo cambio en varias filas va en un solo UPDATE, de a 100 (los ids
@@ -2632,9 +2649,11 @@ export const acciones = {
     const antes = base.numero === null ? { ...base, numero: siguienteNumero(e.seguimientos ?? []) } : base;
     const quien = firma(e);
     const despues = cambio(antes, quien);
-    const { lista, nuevo } = registrar(e, "alumno", alumnoId, alumno.nombre, "actualizo", detalle(despues));
-    guardar({ ...e, seguimientos: [...(e.seguimientos ?? []).filter((s) => s.alumnoId !== alumnoId), despues], actividad: lista });
+    const estado = estadoTrasFollowUp(e, alumno, existente?.followUp, despues.followUp);
+    const { lista, nuevo } = registrar(e, "alumno", alumnoId, alumno.nombre, "actualizo", detalle(despues) + (estado?.texto ?? ""));
+    guardar({ ...e, seguimientos: [...(e.seguimientos ?? []).filter((s) => s.alumnoId !== alumnoId), despues], actividad: lista, ...(estado ? { alumnos: estado.alumnos } : {}) });
     empujar({ tipo: "upsert", tabla: "seguimiento_alumnos", filas: [despues] });
+    if (estado) empujarUpdate("alumnos", [alumnoId], { estado: estado.estado });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
     return antes;
   },
@@ -2644,9 +2663,12 @@ export const acciones = {
     const e = snapshot();
     const alumno = e.alumnos.find((a) => a.id === fila.alumnoId);
     if (!alumno) return;
-    const { lista, nuevo } = registrar(e, "alumno", alumno.id, alumno.nombre, "actualizo", detalle);
-    guardar({ ...e, seguimientos: [...(e.seguimientos ?? []).filter((s) => s.alumnoId !== fila.alumnoId), fila], actividad: lista });
+    const previo = (e.seguimientos ?? []).find((s) => s.alumnoId === fila.alumnoId);
+    const estado = estadoTrasFollowUp(e, alumno, previo?.followUp, fila.followUp);
+    const { lista, nuevo } = registrar(e, "alumno", alumno.id, alumno.nombre, "actualizo", detalle + (estado?.texto ?? ""));
+    guardar({ ...e, seguimientos: [...(e.seguimientos ?? []).filter((s) => s.alumnoId !== fila.alumnoId), fila], actividad: lista, ...(estado ? { alumnos: estado.alumnos } : {}) });
     empujar({ tipo: "upsert", tabla: "seguimiento_alumnos", filas: [fila] });
+    if (estado) empujarUpdate("alumnos", [alumno.id], { estado: estado.estado });
     empujar({ tipo: "upsert", tabla: "actividad", filas: [nuevo] });
   },
 

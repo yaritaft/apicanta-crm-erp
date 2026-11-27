@@ -8,7 +8,7 @@ import { leerDiaCv, leerLinkCv, leerTelefonoCv, revisionCvNormal } from "./revis
 import {
   aNumero, ENTRE, estadosDeResell, listasCs, programasDeTexto, resellNormal, seguimientoCompleto, sumarMeses, testimonioNormal, valorDeLista, CONTRATOS,
 } from "./clientes-cs";
-import { configSeguimiento } from "./seguimiento";
+import { configSeguimiento, terminoElServicio } from "./seguimiento";
 import type { Alumno, EstadoApp, ID, Lead, Reporte, Resell, RevisionCv, SeguimientoAlumno, Testimonio, Venta } from "./types";
 
 /* ==================================================================
@@ -582,7 +582,9 @@ export function planificarImportacionCs(e: EstadoApp, tablas: readonly TablaImpo
       const eraNuevo = !alumno;
       if (!alumno) {
         const egreso = egresoTxt ?? (inicio && campos.duracionMeses ? sumarMeses(inicio, campos.duracionMeses) : null);
-        alumno = crearAlumno({ nombre, email, telefono, pais: v("pais"), inicio, numero }, egreso && egreso < op.hoy ? "graduado" : "activo", `n${numero ?? ""}|${nombre}`);
+        /* Outboarding es baja aunque la fecha de egreso ya haya pasado (Liliana, 27/11: el 19/10 entraron 83 así como «egresados»). */
+        const estado = terminoElServicio(v("followUp")) ? "baja" : egreso && egreso < op.hoy ? "graduado" : "activo";
+        alumno = crearAlumno({ nombre, email, telefono, pais: v("pais"), inicio, numero }, estado, `n${numero ?? ""}|${nombre}`);
         /* Un alumno nuevo del archivo con un servicio comprado: se le enlaza la venta (mismo mail), para el closer y el plan de pago. */
         const venta = ventaPara(email, telefono, nombre, programas);
         if (venta) alumnos.set(alumno.id, { ...alumno, ventaId: venta.id, plan: planDeVenta(e, venta), inicio: inicio ? diaAInstante(inicio) : venta.fecha });

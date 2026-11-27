@@ -67,7 +67,7 @@ function estado(): EstadoApp {
   } as unknown as EstadoApp;
 }
 
-test("la regla, caso por caso: lo marcado a mano manda; venta de baja y Outboarding son baja; la reserva no es activa ni baja", () => {
+test("la regla, caso por caso: Outboarding es baja siempre; después, lo marcado a mano manda; venta de baja es baja; la reserva no es activa ni baja", () => {
   assert.equal(situacionDelAlumno({ estado: "activo" }), "activo");
   assert.equal(situacionDelAlumno({ estado: "activo", followUp: "Módulo 3" }), "activo");
   assert.equal(situacionDelAlumno({ estado: "activo", followUp: "OUTBOARDING" }), "baja");
@@ -96,9 +96,10 @@ test("con los datos de la base, cada alumno cae donde dice Lili", () => {
   const por = Object.fromEntries(e.alumnos.map((a) => [a.id, de(a)]));
   assert.deepEqual(por, {
     cursa: "activo", cursa2: "activo", outb: "baja", resPago: "reserva", resFu: "reserva", reemb: "baja", resCancelada: "baja",
-    egresado: "graduado", baja: "baja", pausa: "pausado",
+    egresado: "baja", baja: "baja", pausa: "pausado",
   });
-  assert.deepEqual(cuentaPorSituacion(e), { activo: 2, reserva: 2, pausado: 1, graduado: 1, baja: 4 });
+  /* El egresado con el Follow Up en Outboarding es baja (Liliana, 27/11 a la tarde: pruebas/outboarding-es-baja-27-11.test.ts). */
+  assert.deepEqual(cuentaPorSituacion(e), { activo: 2, reserva: 2, pausado: 1, graduado: 0, baja: 5 });
   assert.deepEqual(alumnosActivos(e).map((a) => a.id), ["cursa", "cursa2"]);
 });
 
@@ -140,7 +141,7 @@ test("en Clientes, elegir «Activo» no guarda algo que no se va a ver: dice qu�
   /* Dar de baja a mano, o volver a activo a quien se le había puesto «Baja» a mano, sigue escribiendo el campo. */
   assert.equal(escrituraCliente(filas.find((f) => f.id === "cursa")!, "estadoAlumno", "Baja", listas).tipo, "alumno");
   assert.deepEqual((escrituraCliente(filas.find((f) => f.id === "baja")!, "estadoAlumno", "Activo", listas) as { cambios: unknown }).cambios, { estado: "activo" });
-  /* El egresado con el Follow Up en Outboarding seguiría contando como baja: también se le dice. */
+  /* El egresado con el Follow Up en Outboarding cuenta como baja: también se le dice. */
   assert.equal(escrituraCliente(filas.find((f) => f.id === "egresado")!, "estadoAlumno", "Activo", listas).tipo, "no");
 });
 

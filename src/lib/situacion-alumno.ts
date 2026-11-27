@@ -16,11 +16,18 @@ import { esVentaDeBaja } from "./contratos-de-baja";
    Ahora hay una sola regla y la usan todas. No se escribe nada en la base: sale de lo que ya está cargado, así que cuando Lili
    pasa a alguien a Outboarding, o una reserva paga lo que falta, o Finanzas da de baja una venta, el número cambia solo.
 
-     · Lo que se marcó a mano en el estado (pausado, egresado, baja) manda.
+     · Su Follow Up dice Outboarding → baja, diga lo que diga el estado (terminó o se fue: lo cierra Lili).
+     · Lo que se marcó a mano en el estado (pausado, egresado, baja) manda sobre todo lo demás.
      · Figura activo pero su venta se canceló o se reembolsó  → baja (devolvió la plata, o el closer pidió la baja de la reserva).
-     · Figura activo pero su Follow Up dice Outboarding        → baja (terminó o se fue: lo cierra Lili).
      · Figura activo y sólo pagó la reserva (o el Follow Up dice Reserva) → reserva: todavía no arrancó; no es activo ni baja.
      · Todo lo demás → activo.
+
+   Outboarding le gana también a «Egresado» (Liliana, 27/11, a la tarde): «en el filtro Egresados hay muchos alumnos que son
+   outboarding, que están dados de baja; que todos los que sean outboarding estén como baja». Eran 83, casi todos de la importación
+   del Airtable del 19/10, que marcó «egresado» a quien tenía la fecha de egreso vencida sin mirar el Follow Up; y como lo marcado a
+   mano mandaba, el Outboarding no se veía. Además, para que el campo no vuelva a contradecir al Follow Up, la base lo acompaña
+   (supabase/outboarding-es-baja-27-11.sql, con la misma regla que `estadoPorFollowUp`): pasar a Outboarding deja el estado en baja, y
+   sacarlo de Outboarding lo vuelve a activo.
    ================================================================== */
 
 export type SituacionAlumno = "activo" | "reserva" | "pausado" | "graduado" | "baja";
@@ -32,8 +39,8 @@ export const SITUACION_ALUMNO: Record<SituacionAlumno, { texto: string; plural: 
   activo: { texto: "Activo", plural: "Activos", variante: "success", ayuda: "Cursan hoy: sin las reservas, sin los que están en Outboarding y sin las ventas canceladas o reembolsadas." },
   reserva: { texto: "Reserva", plural: "Reservas", variante: "info", ayuda: "Sólo pagaron la reserva (o su Follow Up dice Reserva): todavía no arrancaron. No cuentan como activos ni como bajas." },
   pausado: { texto: "Pausado", plural: "Pausados", variante: "warning", ayuda: "Marcados como pausados en su ficha." },
-  graduado: { texto: "Egresado", plural: "Egresados", variante: "brand", ayuda: "Marcados como egresados en su ficha." },
-  baja: { texto: "Baja", plural: "Bajas", variante: "neutral", ayuda: "Dados de baja: con el Follow Up en Outboarding, con la venta cancelada o reembolsada, o marcados como baja en su ficha." },
+  graduado: { texto: "Egresado", plural: "Egresados", variante: "brand", ayuda: "Marcados como egresados en su ficha y sin Outboarding en el Follow Up (los de Outboarding son bajas)." },
+  baja: { texto: "Baja", plural: "Bajas", variante: "neutral", ayuda: "Dados de baja: con el Follow Up en Outboarding (aunque figuren egresados), con la venta cancelada o reembolsada, o marcados como baja en su ficha." },
 };
 
 /** Lili ya lo pasó a «outboarding» en el Follow Up (como en su Airtable): terminó el programa, aunque el campo `estado` siga «activo».
@@ -56,6 +63,8 @@ export interface DatosDeSituacion {
 
 /** La situación de un alumno con lo que ya se sabe de él. Ver la regla arriba. */
 export function situacionDelAlumno(d: DatosDeSituacion): SituacionAlumno {
+  /* Outboarding primero: cerró el programa aunque el estado diga egresado o pausado. */
+  if (terminoElServicio(d.followUp)) return "baja";
   if (d.estado !== "activo") {
     /* Lo marcado a mano manda. Un estado escrito de otra forma («egresado», de una importación vieja) nunca cuenta como activo. */
     const e = String(d.estado ?? "").toLowerCase().trim();
@@ -64,9 +73,18 @@ export function situacionDelAlumno(d: DatosDeSituacion): SituacionAlumno {
     return "baja";
   }
   if (d.ventaDeBaja) return "baja";
-  if (terminoElServicio(d.followUp)) return "baja";
   if (d.enReserva) return "reserva";
   return "activo";
+}
+
+/** Cómo queda el campo `estado` cuando cambia el Follow Up, o null si no cambia. La misma regla corre en la base
+ *  (supabase/outboarding-es-baja-27-11.sql → alumno_sigue_al_follow_up), así da igual desde dónde se cambie:
+ *    · el Follow Up dice Outboarding → baja (también si ya lo decía y el campo había quedado en otra cosa);
+ *    · sale de Outboarding y el campo dice baja → activo, salvo que su venta esté cancelada o reembolsada (esa baja es de la venta). */
+export function estadoPorFollowUp(d: { estado: Alumno["estado"]; antes?: string | null; despues?: string | null; ventaDeBaja?: boolean }): Alumno["estado"] | null {
+  if (terminoElServicio(d.despues)) return d.estado === "baja" ? null : "baja";
+  if (terminoElServicio(d.antes) && d.estado === "baja" && !d.ventaDeBaja) return "activo";
+  return null;
 }
 
 type AlumnoDeSituacion = Pick<Alumno, "id" | "estado"> & { ventaId?: string | null };

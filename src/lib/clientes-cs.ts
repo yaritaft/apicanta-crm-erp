@@ -788,11 +788,12 @@ export function escrituraCliente(f: FilaCliente, clave: ClaveCliente, valor: str
     case "estadoAlumno": {
       const o = OPCIONES_ESTADO_ALUMNO.find((x) => x.texto === v || x.valor === v);
       if (!o) return { tipo: "no", motivo: "Elegí uno de los estados." };
+      /* Con el Follow Up en Outboarding es baja, diga lo que diga el campo (Liliana, 27/11): para cambiarlo se cambia el Follow Up. */
+      if (o.valor !== "baja" && terminoElServicio(f.followUp)) return { tipo: "no", motivo: `Su Follow Up dice «${f.followUp}»: cuenta como baja. Para que figure ${o.texto.toLowerCase()}, cambiá primero el Follow Up.` };
       /* «Activo» no alcanza si lo que lo saca es otra cosa (lib/situacion-alumno.ts): se dice qué hay que cambiar en vez de guardar algo
          que no se va a ver. */
       if (o.valor === "activo" && f.situacionAlumno !== "activo") {
         if (f.venta && esVentaDeBaja(f.venta.estado)) return { tipo: "no", motivo: `Su venta está ${f.venta.estado}: para que vuelva a contar como activo, Finanzas tiene que reactivarla.` };
-        if (terminoElServicio(f.followUp)) return { tipo: "no", motivo: `Su Follow Up dice «${f.followUp}»: para que vuelva a contar como activo, cambiá el Follow Up.` };
         if (f.situacionAlumno === "reserva" && f.alumno.estado === "activo") return { tipo: "no", motivo: "Es una reserva: pasa a activo solo cuando paga lo que falta (o cuando le sacás «Reserva» del Follow Up)." };
       }
       return { tipo: "alumno", cambios: { estado: o.valor }, detalle: `Estado del alumno: ${o.texto}.` };

@@ -11,6 +11,7 @@ import { nombresDeVendedores } from "@/lib/vendedores";
 import { PAISES } from "@/lib/crm-tabla";
 import { configSeguimiento, hoyDelNegocio } from "@/lib/seguimiento";
 import { diaAInstante } from "@/lib/dia-negocio";
+import { terminoElServicio } from "@/lib/situacion-alumno";
 import {
   aNumero, conEgresoEscrito, CONTRATOS, DURACION_POR_PROGRAMA, edadDeNacimiento, egresoDeEsteCiclo, ENTRE, listasCs, OPCIONES_ESTADO_ALUMNO, problemaDeNacimiento,
   SESIONES_MENTOR, valorDeLista, type FilaCliente,
@@ -143,7 +144,8 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
     if (b.email.trim() !== antes.email) cambiosAlumno.email = b.email.trim();
     if ((b.pais.trim() || undefined) !== ((antes.pais ?? "").trim() || undefined) && b.pais.trim() !== fila.pais) cambiosAlumno.pais = b.pais.trim() || undefined;
     if (b.inicio && b.inicio !== fila.inicio) cambiosAlumno.inicio = diaAInstante(b.inicio);
-    if (b.estadoAlumno !== antes.estado) cambiosAlumno.estado = b.estadoAlumno;
+    /* Con el Follow Up en Outboarding el estado lo pone el guardado del seguimiento (baja): acá no se escribe. */
+    if (!terminoElServicio(b.followUp) && b.estadoAlumno !== antes.estado) cambiosAlumno.estado = b.estadoAlumno;
     if (Object.keys(cambiosAlumno).length) acciones.actualizar<Alumno>("alumnos", fila.id, cambiosAlumno, nombre, "Se actualizó el alumno desde la ficha de Customer Success.");
     const persona = {
       nombre: cambiosAlumno.nombre, email: cambiosAlumno.email,
@@ -234,8 +236,9 @@ export function FichaClienteCs({ fila, onCerrar }: { fila: FilaCliente; onCerrar
               <Input value={fila.closerDeVenta ? fila.closer : b.closer} disabled={fila.closerDeVenta} onChange={(ev) => set("closer", ev.target.value)} list="cs-closers" />
               <datalist id="cs-closers">{closers.map((c) => <option key={c} value={c} />)}</datalist>
             </Field>
-            <Field label="Estado del alumno">
-              <Select value={b.estadoAlumno} aria-label="Estado del alumno" opciones={OPCIONES_ESTADO_ALUMNO.map((o) => ({ valor: o.valor, texto: o.texto }))} onChange={(ev) => set("estadoAlumno", ev.target.value as Alumno["estado"])} />
+            <Field label="Estado del alumno" ayuda={terminoElServicio(b.followUp) ? `Baja porque el Follow Up dice «${b.followUp}». Para cambiarlo, cambiá el Follow Up.` : undefined}>
+              <Select value={terminoElServicio(b.followUp) ? "baja" : b.estadoAlumno} aria-label="Estado del alumno" disabled={terminoElServicio(b.followUp)}
+                opciones={OPCIONES_ESTADO_ALUMNO.map((o) => ({ valor: o.valor, texto: o.texto }))} onChange={(ev) => set("estadoAlumno", ev.target.value as Alumno["estado"])} />
             </Field>
           </div>
         </section>

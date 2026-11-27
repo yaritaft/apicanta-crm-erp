@@ -282,11 +282,14 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
   const sinSeguimiento = f.situacion === "reserva"
     ? "Es una reserva: el seguimiento arranca cuando pague lo que falta."
     : f.situacion === "fuera"
-      ? (alumno.estado !== "activo"
-        ? `Está ${f.estadoAlumno.toLowerCase()}: no entra al seguimiento.`
-        : f.venta && esVentaDeBaja(f.venta.estado)
-          ? `Su venta está ${f.venta.estado}: cuenta como baja y no entra en «A contactar hoy». Si sigue en el programa, que Finanzas reactive la venta.`
-          : `Su Follow Up dice «${f.followUp}»: terminó el programa, cuenta como baja y no entra en «A contactar hoy». Si seguís en contacto, cambiá el Follow Up.`)
+      ? (terminoElServicio(f.followUp)
+        /* Primero el Outboarding: desde el 27/11 el estado también dice baja, y «Está baja» solo no explica por qué. */
+        ? `Su Follow Up dice «${f.followUp}»: terminó el programa, cuenta como baja y no entra en «A contactar hoy». Si seguís en contacto, cambiá el Follow Up.`
+        : alumno.estado !== "activo"
+          ? `Está ${f.estadoAlumno.toLowerCase()}: no entra al seguimiento.`
+          : f.venta && esVentaDeBaja(f.venta.estado)
+            ? `Su venta está ${f.venta.estado}: cuenta como baja y no entra en «A contactar hoy». Si sigue en el programa, que Finanzas reactive la venta.`
+            : `Está ${f.estadoAlumno.toLowerCase()}: no entra al seguimiento.`)
       : null;
   /* «Contar desde» (Ajustes): lo de antes de que arrancara la app se cuenta desde ese día, no desde el último contacto. */
   const desdeLaApp = cfg.contarDesde && f.ultimoContacto && f.ultimoContacto < cfg.contarDesde && f.proximo === sumarDias(cfg.contarDesde, f.cadencia)
