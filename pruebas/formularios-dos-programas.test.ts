@@ -26,11 +26,14 @@ test("Hackear IA y Hackear AI son el formulario de Hackear IT; quien cursa Biz e
 
 test("los formularios que se le piden: activo y cursando; los dos si cursa los dos", () => {
   const ia = { programas: ["Hackear Biz", "HACKEAR IA"] };
-  assert.deepEqual(formulariosQueSeLePiden({ estado: "activo" }, ia), ["hackear-biz", "hackear-it"]);
-  assert.deepEqual(formulariosQueSeLePiden({ estado: "activo" }, { programas: ["Hackear Biz"] }), ["hackear-biz"]);
-  assert.deepEqual(formulariosQueSeLePiden({ estado: "activo" }, { ...ia, followUp: "CASO DE EXITO" }), [], "Nahuel Abadia: ya terminó");
-  assert.deepEqual(formulariosQueSeLePiden({ estado: "activo" }, { ...ia, followUp: "Outboarding" }), []);
-  assert.deepEqual(formulariosQueSeLePiden({ estado: "egresado" }, ia), []);
+  assert.deepEqual(formulariosQueSeLePiden({}, ia, "activo"), ["hackear-biz", "hackear-it"]);
+  assert.deepEqual(formulariosQueSeLePiden({}, { programas: ["Hackear Biz"] }, "activo"), ["hackear-biz"]);
+  assert.deepEqual(formulariosQueSeLePiden({}, { ...ia, followUp: "CASO DE EXITO" }, "activo"), [], "Nahuel Abadia: ya terminó");
+  assert.deepEqual(formulariosQueSeLePiden({}, { ...ia, followUp: "Outboarding" }, "activo"), []);
+  assert.deepEqual(formulariosQueSeLePiden({}, ia, "graduado"), []);
+  /* Liliana, 27/11: ni a la reserva ni a quien pidió el reembolso. */
+  assert.deepEqual(formulariosQueSeLePiden({}, ia, "reserva"), []);
+  assert.deepEqual(formulariosQueSeLePiden({}, ia, "baja"), []);
 });
 
 test("cada formulario tiene su link con el mismo código", () => {
@@ -172,11 +175,11 @@ test("un programa nuevo, o un alumno sin ninguno, se marca como sin reconocer", 
 });
 
 test("la lista de alumnos con programa sin reconocer: sólo los activos", () => {
-  const segs = new Map<string, { programas?: unknown }>([["a1", { programas: ["Hackear Pro"] }], ["a2", { programas: ["Principals"] }], ["a3", { programas: ["Hackear Pro"] }]]);
+  const segs = new Map<string, { programas?: unknown }>([["a1", { programas: ["Hackear Pro"] }], ["a2", { programas: ["Principals"] }], ["a3", { programas: ["Hackear Pro"] }], ["a4", { programas: ["Hackear Pro"] }]]);
   const lista = alumnosConProgramaSinReconocer([
     { id: "a1", nombre: "Ana", estado: "activo", plan: "" }, { id: "a2", nombre: "Beto", estado: "activo", plan: "" },
-    { id: "a3", nombre: "Caro", estado: "egresado", plan: "" },
-  ], segs);
+    { id: "a3", nombre: "Caro", estado: "egresado", plan: "" }, { id: "a4", nombre: "Dani", estado: "activo", plan: "" },
+  ], segs, (a) => (a.id === "a4" ? "reserva" : a.estado === "activo" ? "activo" : "graduado"));
   assert.deepEqual(lista, [{ id: "a1", nombre: "Ana", programas: ["Hackear Pro"] }]);
 });
 

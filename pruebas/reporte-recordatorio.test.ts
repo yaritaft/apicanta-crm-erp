@@ -15,14 +15,17 @@ test("el link de cada programa y su atajo", () => {
   assert.equal(formularioDeAtajo(null), null);
 });
 
-test("a quién se le pide el formulario: activo, todavía cursa y con programa", () => {
-  assert.equal(formularioQueSeLePide({ estado: "activo" }, { programas: ["Hackear Biz"] }), "hackear-biz");
-  assert.equal(formularioQueSeLePide({ estado: "activo", plan: "Hackear Biz - 6 meses" }, undefined), "hackear-biz", "sin ficha: el plan");
-  assert.equal(formularioQueSeLePide({ estado: "activo", plan: "Mentoría" }, { programas: [] }), "hackear-it");
-  assert.equal(formularioQueSeLePide({ estado: "activo" }, { programas: ["Hackear Biz"], followUp: "OUTBOARDING" }), null, "terminó");
-  assert.equal(formularioQueSeLePide({ estado: "activo" }, { programas: ["Hackear Biz"], followUp: "Caso de éxito" }), null);
-  assert.equal(formularioQueSeLePide({ estado: "egresado" }, { programas: ["Hackear Biz"] }), null);
-  assert.equal(formularioQueSeLePide({ estado: "activo" }, { programas: ["Hackear Biz", "Hackear IT"] }), null, "los dos: se le pregunta");
+test("a quién se le pide el formulario: activo de verdad, todavía cursa y con programa", () => {
+  assert.equal(formularioQueSeLePide({}, { programas: ["Hackear Biz"] }, "activo"), "hackear-biz");
+  assert.equal(formularioQueSeLePide({ plan: "Hackear Biz - 6 meses" }, undefined, "activo"), "hackear-biz", "sin ficha: el plan");
+  assert.equal(formularioQueSeLePide({ plan: "Mentoría" }, { programas: [] }, "activo"), "hackear-it");
+  assert.equal(formularioQueSeLePide({}, { programas: ["Hackear Biz"], followUp: "OUTBOARDING" }, "activo"), null, "terminó");
+  assert.equal(formularioQueSeLePide({}, { programas: ["Hackear Biz"], followUp: "Caso de éxito" }, "activo"), null);
+  assert.equal(formularioQueSeLePide({}, { programas: ["Hackear Biz"] }, "graduado"), null);
+  assert.equal(formularioQueSeLePide({}, { programas: ["Hackear Biz", "Hackear IT"] }, "activo"), null, "los dos: se le pregunta");
+  /* Liliana, 27/11: ni a la reserva ni a quien pidió el reembolso (la situación sale de lib/situacion-alumno.ts). */
+  assert.equal(formularioQueSeLePide({}, { programas: ["Hackear Biz"] }, "reserva"), null);
+  assert.equal(formularioQueSeLePide({}, { programas: ["Hackear Biz"] }, "baja"), null);
 });
 
 /* Una base de mentira que filtra en memoria y anota lo que se escribe. */
@@ -113,4 +116,39 @@ test("sin Resend no manda nada ni lee la base", async () => {
   const r = await recordarReportes(db as never, "https://x", LUNES, (async () => { throw new Error("no"); }) as never, null);
   assert.equal(r.habilitado, false);
   assert.equal(r.mandados, 0);
+});
+
+/* Liliana, 27/11: el campo dice «activo» también en las reservas y en quien pidió el reembolso. El lunes se mira la situación de verdad
+   (lib/situacion-alumno.ts), con su venta y sus cuotas: a ellos no les llega el formulario. */
+test("los lunes no le escribe a una reserva ni a quien pidió el reembolso: sólo al activo de verdad", async () => {
+  const db = base({
+    alumnos: [
+      { id: "alu_ana", nombre: "Ana Cursa", email: "ana@x.com", plan: "", estado: "activo", ventaId: "v_ana" },
+      { id: "alu_res", nombre: "Rita Reserva", email: "rita@x.com", plan: "", estado: "activo", ventaId: "v_res" },
+      { id: "alu_rfu", nombre: "Raúl Reserva FU", email: "raul@x.com", plan: "", estado: "activo" },
+      { id: "alu_dev", nombre: "Dora Devolución", email: "dora@x.com", plan: "", estado: "activo", ventaId: "v_dev" },
+    ],
+    seguimiento_alumnos: [
+      { alumnoId: "alu_ana", programas: ["Hackear Biz"], followUp: "Módulo 2" },
+      { alumnoId: "alu_res", programas: ["Hackear Biz"], followUp: "" },
+      { alumnoId: "alu_rfu", programas: ["Hackear Biz"], followUp: "RESERVA" },
+      { alumnoId: "alu_dev", programas: ["Hackear Biz"], followUp: "Devolución" },
+    ],
+    ventas: [{ id: "v_ana", estado: "activa" }, { id: "v_res", estado: "activa" }, { id: "v_dev", estado: "reembolsada" }],
+    cuotas: [
+      { ventaId: "v_ana", monto: 500, esReserva: false, estado: "pagada" },
+      { ventaId: "v_res", monto: 100, esReserva: true, estado: "pagada" },
+      { ventaId: "v_res", monto: 2900, esReserva: false, estado: "pendiente" },
+      { ventaId: "v_dev", monto: 500, esReserva: false, estado: "pagada" },
+    ],
+    reportes: [],
+    reporte_codigos: ["alu_ana", "alu_res", "alu_rfu", "alu_dev"].map((alumnoId, n) => ({ alumnoId, codigo: `${n + 1}${n + 1}${n + 1}${n + 1}${n + 1}${n + 1}${n + 1}${n + 1}-1111-4111-8111-111111111111` })),
+    ajustes: [{ id: 1, bienvenida: {} }],
+    equipo: [],
+  });
+  const mails: { para: string }[] = [];
+  const enviar = (async (_cfg: unknown, m: { para: string }) => { mails.push(m); return { ok: true, id: `re_${mails.length}` }; }) as never;
+  const r = await recordarReportes(db as never, "https://apicanta-erp.vercel.app", LUNES, enviar, { clave: "x", desde: "y" });
+  assert.deepEqual(mails.map((m) => m.para), ["ana@x.com"], "ni Rita (sólo pagó la reserva), ni Raúl (Follow Up Reserva), ni Dora (reembolsada)");
+  assert.equal(r.salteados.termino, 3, "los tres cuentan como que no cursan");
 });

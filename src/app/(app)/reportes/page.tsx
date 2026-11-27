@@ -225,8 +225,8 @@ export default function Reportes() {
   }, [e.alumnos, e.reportes, e.seguimientos, busca]);
   /* Los activos con un programa que la app no reconoce (sin formulario y sin error): se ven arriba de la tabla. */
   const sinReconocer = useMemo(
-    () => alumnosConProgramaSinReconocer(e.alumnos, new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const))),
-    [e.alumnos, e.seguimientos],
+    () => alumnosConProgramaSinReconocer(e.alumnos, new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const)), indiceDeSituaciones(e)),
+    [e],
   );
   const columnasAlumnos: Columna<(typeof porAlumno)[number]>[] = [
     { clave: "alumno", titulo: "Alumno", tipo: "primary", celda: (f) => <Persona nombre={f.alumno.nombre} sub={f.alumno.email || "Sin mail"} /> },

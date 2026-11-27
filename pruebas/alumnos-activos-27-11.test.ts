@@ -148,8 +148,6 @@ test("en Clientes, elegir «Activo» no guarda algo que no se va a ver: dice qu�
    El error fue contar «activos» con el campo crudo (`alumnos.filter((a) => a.estado === "activo")`) en cada pantalla, cada una por su
    lado. Esta prueba frena si alguien vuelve a escribir esa cuenta: hay que usar `alumnosActivos()` o `indiceDeSituaciones()`. */
 const PERMITIDOS: Record<string, string> = {
-  /* Decide a quién se le manda el formulario semanal (recordatorio por mail), con su propia regla documentada ahí: no es una cuenta. */
-  "src/lib/reporte-formularios.ts": "a quién se le pide el reporte",
   /* Desempata entre dos alumnos con el mismo teléfono para atar la cuenta de Telegram: no es una cuenta. */
   "src/lib/telegram-identidades.ts": "desempate de Telegram",
   /* Recibe la situación ya calculada con la regla (SesionesZoomGeneral pasa `indiceDeSituaciones`): su `estado` no es el campo crudo. */

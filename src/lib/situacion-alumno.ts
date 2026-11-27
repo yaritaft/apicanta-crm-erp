@@ -69,7 +69,7 @@ export function situacionDelAlumno(d: DatosDeSituacion): SituacionAlumno {
   return "activo";
 }
 
-type AlumnoDeSituacion = Pick<Alumno, "id" | "estado" | "ventaId">;
+type AlumnoDeSituacion = Pick<Alumno, "id" | "estado"> & { ventaId?: string | null };
 type BaseDeSituaciones<T extends AlumnoDeSituacion = AlumnoDeSituacion> = {
   alumnos: readonly T[];
   seguimientos?: readonly Pick<SeguimientoAlumno, "alumnoId" | "followUp">[];
@@ -88,7 +88,7 @@ export function indiceDeSituaciones(e: Omit<BaseDeSituaciones, "alumnos">): (a: 
     if (ya) return ya;
     const fu = followUp.get(a.id);
     const s = situacionDelAlumno({
-      estado: a.estado, followUp: fu, enReserva: esReserva(a, fu), ventaDeBaja: Boolean(a.ventaId && ventaDeBaja.has(a.ventaId)),
+      estado: a.estado, followUp: fu, enReserva: esReserva({ ventaId: a.ventaId ?? undefined }, fu), ventaDeBaja: Boolean(a.ventaId && ventaDeBaja.has(a.ventaId)),
     });
     cache.set(a.id, s);
     return s;

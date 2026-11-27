@@ -15,6 +15,8 @@
    guarda y la ficha del cliente, que muestra las respuestas.
    ================================================================== */
 
+import type { SituacionAlumno } from "./situacion-alumno";
+
 export type TipoPregunta = "texto" | "texto-corto" | "opciones" | "numero" | "escala" | "si-no";
 
 export interface PreguntaReporte {
@@ -118,14 +120,22 @@ export function formularioDelAlumnoCon(programas: unknown, plan: unknown): Formu
   return typeof plan === "string" ? formularioDe([plan]) : null;
 }
 
-/** El formulario que se le pide cada semana a un alumno: está activo, todavía cursa (su Follow Up no dice Outboarding ni caso de
- *  éxito) y se sabe su programa. Es la misma regla para el recordatorio de los lunes y para la cuenta de la pantalla. */
-export function formularioQueSeLePide(
-  a: { estado: string; plan?: string | null }, seg: { programas?: unknown; followUp?: string | null } | undefined,
-): IdFormulario | null {
-  if (a.estado !== "activo") return null;
+/* A quién se le pide el reporte semanal: al que está activo de verdad (lib/situacion-alumno.ts: ni reserva, ni Outboarding, ni con la
+   venta cancelada o reembolsada, ni marcado como egresado o baja) y todavía cursa (el caso de éxito ya terminó lo del programa). La
+   situación la calcula quien llama con la regla única (indiceDeSituaciones): así el recordatorio de los lunes, la cuenta de la pantalla y
+   el botón «Mandar» no pueden escribirle a una reserva o a quien pidió el reembolso (Liliana, 27/11). */
+function sigueCursando(seg: { followUp?: string | null } | undefined, situacion: SituacionAlumno): boolean {
+  if (situacion !== "activo") return false;
   const f = (seg?.followUp ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  if (f.startsWith("outboarding") || f.startsWith("outbording") || f.startsWith("caso de exito")) return null;
+  return !(f.startsWith("outboarding") || f.startsWith("outbording") || f.startsWith("caso de exito"));
+}
+
+/** El formulario que se le pide cada semana a un alumno: está activo de verdad, todavía cursa y se sabe su programa. Es la misma regla
+ *  para el recordatorio de los lunes y para la cuenta de la pantalla. */
+export function formularioQueSeLePide(
+  a: { plan?: string | null }, seg: { programas?: unknown; followUp?: string | null } | undefined, situacion: SituacionAlumno,
+): IdFormulario | null {
+  if (!sigueCursando(seg, situacion)) return null;
   return formularioDelAlumnoCon(seg?.programas, a.plan)?.id ?? null;
 }
 
@@ -164,12 +174,13 @@ export function programasSinReconocer(programas: unknown, plan: unknown): string
   });
 }
 
-/** Los alumnos activos con un programa que la app no reconoce: no reciben ningún formulario y nadie se entera. */
-export function alumnosConProgramaSinReconocer<A extends { id: string; nombre: string; estado: string; plan?: string | null }>(
-  alumnos: readonly A[], seguimientos: ReadonlyMap<string, { programas?: unknown; followUp?: string | null }>,
+/** Los alumnos activos de verdad (la situación sale de la regla única, lib/situacion-alumno.ts) con un programa que la app no reconoce:
+ *  no reciben ningún formulario y nadie se entera. */
+export function alumnosConProgramaSinReconocer<A extends { id: string; nombre: string; plan?: string | null }>(
+  alumnos: readonly A[], seguimientos: ReadonlyMap<string, { programas?: unknown; followUp?: string | null }>, situacionDe: (a: A) => SituacionAlumno,
 ): { id: string; nombre: string; programas: string[] }[] {
   return alumnos
-    .filter((a) => a.estado === "activo")
+    .filter((a) => situacionDe(a) === "activo")
     .map((a) => ({ id: a.id, nombre: a.nombre, programas: programasSinReconocer(seguimientos.get(a.id)?.programas, a.plan) }))
     .filter((x) => x.programas.length > 0);
 }
@@ -189,14 +200,12 @@ export function formulariosDelAlumnoCon(programas: unknown, plan: unknown): Form
   return typeof plan === "string" ? formulariosDe([plan]) : [];
 }
 
-/** Los formularios que se le piden cada semana a un alumno: está activo, todavía cursa (su Follow Up no dice Outboarding ni caso
- *  de éxito) y se sabe su programa. */
+/** Los formularios que se le piden cada semana a un alumno: está activo de verdad, todavía cursa (su Follow Up no dice Outboarding ni
+ *  caso de éxito) y se sabe su programa. */
 export function formulariosQueSeLePiden(
-  a: { estado: string; plan?: string | null }, seg: { programas?: unknown; followUp?: string | null } | undefined,
+  a: { plan?: string | null }, seg: { programas?: unknown; followUp?: string | null } | undefined, situacion: SituacionAlumno,
 ): IdFormulario[] {
-  if (a.estado !== "activo") return [];
-  const f = (seg?.followUp ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  if (f.startsWith("outboarding") || f.startsWith("outbording") || f.startsWith("caso de exito")) return [];
+  if (!sigueCursando(seg, situacion)) return [];
   return formulariosDelAlumnoCon(seg?.programas, a.plan).map((x) => x.id);
 }
 

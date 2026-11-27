@@ -7,6 +7,7 @@ import { Confirmar } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { copiarTexto } from "@/components/ui/Telefono";
 import { useEstado } from "@/lib/store";
+import { indiceDeSituaciones } from "@/lib/situacion-alumno";
 import { useAcceso } from "@/lib/acceso";
 import { puedeEditar } from "@/lib/permisos";
 import { nube } from "@/lib/supabase";
@@ -48,13 +49,15 @@ export function FormulariosPorPrograma() {
 
   const porFormulario = useMemo(() => {
     const segs = new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const));
+    /* Sólo a los activos de verdad (lib/situacion-alumno.ts): ni reservas ni ventas reembolsadas (Liliana, 27/11). */
+    const situacionDe = indiceDeSituaciones(e);
     const out: Record<IdFormulario, string[]> = { "hackear-biz": [], "hackear-it": [] };
     for (const a of e.alumnos) {
       /* Quien cursa Hackear Biz e IA completa los dos (Lili, 29/10): cuenta en cada uno. */
-      for (const id of formulariosQueSeLePiden(a, segs.get(a.id))) out[id].push(a.id);
+      for (const id of formulariosQueSeLePiden(a, segs.get(a.id), situacionDe(a))) out[id].push(a.id);
     }
     return out;
-  }, [e.alumnos, e.seguimientos]);
+  }, [e]);
 
   const copiar = async (id: IdFormulario) => {
     const ok = await copiarTexto(linkDelPrograma(window.location.origin, id));

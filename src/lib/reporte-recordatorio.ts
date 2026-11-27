@@ -5,6 +5,8 @@ import { armarMailConFormularios, enlaceDeReporte } from "./reporte-enlace";
 import { alumnosConProgramaSinReconocer, CON_RECORDATORIO, FORMULARIOS, formulariosDelAlumnoCon, formulariosQueSeLePiden, type IdFormulario } from "./reporte-formularios";
 import { lunesDelDia } from "./reportes";
 import { diaAInstante, diaDeNegocio } from "./dia-negocio";
+import { indiceDeSituaciones, type SituacionAlumno } from "./situacion-alumno";
+import type { Alumno, Cuota, Venta } from "./types";
 
 /* ==================================================================
    El recordatorio del formulario semanal (Lili, 26/10: Manu pidió que el
@@ -15,7 +17,8 @@ import { diaAInstante, diaDeNegocio } from "./dia-negocio";
    no completó el de esa semana, le llega por mail su link personal (uno por
    formulario que le falte: quien cursa Biz e IA completa los dos): entra
    directo con su código y lo que contesta va a su ficha y a Formularios de
-   alumnos. No se le escribe a quien ya terminó (Outboarding o caso de éxito),
+   alumnos. No se le escribe a quien no está activo de verdad (lib/situacion-alumno.ts: reserva, Outboarding, venta cancelada o
+   reembolsada), a quien ya terminó (caso de éxito),
    a quien no tiene un mail válido, ni a quien ya recibió un aviso en los
    últimos 5 días (si alguien se lo mandó a mano, o la pasada corre dos veces).
    Customer Success recibe un aviso con cuántos salieron.
@@ -43,9 +46,9 @@ export async function recordarReportes(
   const salida: PasadaRecordatorio = { habilitado: Boolean(cfg), mandados: 0, fallaron: 0, salteados: { yaLoCompleto: 0, avisadoHace: 0, sinMail: 0, termino: 0 }, porPrograma: {}, sinReconocer: [] };
   if (!cfg) return salida;
 
-  const al = await db.from("alumnos").select("id, nombre, email, plan, estado").eq("estado", "activo");
+  const al = await db.from("alumnos").select("id, nombre, email, plan, estado, ventaId").eq("estado", "activo");
   if (al.error) throw new Error(`alumnos: ${al.error.message}`);
-  const alumnos = (al.data ?? []) as { id: string; nombre: string; email: string | null; plan: string | null; estado: string }[];
+  const alumnos = (al.data ?? []) as { id: string; nombre: string; email: string | null; plan: string | null; estado: Alumno["estado"]; ventaId?: string | null }[];
   if (!alumnos.length) return salida;
   const ids = alumnos.map((a) => a.id);
 
@@ -55,14 +58,18 @@ export async function recordarReportes(
     for (const s of (r.data ?? []) as { alumnoId: string; programas?: unknown; followUp?: string | null }[]) segs.set(s.alumnoId, s);
   }
 
+  /* En qué está cada uno de verdad, con la regla única (lib/situacion-alumno.ts): el campo dice «activo» también en las reservas y en
+     quien pidió el reembolso, y a ellos no se les pide el reporte (Liliana, 27/11). Hacen falta su venta y sus cuotas. */
+  const situacionDe = await situacionesDe(db, alumnos, segs);
+
   /* El programa es un texto libre de la ficha: uno que la app no reconoce deja al alumno sin formulario y sin error. Se avisa. */
-  salida.sinReconocer = alumnosConProgramaSinReconocer(alumnos, segs as ReadonlyMap<string, { programas?: unknown; followUp?: string | null }>);
+  salida.sinReconocer = alumnosConProgramaSinReconocer(alumnos, segs as ReadonlyMap<string, { programas?: unknown; followUp?: string | null }>, situacionDe);
 
   /* Los de un programa con recordatorio que todavía cursan (la misma regla que cuenta la pantalla de Formularios de alumnos). Quien
      cursa Hackear Biz e IA completa los dos formularios (Lili, 29/10): le llega el link de cada uno que le falte. */
   const candidatos = alumnos.flatMap((a) => {
     const s = segs.get(a.id);
-    const ids = formulariosQueSeLePiden(a, s);
+    const ids = formulariosQueSeLePiden(a, s, situacionDe(a));
     if (!ids.length) {
       if (formulariosDelAlumnoCon(s?.programas, a.plan).some((f) => CON_RECORDATORIO.includes(f.id))) salida.salteados.termino++;
       return [];
@@ -114,6 +121,31 @@ export async function recordarReportes(
   if (salida.mandados + salida.fallaron > 0) await avisarAServicio(db, hoy, salida);
   if (salida.sinReconocer.length) await avisarSinReconocer(db, hoy, salida.sinReconocer);
   return salida;
+}
+
+/* La situación de cada alumno (lib/situacion-alumno.ts) con su Follow Up, el estado de su venta y sus cuotas (si sólo pagó la reserva).
+   Si la base no contesta, se corta: mejor no mandar nada un lunes que escribirle a quien pidió el reembolso. */
+async function situacionesDe(
+  db: SupabaseClient, alumnos: readonly { id: string; estado: Alumno["estado"]; ventaId?: string | null }[],
+  segs: ReadonlyMap<string, { followUp?: string | null }>,
+): Promise<(a: { id: string; estado: Alumno["estado"]; ventaId?: string | null }) => SituacionAlumno> {
+  const ventaIds = [...new Set(alumnos.map((a) => a.ventaId).filter((v): v is string => Boolean(v)))];
+  const ventas: { id: string; estado: string }[] = [];
+  const cuotas: { ventaId: string; monto: number; esReserva: boolean; estado: string }[] = [];
+  for (let i = 0; i < ventaIds.length; i += 200) {
+    const parte = ventaIds.slice(i, i + 200);
+    const v = await db.from("ventas").select("id, estado").in("id", parte);
+    if (v.error) throw new Error(`ventas: ${v.error.message}`);
+    ventas.push(...((v.data ?? []) as { id: string; estado: string }[]));
+    const c = await db.from("cuotas").select("ventaId, monto, esReserva, estado").in("ventaId", parte);
+    if (c.error) throw new Error(`cuotas: ${c.error.message}`);
+    cuotas.push(...((c.data ?? []) as { ventaId: string; monto: number; esReserva: boolean; estado: string }[]));
+  }
+  return indiceDeSituaciones({
+    seguimientos: [...segs].map(([alumnoId, s]) => ({ alumnoId, followUp: s.followUp ?? "" })),
+    ventas: ventas as Pick<Venta, "id" | "estado">[],
+    cuotas: cuotas as Pick<Cuota, "ventaId" | "monto" | "esReserva" | "estado">[],
+  });
 }
 
 /* Un aviso por lunes a Customer Success: quiénes tienen un programa que la app no reconoce (no reciben ningún formulario). */
