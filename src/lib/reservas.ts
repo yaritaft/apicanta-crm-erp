@@ -1,4 +1,4 @@
-import type { Alumno, Cuota, EstadoApp, ID, Pago, Venta } from "./types";
+import type { Alumno, Cuota, EstadoApp, ID, Pago, Producto, Venta } from "./types";
 import { mismaPersona, quienDeLaVenta, type QuienCompra } from "./ventas-repetidas";
 
 /* ==================================================================
@@ -18,15 +18,28 @@ export interface EstadoReserva {
   falta: number;
 }
 
-/** La reserva que todavía no se completó (sólo pagó la reserva), o null si no es eso. */
-export function reservaSinCompletar(cuotasVenta: readonly Pick<Cuota, "monto" | "esReserva" | "estado">[]): EstadoReserva | null {
+/** La reserva que todavía no se completó (sólo pagó la reserva), o null si no es eso.
+ *
+ *  Con `precioPrograma` (el precio de lista del producto de la venta, `precioDeLista`): si lo que pagó como «reserva» ya cubre el
+ *  programa, no es una reserva, es el pago entero mal rotulado (Liliana, 27/11: Leonardo Beltrán pagó US$ 500 de un Downsell que vale
+ *  497 y figuraba «Reserva», con los accesos del Downsell; la cuota venía marcada como reserva de la planilla vieja). La venta de una
+ *  reserva suelta vale lo mismo que la reserva (Carlos Juca: 400 de 400), así que el precio de la venta no sirve para saberlo. */
+export function reservaSinCompletar(cuotasVenta: readonly Pick<Cuota, "monto" | "esReserva" | "estado">[], precioPrograma?: number | null): EstadoReserva | null {
   const reservas = cuotasVenta.filter((c) => c.esReserva);
   if (!reservas.some((c) => c.estado === "pagada")) return null;
   const resto = cuotasVenta.filter((c) => !c.esReserva);
   if (resto.some((c) => c.estado === "pagada")) return null;
   const pagado = reservas.filter((c) => c.estado === "pagada").reduce((a, c) => a + (c.monto || 0), 0);
+  if (precioPrograma && precioPrograma > 0 && pagado >= precioPrograma - 0.009) return null;
   const falta = cuotasVenta.filter((c) => c.estado !== "pagada").reduce((a, c) => a + (c.monto || 0), 0);
   return { pagado, falta };
+}
+
+/** El precio de lista del programa de cada venta (su producto), o null si no se sabe: para `reservaSinCompletar`. */
+export function precioDeLista(e: { ventas?: readonly Pick<Venta, "id" | "productoId">[]; productos?: readonly Pick<Producto, "id" | "precioLista">[] }): (ventaId: ID | null | undefined) => number | null {
+  const lista = new Map((e.productos ?? []).map((p) => [p.id, Number(p.precioLista) || 0] as const));
+  const porVenta = new Map((e.ventas ?? []).map((v) => [v.id, v.productoId ? lista.get(v.productoId) ?? 0 : 0] as const));
+  return (ventaId) => (ventaId ? porVenta.get(ventaId) || null : null);
 }
 
 const sinTildes = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -37,14 +50,14 @@ export const followUpDeReserva = (followUp: string | null | undefined) => sinTil
 /** Quién es hoy sólo una reserva (Lili, 22/10: «para que no me aparezca que falta el contacto a la semana»): lo único que
  *  pagó de su venta es la reserva, o su Follow Up dice «Reserva». Todavía no arrancó: no entra al seguimiento, no se le
  *  pide el primer contacto ni el reporte. Cuando paga lo que falta, pasa solo a ser un alumno más. Se arma una vez por lista. */
-export function indiceDeReservas(cuotas: readonly Pick<Cuota, "ventaId" | "monto" | "esReserva" | "estado">[]) {
+export function indiceDeReservas(cuotas: readonly Pick<Cuota, "ventaId" | "monto" | "esReserva" | "estado">[], precioDe: (ventaId: ID) => number | null = () => null) {
   const porVenta = new Map<string, Pick<Cuota, "ventaId" | "monto" | "esReserva" | "estado">[]>();
   for (const c of cuotas) {
     const l = porVenta.get(c.ventaId);
     if (l) l.push(c); else porVenta.set(c.ventaId, [c]);
   }
   return (a: Pick<Alumno, "ventaId">, followUp?: string | null): boolean =>
-    followUpDeReserva(followUp) || Boolean(a.ventaId && reservaSinCompletar(porVenta.get(a.ventaId) ?? []));
+    followUpDeReserva(followUp) || Boolean(a.ventaId && reservaSinCompletar(porVenta.get(a.ventaId) ?? [], precioDe(a.ventaId)));
 }
 
 /* ==================================================================
@@ -72,15 +85,16 @@ export interface ReservaSuelta {
 
 /** ¿Esta venta es sólo la reserva y nada más? Activa, con la reserva pagada, sin ningún pago del programa y sin nada más por
     cobrar cargado: vale lo que la reserva. (Con cuotas por cobrar no es suelta: el pago se carga en su cuota.) */
-export function reservaSuelta(venta: Venta, cuotasVenta: readonly Cuota[]): ReservaSuelta | null {
+export function reservaSuelta(venta: Venta, cuotasVenta: readonly Cuota[], precioPrograma?: number | null): ReservaSuelta | null {
   if (venta.estado !== "activa") return null;
-  const r = reservaSinCompletar(cuotasVenta);
+  const r = reservaSinCompletar(cuotasVenta, precioPrograma);
   if (!r || r.falta > 0.009) return null;
   return { venta, pagado: r2(r.pagado), cobradas: cuotasVenta.filter((c) => c.estado === "pagada") };
 }
 
 /** Las reservas sueltas de una persona, la más nueva primero: lo que hay que completar en vez de cargarle otra venta. */
-export function reservasSueltasDe(e: Pick<EstadoApp, "ventas" | "cuotas" | "contactos" | "leads">, quien: QuienCompra): ReservaSuelta[] {
+export function reservasSueltasDe(e: Pick<EstadoApp, "ventas" | "cuotas" | "contactos" | "leads"> & Partial<Pick<EstadoApp, "productos">>, quien: QuienCompra): ReservaSuelta[] {
+  const precio = precioDeLista(e);
   if (!quien.contactoId && !quien.email && !quien.telefono && !(quien.nombre ?? "").trim()) return [];
   const porVenta = new Map<ID, Cuota[]>();
   for (const c of e.cuotas) {
@@ -89,13 +103,14 @@ export function reservasSueltasDe(e: Pick<EstadoApp, "ventas" | "cuotas" | "cont
   }
   return (e.ventas ?? [])
     .filter((v) => v.estado === "activa" && mismaPersona(quienDeLaVenta(e, v), quien))
-    .map((v) => reservaSuelta(v, porVenta.get(v.id) ?? []))
+    .map((v) => reservaSuelta(v, porVenta.get(v.id) ?? [], precio(v.id)))
     .filter((x): x is ReservaSuelta => x !== null)
     .sort((a, b) => Date.parse(b.venta.fecha) - Date.parse(a.venta.fecha));
 }
 
 /** Quiénes tienen hoy una reserva suelta, por la ficha de la venta (`contactoId`): para decirlo al lado de su nombre en el buscador. */
-export function reservasSueltasPorContacto(e: Pick<EstadoApp, "ventas" | "cuotas">): Map<ID, ReservaSuelta> {
+export function reservasSueltasPorContacto(e: Pick<EstadoApp, "ventas" | "cuotas"> & Partial<Pick<EstadoApp, "productos">>): Map<ID, ReservaSuelta> {
+  const precio = precioDeLista(e);
   const porVenta = new Map<ID, Cuota[]>();
   for (const c of e.cuotas) {
     const l = porVenta.get(c.ventaId);
@@ -104,7 +119,7 @@ export function reservasSueltasPorContacto(e: Pick<EstadoApp, "ventas" | "cuotas
   const indice = new Map<ID, ReservaSuelta>();
   for (const v of e.ventas ?? []) {
     if (!v.contactoId || v.estado !== "activa") continue;
-    const r = reservaSuelta(v, porVenta.get(v.id) ?? []);
+    const r = reservaSuelta(v, porVenta.get(v.id) ?? [], precio(v.id));
     const ya = indice.get(v.contactoId);
     /* Con más de una, la más nueva. */
     if (r && (!ya || Date.parse(v.fecha) > Date.parse(ya.venta.fecha))) indice.set(v.contactoId, r);

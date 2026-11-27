@@ -25,7 +25,7 @@ import { estaPorAcreditar, fechaDeAcreditacion, retenciones } from "@/lib/acredi
 import { AccionesDeCuota } from "@/components/cobros/AccionesDeCuota";
 import { CambiarPlan } from "@/components/cobros/CambiarPlan";
 import { ContratoCard } from "@/components/contratos/ContratoCard";
-import { reservaSuelta } from "@/lib/reservas";
+import { precioDeLista, reservaSuelta } from "@/lib/reservas";
 import { marcaDeBaja } from "@/lib/baja-a-downsell";
 
 /* ==================================================================
@@ -75,7 +75,7 @@ export function TarjetaVenta({ e, venta, resaltada, abierta, onAlternar, onPagar
   const activa = venta.estado === "activa";
   const cuotasVenta = e.cuotas.filter((c) => c.ventaId === venta.id);
   /* Sólo la reserva, sin nada más por cobrar: no es una venta «cobrada», es una reserva que falta completar. */
-  const suelta = reservaSuelta(venta, cuotasVenta);
+  const suelta = reservaSuelta(venta, cuotasVenta, precioDeLista(e)(venta.id));
   /* Pasó a Downsell por falta de pago (lib/baja-a-downsell.ts): se dice de dónde venía y hasta cuándo sigue. */
   const baja = marcaDeBaja(venta);
   /* Los cobros de una cuenta que retiene (Hotmart) que todavía no se acreditaron: no cuentan como plata hasta ese día. */

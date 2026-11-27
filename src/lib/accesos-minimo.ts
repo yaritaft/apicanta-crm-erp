@@ -24,6 +24,8 @@ const plata = (n: number, moneda: string) => `${moneda === "USD" ? "US$" : moned
 /** Por qué todavía no se dan los accesos (sólo pagó la reserva), o null si se pueden dar. */
 export function motivoSinPagoDelPrograma(
   cuotas: readonly CuotaDelPlan[] | null | undefined, pagos: readonly PagoDeCuota[] | null | undefined, moneda = "USD",
+  /* El precio de lista del programa: una «reserva» que ya lo cubre es el pago entero (lib/reservas.ts → reservaSinCompletar). */
+  precioPrograma?: number | null,
 ): string | null {
   if (!cuotas?.length) return null;
   const reserva = new Set(cuotas.filter((c) => c.esReserva).map((c) => c.id));
@@ -34,6 +36,7 @@ export function motivoSinPagoDelPrograma(
     else if (cuotas.some((c) => c.id === p.cuotaId)) pagadoPrograma += p.monto;
   }
   if (pagadoReserva <= 0 || pagadoPrograma > 0) return null;
+  if (precioPrograma && precioPrograma > 0 && pagadoReserva >= precioPrograma - 0.009) return null;
   const total = cuotas.reduce((n, c) => n + c.monto, 0);
   const de = total > pagadoReserva ? ` de ${plata(total, moneda)}` : "";
   return `Sólo pagó la reserva (${plata(pagadoReserva, moneda)}${de}): los accesos se dan solos apenas entre el primer pago del programa, o con «Dar los accesos».`;

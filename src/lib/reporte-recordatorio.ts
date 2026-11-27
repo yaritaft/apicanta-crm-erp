@@ -130,20 +130,24 @@ async function situacionesDe(
   segs: ReadonlyMap<string, { followUp?: string | null }>,
 ): Promise<(a: { id: string; estado: Alumno["estado"]; ventaId?: string | null }) => SituacionAlumno> {
   const ventaIds = [...new Set(alumnos.map((a) => a.ventaId).filter((v): v is string => Boolean(v)))];
-  const ventas: { id: string; estado: string }[] = [];
+  const ventas: { id: string; estado: string; productoId: string | null }[] = [];
   const cuotas: { ventaId: string; monto: number; esReserva: boolean; estado: string }[] = [];
   for (let i = 0; i < ventaIds.length; i += 200) {
     const parte = ventaIds.slice(i, i + 200);
-    const v = await db.from("ventas").select("id, estado").in("id", parte);
+    const v = await db.from("ventas").select('id, estado, "productoId"').in("id", parte);
     if (v.error) throw new Error(`ventas: ${v.error.message}`);
-    ventas.push(...((v.data ?? []) as { id: string; estado: string }[]));
+    ventas.push(...((v.data ?? []) as { id: string; estado: string; productoId: string | null }[]));
     const c = await db.from("cuotas").select("ventaId, monto, esReserva, estado").in("ventaId", parte);
     if (c.error) throw new Error(`cuotas: ${c.error.message}`);
     cuotas.push(...((c.data ?? []) as { ventaId: string; monto: number; esReserva: boolean; estado: string }[]));
   }
+  /* El precio de lista de cada programa: una «reserva» que ya lo cubre es el pago entero (lib/reservas.ts). */
+  const p = await db.from("productos").select('id, "precioLista"');
+  if (p.error) throw new Error(`productos: ${p.error.message}`);
   return indiceDeSituaciones({
     seguimientos: [...segs].map(([alumnoId, s]) => ({ alumnoId, followUp: s.followUp ?? "" })),
-    ventas: ventas as Pick<Venta, "id" | "estado">[],
+    ventas: ventas as (Pick<Venta, "id" | "estado" | "productoId">)[],
+    productos: (p.data ?? []) as { id: string; precioLista: number }[],
     cuotas: cuotas as Pick<Cuota, "ventaId" | "monto" | "esReserva" | "estado">[],
   });
 }

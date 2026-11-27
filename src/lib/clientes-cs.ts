@@ -10,7 +10,7 @@ import {
 } from "./seguimiento";
 import { crearMotor, numeroComoValor, siNo, SI, NO, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
 import { finConPausas, inicioReal, pausaEnCurso, pausasDelCiclo, pausasNormales } from "./pausas";
-import { followUpDeReserva, reservaSinCompletar } from "./reservas";
+import { followUpDeReserva, precioDeLista, reservaSinCompletar } from "./reservas";
 import { esVentaDeBaja } from "./contratos-de-baja";
 import { SITUACION_ALUMNO, situacionDelAlumno, terminoElServicio, type SituacionAlumno } from "./situacion-alumno";
 import { alumnoDeResell, indiceDeAlumnos } from "./resell-alumno";
@@ -524,6 +524,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
   const rachas = rachasAHoy(e);
   const conReportes = new Set(e.reportes.map((r) => r.alumnoId));
 
+  const precioDe = precioDeLista(e);
   const cuotasDe = new Map<ID, Pick<Cuota, "monto" | "esReserva" | "estado">[]>();
   for (const c of e.cuotas) {
     const l = cuotasDe.get(c.ventaId);
@@ -553,7 +554,7 @@ export function filasClientes(e: EstadoApp, hoy: string): FilaCliente[] {
 
     const { programas, programasSug, duracion, duracionSug } = programasYDuracion(seg, producto || a.plan, listas.programas);
     /* Sólo una reserva (lib/reservas.ts): no entra al seguimiento hasta que pague lo que falta. */
-    const enReserva = Boolean(venta && reservaSinCompletar(cuotasDe.get(venta.id) ?? [])) || followUpDeReserva(seg.followUp);
+    const enReserva = Boolean(venta && reservaSinCompletar(cuotasDe.get(venta.id) ?? [], precioDe(venta.id))) || followUpDeReserva(seg.followUp);
     const egresoPropio = egresoDeEsteCiclo(inicio, seg);
     /* La reserva todavía no arrancó: no se le calcula el fin (inicio más duración) hasta que pague lo que falta. Las
        reservas de junio y julio figuraban «se les terminó el contrato» (Lili, 23/10). Un egreso cargado a mano se respeta. */

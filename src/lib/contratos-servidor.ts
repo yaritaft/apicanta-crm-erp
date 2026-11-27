@@ -534,8 +534,11 @@ export async function faltaPagoDelPrograma(db: SupabaseClient, c: Pick<Contrato,
   const lista = cuotas.data as CuotaDelPlan[];
   const pagos = await db.from("pagos").select("cuotaId,monto").in("cuotaId", lista.map((q) => q.id));
   if (pagos.error) return null;
-  const moneda = ((await db.from("ventas").select("moneda").eq("id", ventaId).maybeSingle()).data as { moneda?: string } | null)?.moneda || "USD";
-  return motivoSinPagoDelPrograma(lista, (pagos.data ?? []) as PagoDeCuota[], moneda);
+  const venta = (await db.from("ventas").select('moneda, "productoId"').eq("id", ventaId).maybeSingle()).data as { moneda?: string; productoId?: string | null } | null;
+  const precioPrograma = venta?.productoId
+    ? Number(((await db.from("productos").select('"precioLista"').eq("id", venta.productoId).maybeSingle()).data as { precioLista?: number } | null)?.precioLista) || null
+    : null;
+  return motivoSinPagoDelPrograma(lista, (pagos.data ?? []) as PagoDeCuota[], venta?.moneda || "USD", precioPrograma);
 }
 
 const ESPERA_SERVICIO = "Todavía no está cargada su venta: los accesos se dan solos apenas se cargue (o con «Dar los accesos»).";

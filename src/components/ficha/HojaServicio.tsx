@@ -36,7 +36,7 @@ import { textoDePausa } from "@/lib/pausas";
 import { ventaPendienteDe } from "@/lib/alumnos";
 import { esDelMentor, resumenBonos } from "@/lib/bonos";
 import { programaDeProducto, programasDe } from "@/lib/programas";
-import { reservaSinCompletar, type EstadoReserva } from "@/lib/reservas";
+import { precioDeLista, reservaSinCompletar, type EstadoReserva } from "@/lib/reservas";
 import { FormTestimonioCs } from "@/components/cs/TestimoniosCs";
 import { FormResell } from "@/components/cs/ResellsCs";
 import { SOLAPAS_SERVICIO, useSolapaServicio, type SolapaServicio } from "./abrir";
@@ -816,7 +816,7 @@ export function VistaServicio({ e, p, conChat }: { e: EstadoApp; p: Persona; con
 
       {fila ? (
         <HojaDeUnServicio e={e} p={p} f={fila} venta={s.venta} producto={nombreDe(s)} conChat={conChat}
-          reserva={s.venta ? reservaSinCompletar(e.cuotas.filter((c) => c.ventaId === s.venta?.id)) ?? undefined : undefined} />
+          reserva={s.venta ? reservaSinCompletar(e.cuotas.filter((c) => c.ventaId === s.venta?.id), precioDeLista(e)(s.venta.id)) ?? undefined : undefined} />
       ) : s.venta ? (
         <div className="hs-aviso">
           <span>{s.venta.estado === "activa" ? `La compra de ${nombreDe(s)} todavía no tiene su servicio.` : "La venta está cancelada: no tiene servicio."}</span>

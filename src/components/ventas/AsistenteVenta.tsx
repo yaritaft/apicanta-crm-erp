@@ -43,7 +43,7 @@ import { nacimientoDeLaPersona } from "@/lib/persona";
 import { soloSeCobroLaReserva } from "@/lib/accesos-minimo";
 import { ventasIdenticas } from "@/lib/ventas-repetidas";
 import { AvisoVentaIdentica } from "./AvisoVentaIdentica";
-import { reservaSuelta, reservasSueltasDe, reservasSueltasPorContacto, type ReservaSuelta } from "@/lib/reservas";
+import { precioDeLista, reservaSuelta, reservasSueltasDe, reservasSueltasPorContacto, type ReservaSuelta } from "@/lib/reservas";
 import { personaDeVenta } from "@/lib/alumnos";
 import { AvisoReservaSuelta } from "./AvisoReservaSuelta";
 
@@ -703,14 +703,14 @@ function inicial(e: EstadoApp, mov?: Movimiento, cliente?: { contactoId: string;
 /* ¿Esa venta es una reserva suelta, de las que se completan? */
 function sePuedeCompletar(e: EstadoApp, ventaId: string): boolean {
   const venta = e.ventas.find((v) => v.id === ventaId);
-  return Boolean(venta && reservaSuelta(venta, e.cuotas.filter((c) => c.ventaId === ventaId)));
+  return Boolean(venta && reservaSuelta(venta, e.cuotas.filter((c) => c.ventaId === ventaId), precioDeLista(e)(ventaId)));
 }
 
 /* Completar una reserva: el borrador sale de la venta que ya está (quién, qué servicio, quién vendió, cuándo) y sólo queda
    por decir cuánto vale el programa entero y cómo se paga lo que falta. La reserva cobrada entra como línea fija. */
 function inicialParaCompletar(e: EstadoApp, venta: Venta): Borrador {
   const base = inicial(e);
-  const suelta: ReservaSuelta | null = reservaSuelta(venta, e.cuotas.filter((c) => c.ventaId === venta.id));
+  const suelta: ReservaSuelta | null = reservaSuelta(venta, e.cuotas.filter((c) => c.ventaId === venta.id), precioDeLista(e)(venta.id));
   const fijas: LineaCuota[] = (suelta?.cobradas ?? []).slice().sort((x, y) => x.numero - y.numero).map((c) => ({
     id: c.id, numero: c.numero, esReserva: c.esReserva, monto: c.monto, vence: c.vence ?? venta.fecha, cobros: [], fija: true,
   }));
@@ -857,7 +857,7 @@ function PasoCliente({ b, set, e, M, onPagoDeCuota }: {
   const elegido = personaPorId(e, b.contactoId);
   const escrito = b.contactoNombre.trim();
   /* Quién dejó sólo una reserva: se dice en la lista y al elegirlo, en vez de «Ya compró». */
-  const conReserva = useMemo(() => reservasSueltasPorContacto(e), [e.ventas, e.cuotas]); // eslint-disable-line react-hooks/exhaustive-deps
+  const conReserva = useMemo(() => reservasSueltasPorContacto(e), [e.ventas, e.cuotas, e.productos]); // eslint-disable-line react-hooks/exhaustive-deps
   const resultados = useMemo(
     () => (b.contactoId || b.crearContacto ? [] : buscarPersonas(e, b.contactoNombre)),
     [e, b.contactoNombre, b.contactoId, b.crearContacto],

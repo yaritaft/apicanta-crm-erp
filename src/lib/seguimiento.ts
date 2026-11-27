@@ -1,6 +1,6 @@
 import { claveEmail } from "./contactos";
 import { diaDeNegocio } from "./dia-negocio";
-import { indiceDeReservas } from "./reservas";
+import { indiceDeReservas, precioDeLista } from "./reservas";
 import { esVentaDeBaja } from "./contratos-de-baja";
 import { situacionDelAlumno } from "./situacion-alumno";
 import type { Alumno, ConfigSeguimiento, Contacto, EstadoApp, ID, ListasCs, SeguimientoAlumno } from "./types";
@@ -320,7 +320,7 @@ export function filasDeSeguimiento(e: EstadoApp, hoy: string): FilaSeguimiento[]
   const cfg = configSeguimiento(e.ajustes.seguimiento);
   const contactoDe = indiceDeContactos(e);
   const seg = new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s] as const));
-  const esReserva = indiceDeReservas(e.cuotas ?? []);
+  const esReserva = indiceDeReservas(e.cuotas ?? [], precioDeLista(e));
   const ventasDeBaja = new Set((e.ventas ?? []).filter((v) => esVentaDeBaja(v.estado)).map((v) => v.id));
   return e.alumnos.map((a): FilaSeguimiento => {
     const s = seg.get(a.id) ?? null;

@@ -38,7 +38,7 @@ import { personaDe, type Persona } from "@/lib/persona";
 import type { Contrato } from "@/lib/contratos";
 import { saldoVenta } from "@/lib/finanzas";
 import { cobradoDeVenta } from "@/lib/ventas-repetidas";
-import { reservaSinCompletar } from "@/lib/reservas";
+import { precioDeLista, reservaSinCompletar } from "@/lib/reservas";
 import { otrosEmails } from "@/lib/duplicados";
 import { fechaLarga, money } from "@/lib/format";
 import { momentoDe } from "@/lib/momento-webinar";
@@ -215,9 +215,10 @@ const comprasVigentes = (p: Persona) => p.ventas.filter((v) => v.estado !== "can
 function compraDe(e: EstadoApp, p: Persona): { texto: string; closers: string } | null {
   const activas = p.ventas.filter((v) => v.estado === "activa");
   if (!activas.length) return null;
+  const precioDe = precioDeLista(e);
   const partes = activas.map((v) => {
     const cuotas = e.cuotas.filter((c) => c.ventaId === v.id);
-    const r = reservaSinCompletar(cuotas);
+    const r = reservaSinCompletar(cuotas, precioDe(v.id));
     return `${money(v.precioAcordado ?? 0, v.moneda)}${r ? (r.falta > 0 ? ` (pagó la reserva de ${money(r.pagado, v.moneda)})` : " (reserva)") : ""}`;
   });
   const closers = [...new Set(activas.map((v) => e.equipo.find((m) => m.id === v.closerId)?.nombre).filter(Boolean))].join(", ");

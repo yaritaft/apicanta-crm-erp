@@ -1,5 +1,5 @@
-import type { Alumno, Cuota, ID, SeguimientoAlumno, Venta } from "./types";
-import { indiceDeReservas } from "./reservas";
+import type { Alumno, Cuota, ID, Producto, SeguimientoAlumno, Venta } from "./types";
+import { indiceDeReservas, precioDeLista } from "./reservas";
 import { esVentaDeBaja } from "./contratos-de-baja";
 
 /* ==================================================================
@@ -93,14 +93,16 @@ type BaseDeSituaciones<T extends AlumnoDeSituacion = AlumnoDeSituacion> = {
   alumnos: readonly T[];
   seguimientos?: readonly Pick<SeguimientoAlumno, "alumnoId" | "followUp">[];
   cuotas?: readonly Pick<Cuota, "ventaId" | "monto" | "esReserva" | "estado">[];
-  ventas?: readonly Pick<Venta, "id" | "estado">[];
+  ventas?: readonly (Pick<Venta, "id" | "estado"> & Partial<Pick<Venta, "productoId">>)[];
+  /* Para saber si la «reserva» ya cubre el programa (lib/reservas.ts → precioDeLista). */
+  productos?: readonly Pick<Producto, "id" | "precioLista">[];
 };
 
 /** La situación de cada alumno de la base, armada una sola vez (con cientos de alumnos, buscar uno por uno se nota). */
 export function indiceDeSituaciones(e: Omit<BaseDeSituaciones, "alumnos">): (a: AlumnoDeSituacion) => SituacionAlumno {
   const followUp = new Map((e.seguimientos ?? []).map((s) => [s.alumnoId, s.followUp] as const));
   const ventaDeBaja = new Set((e.ventas ?? []).filter((v) => esVentaDeBaja(v.estado)).map((v) => v.id));
-  const esReserva = indiceDeReservas(e.cuotas ?? []);
+  const esReserva = indiceDeReservas(e.cuotas ?? [], precioDeLista(e));
   const cache = new Map<ID, SituacionAlumno>();
   return (a) => {
     const ya = cache.get(a.id);

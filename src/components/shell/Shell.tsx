@@ -259,10 +259,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
     [acceso, alumnosCS, seguimientosCS, contactosCS, leadsCS, estado.ajustes.seguimiento],
   );
 
-  const { cuotas: cuotasCS, ventas: ventasCS } = estado;
+  const { cuotas: cuotasCS, ventas: ventasCS, productos: productosCS } = estado;
   const activosDeVerdad = useMemo(
-    () => alumnosActivos({ alumnos: alumnosCS, seguimientos: seguimientosCS, cuotas: cuotasCS, ventas: ventasCS }).length,
-    [alumnosCS, seguimientosCS, cuotasCS, ventasCS],
+    () => alumnosActivos({ alumnos: alumnosCS, seguimientos: seguimientosCS, cuotas: cuotasCS, ventas: ventasCS, productos: productosCS }).length,
+    [alumnosCS, seguimientosCS, cuotasCS, ventasCS, productosCS],
   );
 
   const contadores: Record<string, number> = {
