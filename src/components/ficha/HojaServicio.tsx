@@ -4,6 +4,7 @@ import { formulariosDelAlumnoCon } from "@/lib/reporte-formularios";
 import { ContratoCard } from "@/components/contratos/ContratoCard";
 import { AccesosAlumno } from "@/components/contratos/AccesosAlumno";
 import { diaDelOutboarding, esOutboarding } from "@/lib/outboarding";
+import { estaAfuera } from "@/lib/reanudar-accesos";
 import { SesionesZoom } from "@/components/contratos/SesionesZoom";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -518,6 +519,7 @@ function HojaDeUnServicio({ e, p, f, venta, producto, conChat, reserva }: {
         <>
           <AccesosAlumno forma="hoja" alumno={alumno} venta={venta}
             outboarding={esOutboarding(f.followUp) ? { dia: diaDelOutboarding(f.egreso, hoy), fin: f.egreso } : undefined}
+            afuera={estaAfuera(f.followUp, alumno.estado) ? { fin: f.egreso } : undefined}
             manual={{ wisboo: dato("wibo", false), zoom: dato("zoom", false), whatsapp: f.wpp ? dato("wpp", false) : undefined }} />
           <Bloque titulo="Marcado a mano">{dato("acceso")}</Bloque>
         </>

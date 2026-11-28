@@ -1,9 +1,11 @@
-import type { EstadoApp, ID } from "./types";
+import type { Cuota, EstadoApp, ID, Pago } from "./types";
 import { DIAS_PARA_CERRAR_RESELL, DURACION_POR_DEFECTO, esDeTestimonio, estadosDeResell, faltaDeLaLlamada, faltaDelTestimonio, familiasParaFiltrar, filasClientes, filasResells, filasTestimonios, NO_SE_HACIA_CONTRATO, opcionesDePrograma, resellAbierto, sumarMeses, testimonioNoSeGraba } from "./clientes-cs";
 import { contactosDeIngreso, DIA_CONTACTO_SEMANAL, DIAS_DEL_INGRESO, diasEntre, formatoDia, sumarDias } from "./seguimiento";
 import { diasDe } from "./pausas";
 import { alumnoDeVenta, ventaPendienteDe } from "./alumnos";
 import { bajaResuelta, pedidosDeBaja, queFaltaDeLaBaja } from "./bajas-falta-de-pago";
+import { estaAfuera, pedidoDeReanudar, queCuota } from "./reanudar-accesos";
+import { esOutboarding } from "./outboarding";
 import { money } from "./format";
 import { diaDeNegocio } from "./dia-negocio";
 import { crearMotor, uno, varios, type ColumnaCs, type OrdenCs } from "./tabla-cs";
@@ -68,7 +70,7 @@ export interface ItemServicio {
 }
 
 export interface SeccionServicio {
-  id: "bajas" | "contactar" | "vuelven" | "nuevos" | "semanal" | "esperanVenta" | "renovar" | "resells" | "testimonios" | "reportes" | "contratos";
+  id: "bajas" | "reanudar" | "contactar" | "vuelven" | "nuevos" | "semanal" | "esperanVenta" | "renovar" | "resells" | "testimonios" | "reportes" | "contratos";
   titulo: string;
   /* El nombre para la tarjeta chica de arriba, donde el título entero no entra. */
   corto: string;
@@ -316,6 +318,28 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
     }];
   });
 
+  /* ---------- Pagaron estando afuera (lib/reanudar-accesos.ts; Liliana, 27/11) ----------
+     Estaba en Outboarding (o de baja), se cargó el pago de una cuota que ya estaba vencida y ya no debe nada vencido: si vuelve,
+     «Reanudar accesos» en su ficha. Sale de acá cuando se lo reanuda (deja de estar afuera) o a los 30 días del pago. */
+  const cuotasDeVenta = new Map<ID, Cuota[]>();
+  for (const q of e.cuotas) cuotasDeVenta.set(q.ventaId, [...(cuotasDeVenta.get(q.ventaId) ?? []), q]);
+  const pagosDeCuota = new Map<ID, Pago[]>();
+  for (const p of e.pagos ?? []) pagosDeCuota.set(p.cuotaId, [...(pagosDeCuota.get(p.cuotaId) ?? []), p]);
+  const reanudar = clientes.flatMap((c): ItemServicio[] => {
+    if (!c.venta || !estaAfuera(c.followUp, c.alumno.estado)) return [];
+    const cuotas = cuotasDeVenta.get(c.venta.id) ?? [];
+    const pagos = cuotas.flatMap((q) => pagosDeCuota.get(q.id) ?? []);
+    const p = pedidoDeReanudar({ followUp: c.followUp, estadoAlumno: c.alumno.estado, venta: c.venta, cuotas, pagos, fin: c.egreso, ahora });
+    if (!p) return [];
+    const d = diasEntre(p.pagoEl, hoy);
+    return [{
+      clave: `reanudar|${c.id}`, alumnoId: c.id, nombre: c.nombre, ...contactoDe(c), dias: d, cuando: cuandoEs(d),
+      /* Primero qué hay que hacer (el renglón se corta), después por qué. */
+      detalle: `Reanudale los accesos · pagó ${queCuota(p.cuota)} el ${formatoDia(p.pagoEl, hoy)} (vencía el ${formatoDia(p.vencia, hoy)}) y ya no debe nada vencido · ${esOutboarding(c.followUp) ? "está en Outboarding" : "está de baja"}`,
+      tono: d >= 2 ? "rojo" : "ambar",
+    }];
+  });
+
   /* ---------- El contrato por vencer (renovar o dar de baja) ---------- */
   /* La reserva no arrancó: no hay contrato que renovar (aunque tenga un egreso cargado a mano). */
   const renovar = activos.filter((c) => !c.enReserva && c.egreso && diasEntre(hoy, c.egreso) <= DIAS_PARA_RENOVAR).map((c): ItemServicio => {
@@ -417,6 +441,7 @@ export function panelDeServicio(e: EstadoApp, hoy: string, ahora: Date = new Dat
 
   const secciones: SeccionServicio[] = [
     seccion({ id: "bajas", titulo: "Bajas por falta de pago", corto: "Bajas", vacio: "Ningún closer pidió una baja por falta de pago.", regla: "Un closer marcó «Pido la baja por falta de pago» en una cuota vencida. Si tiene accesos que dio la app, se los sacamos solos en la pasada de cada hora; si no, el outboarding es a mano. Queda acá hasta que lo pases a Outboarding (o pague, o el closer saque la marca).", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, bajas, masViejoPrimero),
+    seccion({ id: "reanudar", titulo: "Pagaron estando afuera", corto: "Volvieron", vacio: "Nadie en Outboarding se puso al día con los pagos.", regla: "Estaba en Outboarding (o de baja), se cargó el pago de una cuota atrasada y ya no debe nada vencido. Si vuelve, en su ficha → Accesos tocá «Reanudar accesos»: vuelve a activo con las mismas fechas, le damos los accesos y te queda el mensaje para mandarle. Sale de acá cuando lo reanudás (o a los 30 días del pago).", verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, reanudar, masViejoPrimero),
     seccion({ id: "nuevos", titulo: "Alumnos nuevos", corto: "Nuevos", vacio: "No entró nadie nuevo sin su bienvenida.", regla: `Día 1: el día que entra se le da la bienvenida y se hace el primer contacto (también las reservas). Queda acá hasta que se lo contacta, hasta ${DIAS_NUEVO} días después de entrar.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, nuevos, masViejoPrimero),
     seccion({ id: "semanal", titulo: "Contacto semanal", corto: "Semanal", vacio: "Nadie cumplió la primera semana sin su contacto.", regla: `Día ${DIA_CONTACTO_SEMANAL}: a los ${DIA_CONTACTO_SEMANAL} días de haber arrancado se le hace el seguimiento de la primera semana. Las reservas esperan a pagar lo que falta.`, verTodos: { texto: "Ver Clientes del programa", href: "/alumnos?seccion=clientes" } }, semanal, masViejoPrimero),
     seccion({ id: "contactar", titulo: "Seguimiento 20D", corto: "20D", regla: "Después del día 1 y del día 7, se los contacta cada 20 días desde el último contacto: su próximo seguimiento ya venció o toca hoy.", vacio: "Nadie para el seguimiento de hoy. La lista se llena a medida que vencen los 20 días de cada alumno.", verTodos: { texto: "Ver la lista completa", href: "/alumnos?seccion=hoy" } }, contactar, masViejoPrimero),

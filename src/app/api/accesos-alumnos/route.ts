@@ -4,6 +4,7 @@ import { baseDelPedido, correoDelPedido, exigirArea } from "@/lib/permisos-servi
 import { darAccesos, mensajeDeBienvenida, quitarAccesos, type Plataforma } from "@/lib/accesos-servidor";
 import { programasGuardados } from "@/lib/contratos-servidor";
 import { programaPorId } from "@/lib/programas";
+import { ErrorReanudar, reanudarAlumno } from "@/lib/reanudar-accesos-servidor";
 
 /* ==================================================================
    El onboarding y el outboarding a mano, desde el servicio del alumno
@@ -13,6 +14,8 @@ import { programaPorId } from "@/lib/programas";
    - "dar": { programa, solo? } da los accesos del programa (todos, o los de `solo`). Sirve para el upsell:
      se elige el programa nuevo y se suman sus accesos.
    - "quitar": { ids? } saca esos accesos (o todos). Siempre a mano.
+   - "reanudar": { followUp?, darAccesos } vuelve al programa a quien estaba afuera (Outboarding o baja) con las mismas fechas,
+     y le da los accesos de su programa (lib/reanudar-accesos-servidor.ts; Liliana, 27/11).
    Lo hace quien edita Alumnos, sobre un servicio que ve (se lee con SU sesión).
    ================================================================== */
 
@@ -26,7 +29,10 @@ export async function POST(peticion: Request) {
   const db = nubeServidor();
   const mia = baseDelPedido(peticion);
   if (!db || !mia) return NextResponse.json({ error: "Sin base configurada." }, { status: 503 });
-  const b = (await peticion.json().catch(() => ({}))) as { accion?: string; alumnoId?: string; programa?: string; ids?: string[]; solo?: { plataforma: Plataforma; recurso: string }[] };
+  const b = (await peticion.json().catch(() => ({}))) as {
+    accion?: string; alumnoId?: string; programa?: string; ids?: string[]; solo?: { plataforma: Plataforma; recurso: string }[];
+    followUp?: string; darAccesos?: boolean;
+  };
   const alumnoId = typeof b.alumnoId === "string" ? b.alumnoId : "";
   if (!alumnoId) return NextResponse.json({ error: "Falta el alumno." }, { status: 400 });
   const ve = await mia.from("alumnos").select("id").eq("id", alumnoId).maybeSingle();
@@ -36,6 +42,15 @@ export async function POST(peticion: Request) {
   try {
     if (b.accion === "quitar") {
       const r = await quitarAccesos(db, { alumnoId, ids: Array.isArray(b.ids) ? b.ids : undefined, quien });
+      return NextResponse.json(r);
+    }
+    if (b.accion === "reanudar") {
+      const { programas } = await programasGuardados(db);
+      const yo = (await db.from("equipo").select("nombre").ilike("email", quien).limit(1).maybeSingle()).data as { nombre?: string | null } | null;
+      const r = await reanudarAlumno(db, {
+        alumnoId, quien, quienNombre: yo?.nombre?.trim() || quien, programas,
+        followUp: typeof b.followUp === "string" ? b.followUp : null, darAccesos: b.darAccesos !== false,
+      });
       return NextResponse.json(r);
     }
     if (b.accion !== "dar") return NextResponse.json({ error: "No sé hacer eso." }, { status: 400 });
@@ -52,6 +67,7 @@ export async function POST(peticion: Request) {
     });
     return NextResponse.json({ ...r, mensaje: mensajeDeBienvenida(a.nombre, programa.nombre, r.links) });
   } catch (e) {
+    if (e instanceof ErrorReanudar) return NextResponse.json({ error: e.message }, { status: 409 });
     return NextResponse.json({ error: e instanceof Error ? e.message : "No se pudo." }, { status: 500 });
   }
 }

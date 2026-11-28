@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  CalendarCheck, CalendarClock, Check, ChevronRight, FileSignature, FileWarning, Hourglass, PhoneCall, Pin, PlayCircle, Repeat2, UserMinus, UserPlus, Video, X,
+  CalendarCheck, CalendarClock, Check, ChevronRight, FileSignature, FileWarning, Hourglass, PhoneCall, Pin, PlayCircle, RefreshCcw, Repeat2, UserMinus, UserPlus, Video, X,
 } from "lucide-react";
 import { Telefono } from "@/components/ui/Telefono";
 import { NADA, Recorte, TablaCs } from "@/components/cs/TablaCs";
@@ -57,12 +57,13 @@ import "./panel-servicio.css";
 const HOJA_DE_LISTA: Partial<Record<SeccionServicio["id"], SolapaServicio>> = {
   /* «Renovar» abre Programa, donde está «¿Renueva?» con la llamada de resell y los botones. */
   /* «Bajas» abre Accesos: ahí se ve qué se sacó solo y está «Quitar todo» para lo que quede. */
-  bajas: "accesos", contactar: "seguimiento", vuelven: "seguimiento", nuevos: "seguimiento", semanal: "seguimiento", esperanVenta: "programa", renovar: "programa", resells: "testimonio", testimonios: "testimonio", reportes: "reportes", contratos: "contrato",
+  bajas: "accesos", reanudar: "accesos", contactar: "seguimiento", vuelven: "seguimiento", nuevos: "seguimiento", semanal: "seguimiento", esperanVenta: "programa", renovar: "programa", resells: "testimonio", testimonios: "testimonio", reportes: "reportes", contratos: "contrato",
 };
 
 /* Cómo se ve cada tarea de «Para hoy»: su ícono, su color y lo que pide. */
 const TAREA: Record<SeccionServicio["id"], { icono: React.ReactNode; tono: string; pide: string }> = {
   bajas: { icono: <UserMinus size={16} />, tono: "var(--danger)", pide: "el closer pidió la baja: outboarding" },
+  reanudar: { icono: <RefreshCcw size={16} />, tono: "var(--success)", pide: "pagó: reanudale los accesos" },
   nuevos: { icono: <UserPlus size={16} />, tono: "var(--info)", pide: "día 1: falta la bienvenida" },
   semanal: { icono: <CalendarCheck size={16} />, tono: "var(--brand)", pide: "día 7: falta el contacto semanal" },
   contactar: { icono: <PhoneCall size={16} />, tono: "var(--danger)", pide: "cada 20 días: ya le toca" },

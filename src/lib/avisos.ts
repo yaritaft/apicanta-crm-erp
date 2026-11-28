@@ -57,7 +57,8 @@ export function hojaDelAviso(tipo: string): "contrato" | "accesos" | "testimonio
   /* Una venta nueva (supabase/avisos-de-ventas.sql): donde Lili marca la bienvenida. */
   if (tipo === "venta-nueva") return "seguimiento";
   if (tipo === "contrato" || tipo === "roadmap") return "contrato";
-  if (tipo === "outboarding" || tipo === "resell-outboarding") return "accesos";
+  /* Pagó estando afuera, o ya se le reanudaron los accesos (lib/reanudar-accesos.ts): donde está «Reanudar accesos» y el mensaje. */
+  if (tipo === "outboarding" || tipo === "resell-outboarding" || tipo === "reanudar") return "accesos";
   if (tipo === "resell-cerrado") return "testimonio";
   if (tipo === "sesion-1a1") return "bonos";
   return undefined;

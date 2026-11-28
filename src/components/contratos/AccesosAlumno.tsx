@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarX2, ClipboardCheck, Copy, GraduationCap, KeyRound, RotateCcw, Send, UserMinus, Video } from "lucide-react";
-import { Badge, Button, Field, Select, type VarianteBadge } from "@/components/ui/ui";
+import { CalendarX2, ClipboardCheck, Copy, GraduationCap, KeyRound, RefreshCcw, RotateCcw, Send, UserMinus, Video } from "lucide-react";
+import { Badge, Button, Field, Select, Switch, type VarianteBadge } from "@/components/ui/ui";
 import { Confirmar, ModalForm } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { acciones, useEstado } from "@/lib/store";
@@ -13,6 +13,8 @@ import { cabeceras } from "@/components/webinars/useYoutube";
 import { fecha, money, relativo } from "@/lib/format";
 import { alumnoDeVenta } from "@/lib/alumnos";
 import { bajaResuelta, pedidosDeBaja, queFaltaDeLaBaja } from "@/lib/bajas-falta-de-pago";
+import { FOLLOW_UP_AL_VOLVER, followUpsParaVolver, pedidoDeReanudar, problemaParaReanudar, queCuota } from "@/lib/reanudar-accesos";
+import { listasCs } from "@/lib/clientes-cs";
 import { diaDeNegocio } from "@/lib/dia-negocio";
 import { formatoDia, hoyDelNegocio } from "@/lib/seguimiento";
 import { programaDeProducto, programasDe } from "@/lib/programas";
@@ -126,12 +128,14 @@ function proximaPasada(ahora = new Date()): string {
   return `${String(t.getHours()).padStart(2, "0")}:25`;
 }
 
-export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tarjeta" }: {
+export function AccesosAlumno({ alumno, venta, manual, outboarding, afuera, forma = "tarjeta" }: {
   alumno: Alumno; venta?: Venta; forma?: "tarjeta" | "hoja";
   /* Lo marcado a mano en la ficha (Airtable), con su editor: se muestra donde la app todavía no dio nada. */
   manual?: Partial<Record<Plataforma | "whatsapp", React.ReactNode>>;
   /* Está en Outboarding: el día en que la app le saca los accesos sola y el fin de su programa (lib/outboarding.ts). */
   outboarding?: { dia: string; fin: string | null };
+  /* Está afuera del programa (Outboarding o de baja) y el fin de su programa: se le pueden reanudar los accesos (lib/reanudar-accesos.ts). */
+  afuera?: { fin: string | null };
 }) {
   const e = useEstado();
   const toast = useToast();
@@ -141,6 +145,7 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
   const [trabajando, setTrabajando] = useState<string | null>(null);
   const [dar, setDar] = useState<string | null>(null);
   const [quitar, setQuitar] = useState<{ ids?: string[]; texto: string; wisboo?: boolean } | null>(null);
+  const [reanudar, setReanudar] = useState<{ followUp: string; dar: boolean } | null>(null);
   const prendidos = contratosPrendidos(e.ajustes.contratos, esDueno);
   /* Dar, quitar y reintentar accesos es de Alumnos (el servidor lo exige): el closer ve a qué tiene acceso su alumno, sin los botones. */
   const acciona = prendidos && nivelEn(acceso, "alumnos") === 2;
@@ -165,16 +170,25 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
 
   const lista = accesos ?? [];
   const vigentes = lista.filter((x) => x.estado !== "quitado");
+  const seg = (e.seguimientos ?? []).find((x) => x.alumnoId === alumno.id);
   /* Un closer pidió la baja por falta de pago (lib/bajas-falta-de-pago.ts; Lili, 23/11): el aviso de la campanita abre acá. */
   const baja = useMemo(() => {
-    const seg = (e.seguimientos ?? []).find((x) => x.alumnoId === alumno.id);
     if (bajaResuelta(seg?.followUp, alumno.estado)) return null;
     return pedidosDeBaja(e).find((p) => alumnoDeVenta(e, p.venta)?.id === alumno.id) ?? null;
-  }, [e, alumno]);
+  }, [e, alumno, seg?.followUp]);
+  /* Estaba afuera y pagó (Lili, 27/11): «Reanudar accesos» lo vuelve al programa con las mismas fechas. */
+  const listas = useMemo(() => listasCs(e.ajustes.seguimiento), [e.ajustes.seguimiento]);
+  const noSeReanuda = afuera ? problemaParaReanudar({ followUp: seg?.followUp, estadoAlumno: alumno.estado, venta, fin: afuera.fin, hoy: hoyDelNegocio() }) : "no está afuera";
+  const pagoDeVuelta = useMemo(() => {
+    if (!afuera || !venta) return null;
+    const cuotas = e.cuotas.filter((q) => q.ventaId === venta.id);
+    const ids = new Set(cuotas.map((q) => q.id));
+    return pedidoDeReanudar({ followUp: seg?.followUp, estadoAlumno: alumno.estado, venta, cuotas, pagos: (e.pagos ?? []).filter((p) => ids.has(p.cuotaId)), fin: afuera.fin, ahora: new Date() });
+  }, [afuera, venta, e.cuotas, e.pagos, seg?.followUp, alumno.estado]);
   const linksTelegram = lista.filter((x) => x.plataforma === "telegram" && x.estado === "dado" && typeof x.externo.link === "string");
   const linksZoom = lista.filter((x) => x.plataforma === "zoom" && x.estado === "dado" && typeof x.externo.joinUrl === "string");
 
-  async function correr(clave: string, cuerpo: Record<string, unknown>, ok: (j: Record<string, unknown>) => string) {
+  async function correr(clave: string, cuerpo: Record<string, unknown>, ok: (j: Record<string, unknown>) => string, copiado = "Copié el mensaje de bienvenida con los links: pegáselo por WhatsApp.") {
     setTrabajando(clave);
     try {
       const j = await pedir({ alumnoId: alumno.id, ...cuerpo });
@@ -185,14 +199,29 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
           navigator.clipboard.writeText(j.mensaje).then(() => true, () => false),
           new Promise<boolean>((r) => setTimeout(() => r(false), 2000)),
         ]);
-        if (copio) toast("Copié el mensaje de bienvenida con los links: pegáselo por WhatsApp.");
+        if (copio) toast(copiado);
+        else if (cuerpo.accion === "reanudar") window.prompt("Copiá el mensaje para mandarle:", j.mensaje);
       }
     } catch (err) { toast(err instanceof Error ? err.message : "No se pudo.", "err"); }
     setTrabajando(null);
     await leer();
     /* El servidor también marcó la ficha (Acceso, Wisboo, Zoom): que se vea sin recargar. */
     void acciones.traerFichaDe(alumno.id);
+    /* Reanudar le saca a sus cuotas la marca de «Pido la baja». */
+    if (cuerpo.accion === "reanudar" && venta) void acciones.traerVentaDe(venta.id);
   }
+
+  const pila = alumno.nombre.trim().split(/\s+/)[0] || alumno.nombre;
+  const abrirReanudar = () => setReanudar({ followUp: FOLLOW_UP_AL_VOLVER, dar: true });
+  const confirmarReanudar = () => {
+    const r = reanudar;
+    if (!r) return;
+    setReanudar(null);
+    void correr("reanudar", { accion: "reanudar", followUp: r.followUp, darAccesos: r.dar && Boolean(delPrograma) }, (j) => {
+      const acc = j.accesos as { dados?: number; fallaron?: number; yaEstaban?: number } | null;
+      return `${pila} volvió a activo${acc ? `: ${acc.dados ?? 0} accesos dados${acc.fallaron ? `, ${acc.fallaron} con error` : ""}${acc.yaEstaban ? `, ${acc.yaEstaban} ya los tenía` : ""}` : ""}.`;
+    }, `Copié el mensaje para ${pila}: pegáselo por WhatsApp.`);
+  };
 
   async function copiarMensaje() {
     const programa = programas.find((p) => p.id === (linksTelegram[0] ?? linksZoom[0])?.programa)?.nombre ?? "tu programa";
@@ -228,6 +257,37 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
           </Field>
         </ModalForm>
       )}
+      {reanudar !== null && afuera && (
+        <ModalForm abierto titulo={`Reanudar a ${pila}`} onCerrar={() => setReanudar(null)} guardarTexto="Reanudar"
+          sub="Vuelve al programa con las mismas fechas." puedeGuardar={trabajando !== "reanudar"} onGuardar={confirmarReanudar}>
+          <Field label="Follow Up al volver" ayuda="Sale de Outboarding y su estado vuelve a Activo.">
+            <Select value={reanudar.followUp} onChange={(ev) => setReanudar({ ...reanudar, followUp: ev.target.value })}
+              opciones={followUpsParaVolver(listas.followUps).map((o) => ({ valor: o, texto: o }))} />
+          </Field>
+          <div className="devol-opciones">
+            {delPrograma ? (
+              <div className="devol-opcion">
+                <div>
+                  <div className="t-strong">Darle los accesos de {delPrograma.nombre} por la app</div>
+                  <div className="t-sm t-subtle">Wisboo, los grupos de Telegram y las reuniones de Zoom. Lo que ya tiene no se repite y te copiamos el mensaje con los links para mandarle.</div>
+                </div>
+                <Switch checked={reanudar.dar} onChange={(v) => setReanudar({ ...reanudar, dar: v })} etiqueta={`Darle los accesos de ${delPrograma.nombre}`} />
+              </div>
+            ) : (
+              <div className="devol-opcion"><div className="t-sm t-subtle">Su venta no tiene un programa con accesos de la app: los accesos se los das a mano.</div></div>
+            )}
+            <div className="devol-opcion">
+              <div>
+                <div className="t-strong">Las fechas no se corren</div>
+                <div className="t-sm t-subtle">
+                  {afuera.fin ? `Su programa sigue terminando el ${formatoDia(afuera.fin)}` : "Su programa termina cuando tenía que terminar"}: los días que estuvo afuera no se suman.
+                  Si se decide compensarlos, cargale una pausa en Programa. Lo que tenía a mano (como el grupo de WhatsApp de antes) se lo das vos.
+                </div>
+              </div>
+            </div>
+          </div>
+        </ModalForm>
+      )}
       <Confirmar
         abierto={quitar !== null} onCerrar={() => setQuitar(null)} confirmarTexto="Quitar"
         titulo={quitar?.ids ? "¿Quitar este acceso?" : "¿Hacerle el outboarding?"}
@@ -250,12 +310,16 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
       <>
         {prendidos && (
           <AccionesServicio>
+            {acciona && afuera && !noSeReanuda && !pagoDeVuelta && (
+              <Button sm variante="secondary" icono={<RefreshCcw size={14} />} cargando={trabajando === "reanudar"} onClick={abrirReanudar}>Reanudar accesos</Button>
+            )}
             {linksTelegram.length + linksZoom.length > 0 && <Button sm variante="ghost" icono={<Copy size={14} />} onClick={() => void copiarMensaje()}>Copiar mensaje con links</Button>}
             {acciona && vigentes.length > 0 && (
               <Button sm variante="ghost" icono={<UserMinus size={14} />} onClick={() => setQuitar({ texto: "Se le saca el acceso a todos sus cursos de Wisboo, se lo saca de los grupos de Telegram y se cancela su inscripción a las reuniones de Zoom.", wisboo: true })}>Quitar todo</Button>
             )}
+            {/* Si está afuera y se lo puede reanudar, la acción es «Reanudar accesos» (vuelve a activo y le da lo mismo): dar sin reanudar queda en segundo plano. */}
             {acciona && faltan.length > 0
-              ? <Button sm variante="primary" icono={<KeyRound size={14} />} cargando={trabajando === "faltan"} onClick={darLoQueFalta}>Dar lo que falta ({faltan.length})</Button>
+              ? <Button sm variante={afuera && !noSeReanuda ? "ghost" : "primary"} icono={<KeyRound size={14} />} cargando={trabajando === "faltan"} onClick={darLoQueFalta}>Dar lo que falta ({faltan.length})</Button>
               : acciona && <Button sm variante="secondary" icono={<KeyRound size={14} />} onClick={() => setDar(programaSugerido)}>Dar accesos</Button>}
           </AccionesServicio>
         )}
@@ -277,6 +341,16 @@ export function AccesosAlumno({ alumno, venta, manual, outboarding, forma = "tar
             </BloqueServicio>
           );
         })()}
+        {/* Estaba afuera y pagó una cuota atrasada (lib/reanudar-accesos.ts; Lili, 27/11): lo primero que tiene que ver. */}
+        {pagoDeVuelta && !noSeReanuda && (
+          <BloqueServicio titulo="Volvió a pagar">
+            <FilaServicio icono={<RefreshCcw size={15} />} rotulo={`Pagó ${queCuota(pagoDeVuelta.cuota)} el ${formatoDia(pagoDeVuelta.pagoEl)}`}
+              detalle={`Vencía el ${formatoDia(pagoDeVuelta.vencia)} y ya no debe nada vencido. «Reanudar accesos» lo vuelve a activo, le da los accesos y te copia el mensaje para mandarle. Las fechas no se corren${afuera?.fin ? `: termina el ${formatoDia(afuera.fin)}` : ""}.`}>
+              <Badge variante="warning">Para reanudar</Badge>
+              {acciona && <Button sm variante="primary" icono={<RefreshCcw size={14} />} cargando={trabajando === "reanudar"} onClick={abrirReanudar}>Reanudar accesos</Button>}
+            </FilaServicio>
+          </BloqueServicio>
+        )}
         {baja && accesos !== null && (() => {
           const cuotas = baja.cuotas.map((c) => (c.esReserva ? "la reserva" : `la cuota ${c.numero}`)).join(" y ");
           const producto = e.productos.find((p) => p.id === baja.venta.productoId)?.nombre;

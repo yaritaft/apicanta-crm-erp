@@ -161,14 +161,22 @@ export const sinZoom = (nombre: string) => nombre.replace(/\s*[-–]\s*zoom\s*$/
     los cursos, los grupos de Telegram y sus links personales de Zoom. */
 export function mensajeDeBienvenida(nombre: string, programa: string, links: LinkDeAcceso[]): string {
   const pila = nombre.trim().split(/\s+/)[0] || "";
+  return [`¡Hola${pila ? ` ${pila}` : ""}! Ya sos parte de ${programa}.`, ...bloquesDeLinks(links)].join("\n\n");
+}
+
+/** El mensaje para quien vuelve después de ponerse al día con los pagos (lib/reanudar-accesos.ts; Lili, 27/11: «que me notifique
+    para enviarle mensaje»): los mismos links, con un saludo de vuelta en vez del de bienvenida. */
+export function mensajeDeVuelta(nombre: string, programa: string, links: LinkDeAcceso[]): string {
+  const pila = nombre.trim().split(/\s+/)[0] || "";
+  const hola = `¡Hola${pila ? ` ${pila}` : ""}! Ya registramos tu pago y te reactivamos ${programa}.`;
+  return [links.length ? `${hola} Te dejo tus accesos de nuevo:` : hola, ...bloquesDeLinks(links)].join("\n\n");
+}
+
+function bloquesDeLinks(links: LinkDeAcceso[]): string[] {
   const de = (p: LinkDeAcceso["plataforma"]) => links.filter((l) => l.plataforma === p).map((l) => `• ${l.plataforma === "zoom" ? sinZoom(l.nombre) : l.nombre}: ${l.url}`);
-  const bloques = [
+  return [
     de("wisboo").length ? ["Tus cursos (la primera vez elegís tu contraseña):", ...de("wisboo")] : [],
     de("telegram").length ? ["Tus grupos de Telegram (cada link es personal y se usa una sola vez):", ...de("telegram")] : [],
     de("zoom").length ? ["Tus clases en vivo por Zoom (guardá estos links, son tuyos):", ...de("zoom")] : [],
-  ].filter((b) => b.length);
-  return [
-    `¡Hola${pila ? ` ${pila}` : ""}! Ya sos parte de ${programa}.`,
-    ...bloques.map((b) => b.join("\n")),
-  ].join("\n\n");
+  ].filter((b) => b.length).map((b) => b.join("\n"));
 }
