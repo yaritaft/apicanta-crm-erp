@@ -4,8 +4,9 @@ import { pasosDeFinanzas, semanaDe, type Chequeos } from "./finanzas-pasos";
 import type { Chequeo, PasoCierre } from "./cierre-mes";
 
 /* ==================================================================
-   El cierre del día de Finanzas (el EOD de Aldana), como el de los closers:
-   al final del día pasa por sus tareas de a una y cuenta cómo le fue.
+   El cierre del día de Finanzas (el EOD de Aldana): al final del día pasa
+   por sus tareas y cuenta cómo le fue. Desde el 27/11 es una sola pantalla
+   tipo checklist (antes, un asistente de una pantalla por tarea).
 
    - Cada día se piden las tareas de todos los días (banco, ingresos, cuotas,
      Slack, la financiera, la caja, las pasarelas, los reembolsos…); los
@@ -25,10 +26,10 @@ import type { Chequeo, PasoCierre } from "./cierre-mes";
 
 export type RespuestaDia = "hecho" | "no-llegue" | "no-hacia-falta";
 
-export const RESPUESTAS: { id: RespuestaDia; nombre: string; sub: string }[] = [
-  { id: "hecho", nombre: "Hecho", sub: "Lo hice" },
-  { id: "no-llegue", nombre: "No llegué", sub: "Queda pendiente: mañana se vuelve a preguntar" },
-  { id: "no-hacia-falta", nombre: "Hoy no hacía falta", sub: "No hubo nada para hacer" },
+export const RESPUESTAS: { id: RespuestaDia; nombre: string; corto: string; sub: string }[] = [
+  { id: "hecho", nombre: "Hecho", corto: "Hecho", sub: "Lo hice" },
+  { id: "no-llegue", nombre: "No llegué", corto: "No llegué", sub: "Queda pendiente: mañana se vuelve a preguntar" },
+  { id: "no-hacia-falta", nombre: "Hoy no hacía falta", corto: "No hacía falta", sub: "No hubo nada para hacer" },
 ];
 
 export const CIERRE_DEL_DIA = "_cierre";
@@ -47,7 +48,7 @@ const sumarDias = (dia: string, n: number) => new Date(Date.parse(`${dia}T12:00:
 const diaDeSemana = (dia: string) => new Date(`${dia}T12:00:00Z`).getUTCDay();          // 0 domingo … 6 sábado
 export const esLaboral = (dia: string) => { const d = diaDeSemana(dia); return d >= 1 && d <= 5; };
 /* Las tareas de la semana se piden el viernes (y el fin de semana, si se cierra el día igual). */
-const tocaLaSemana = (dia: string) => { const d = diaDeSemana(dia); return d === 5 || d === 6 || d === 0; };
+export const tocaLaSemana = (dia: string) => { const d = diaDeSemana(dia); return d === 5 || d === 6 || d === 0; };
 /** Cuántos días hacia atrás se arrastra lo que quedó sin hacer. */
 const DIAS_QUE_ARRASTRA = 21;
 
@@ -81,9 +82,25 @@ export interface PreguntaDia {
 interface Opciones { ahora?: number; esDueno: boolean }
 
 /** Las tareas de un día: lo de todos los días, lo de la semana si toca, y lo que quedó pendiente de antes (primero). */
-export function preguntasDelDia(e: EstadoApp, dia: string, chequeos: Chequeos, { ahora = Date.now(), esDueno }: Opciones): PreguntaDia[] {
+export function preguntasDelDia(e: EstadoApp, dia: string, chequeos: Chequeos, o: Opciones): PreguntaDia[] {
+  return preguntasConTareas(tareasDelDia(e, dia, o), dia, chequeos);
+}
+
+/* Lo que se calcula con lo cargado (lo pesado: cuánto falta conciliar, validar, cobrar…) va aparte de lo contestado (lo liviano), así la pantalla
+   del cierre lo calcula una vez y tildar una tarea no lo vuelve a calcular (Aldana, 27/11: «las pantallas tardan en pasar»). */
+export interface TareasDelDia { diarias: PreguntaDia[]; semanales: PreguntaDia[] }
+
+/** Las tareas de todos los días y las de la semana de ese día, con lo que ve la app ahora. No dependen de lo contestado. */
+export function tareasDelDia(e: EstadoApp, dia: string, { ahora = Date.now(), esDueno }: Opciones): TareasDelDia {
   const diarias = pasosDeFinanzas(e, "dia", dia, { ahora, esDueno, chequeos: {} }).map((paso): PreguntaDia => ({ id: paso.id, paso, cadencia: "dia" }));
   const semanales = pasosDeFinanzas(e, "semana", semanaDe(dia), { ahora, esDueno, chequeos: {} }).map((paso): PreguntaDia => ({ id: paso.id, paso, cadencia: "semana" }));
+  return { diarias, semanales };
+}
+
+/** Las preguntas de un día a partir de sus tareas y de lo contestado los días anteriores. No toca `tareas` (se puede guardar y reusar). */
+export function preguntasConTareas(tareas: TareasDelDia, dia: string, chequeos: Chequeos): PreguntaDia[] {
+  const diarias = tareas.diarias.map((p) => ({ ...p }));
+  const semanales = tareas.semanales.map((p) => ({ ...p }));
   const todas = new Map([...diarias, ...semanales].map((p) => [p.id, p] as const));
   const base = tocaLaSemana(dia) ? [...diarias, ...semanales] : diarias;
   const hay = new Map(base.map((p) => [p.id, p] as const));
@@ -152,3 +169,38 @@ export function diasDelEod(chequeos: Chequeos, ahora: number, cuantos = 7): DiaD
   }
   return out;
 }
+
+/* ---------- El día en una pantalla ----------
+   Aldana (27/11): «completar el reporte diario me toma mucho tiempo porque las pantallas tardan en pasar… ¿tipo que esté en una sola pantalla tipo
+   checklist?». Todas las tareas del día en una lista: cada una se contesta con un toque y se guarda en el momento (la misma fila de siempre,
+   `eod|día|tarea`), y el día se cierra cuando no falta ninguna. Las reglas son las del asistente de antes: «No llegué» pide el motivo. */
+
+export interface Respuesta { estado?: RespuestaDia; nota?: string }
+
+/** Lo que le falta a una respuesta para contar, o null si está completa. */
+export function problemaDeRespuesta(r: Respuesta | undefined): string | null {
+  if (!r?.estado) return "Elegí una opción";
+  if (r.estado === "no-llegue" && !r.nota?.trim()) return "Contá por qué no llegaste y para cuándo";
+  return null;
+}
+
+/** Lo contestado de un día, tarea por tarea (lo que está guardado). */
+export function respuestasDelDia(chequeos: Chequeos, dia: string): Record<string, Respuesta> {
+  const r: Record<string, Respuesta> = {};
+  for (const x of registrosEod(chequeos)) if (x.dia === dia) r[x.tarea] = { estado: x.estado, nota: x.nota };
+  return r;
+}
+
+export interface CuentaDelDia { total: number; contestadas: number; hechas: number; noLlegue: number; noHaciaFalta: number; faltan: PreguntaDia[] }
+
+/** Cómo va el día: cuántas se contestaron (completas), de qué manera, y cuáles faltan, en el orden de la lista. */
+export function cuentaDelDia(preguntas: PreguntaDia[], resp: Record<string, Respuesta>): CuentaDelDia {
+  const faltan = preguntas.filter((p) => problemaDeRespuesta(resp[p.id]));
+  const completas = preguntas.filter((p) => !problemaDeRespuesta(resp[p.id]));
+  const de = (e: RespuestaDia) => completas.filter((p) => resp[p.id]?.estado === e).length;
+  return { total: preguntas.length, contestadas: completas.length, hechas: de("hecho"), noLlegue: de("no-llegue"), noHaciaFalta: de("no-hacia-falta"), faltan };
+}
+
+/** Si dijo «Hecho» pero la app todavía ve cosas pendientes en esa tarea (sólo en las que se calculan). */
+export const sigueFaltandoEnLaApp = (p: PreguntaDia, r: Respuesta | undefined): boolean =>
+  p.paso.tipo !== "manual" && r?.estado === "hecho" && p.paso.faltan > 0;

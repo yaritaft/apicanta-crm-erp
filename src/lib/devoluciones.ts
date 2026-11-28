@@ -505,6 +505,30 @@ export function ventasDelPedido(
     const v = e.ventas.find((x) => x.id === p.ventaId);
     return v ? [v] : [];
   }
+  return ventasDelPedidoCon(e, indiceDeVentas(e), p);
+}
+
+/* Lo que hace falta para reconocer las ventas de una persona, armado una sola vez. Antes cada venta buscaba su contacto recorriendo los contactos y
+   los leads enteros (dos veces): con ~1000 ventas, ~7600 personas y 24 llamadas en «Devolución», el aviso del menú y el cierre del día de Finanzas
+   tardaban más de medio segundo en cada cambio (Aldana, 27/11: «las pantallas tardan en pasar»). */
+interface IndiceDeVentas {
+  /* El contacto o el lead de cada id: si hay los dos, manda el contacto (como antes, que se buscaba primero ahí). */
+  porId: Map<ID, { contactoId?: ID; email?: string; nombre?: string }>;
+  ventas: { v: Venta; email: string; nombre: string }[];
+}
+
+function indiceDeVentas(e: Pick<EstadoApp, "ventas" | "leads" | "contactos">): IndiceDeVentas {
+  const porId: IndiceDeVentas["porId"] = new Map();
+  for (const l of e.leads ?? []) porId.set(l.id, l);
+  for (const c of e.contactos ?? []) porId.set(c.id, c);
+  const ventas = e.ventas.map((v) => {
+    const c = v.contactoId ? porId.get(v.contactoId) : undefined;
+    return { v, email: c?.email ? sinTildes(c.email) : "", nombre: sinTildes(v.contactoNombre) };
+  });
+  return { porId, ventas };
+}
+
+function ventasDelPedidoCon(e: Pick<EstadoApp, "sesiones">, idx: IndiceDeVentas, p: PedidoDeVentas): Venta[] {
   const sesion = p.sesionId ? e.sesiones.find((s) => s.id === p.sesionId) : undefined;
   const ids = new Set<ID>([p.personaId, sesion?.leadId].filter((x): x is ID => Boolean(x)));
   const emails = new Set<string>();
@@ -514,19 +538,16 @@ export function ventasDelPedido(
   if (p.email) emails.add(sinTildes(p.email));
   if (p.nombre) nombres.add(sinTildes(p.nombre));
   for (const id of [...ids]) {
-    const c = (e.contactos ?? []).find((x) => x.id === id) ?? (e.leads ?? []).find((x) => x.id === id);
+    const c = idx.porId.get(id);
     if (!c) continue;
-    if ((c as { contactoId?: ID }).contactoId) ids.add((c as { contactoId?: ID }).contactoId as ID);
+    if (c.contactoId) ids.add(c.contactoId);
     if (c.email) emails.add(sinTildes(c.email));
     if (c.nombre) nombres.add(sinTildes(c.nombre));
   }
   if (ids.size === 0 && emails.size === 0 && nombres.size === 0) return [];
-  const delContacto = (v: Venta) => {
-    const c = v.contactoId ? (e.contactos ?? []).find((x) => x.id === v.contactoId) ?? (e.leads ?? []).find((x) => x.id === v.contactoId) : undefined;
-    return c?.email ? sinTildes(c.email) : "";
-  };
-  return e.ventas
-    .filter((v) => (v.contactoId && ids.has(v.contactoId)) || (delContacto(v) && emails.has(delContacto(v))) || nombres.has(sinTildes(v.contactoNombre)))
+  return idx.ventas
+    .filter(({ v, email, nombre }) => (v.contactoId && ids.has(v.contactoId)) || (email && emails.has(email)) || nombres.has(nombre))
+    .map(({ v }) => v)
     .sort((a, b) => Date.parse(b.fecha) - Date.parse(a.fecha));
 }
 
@@ -605,9 +626,11 @@ export function llamadasEnDevolucionSinCargar(
     (e.devoluciones ?? []).filter((d) => d.estado !== "ignorada" && d.ventaId).map((d) => d.ventaId as ID),
   );
   const out: LlamadaEnDevolucion[] = [];
+  let idx: IndiceDeVentas | undefined;
   for (const s of e.sesiones) {
     if (!s.estadoLlamada || !nombres.has(s.estadoLlamada)) continue;
-    const ventas = ventasDelPedido(e, { sesionId: s.id });
+    idx ??= indiceDeVentas(e);
+    const ventas = ventasDelPedidoCon(e, idx, { sesionId: s.id });
     /* Con una venta de esa persona que ya tiene su devolución, está cargada; sin
        ventas con cobros, no hay plata que devolver (todavía no se cargó la venta). */
     if (ventas.some((v) => conDevolucion.has(v.id))) continue;

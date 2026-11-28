@@ -118,11 +118,7 @@ button.cm-fila:hover, a.cm-fila:hover { background: var(--cm-bloque-alto); borde
 /* ---------- End of Day: el cierre del día de Finanzas ---------- */
 
 .cm-eod { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
-.cm-eod__hoy { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4) var(--space-5); }
-.cm-eod__texto { flex: 1 1 320px; min-width: 0; }
-.cm-eod__titulo { margin: 0; font-size: 18px; line-height: 24px; font-weight: 650; color: var(--ink); }
 .cm-eod__sub { margin: 4px 0 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); }
-.cm-eod__sub b { color: var(--ink); font-weight: 600; }
 
 /* Los últimos días: uno por renglón, el estado a la vista. */
 .cm-dias { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; }
@@ -138,19 +134,6 @@ button.cm-fila:hover, a.cm-fila:hover { background: var(--cm-bloque-alto); borde
 .cm-dia--hoy .cm-dia__estado { background: var(--brand-soft); color: var(--brand); }
 .cm-dia__resumen { font-size: 13px; color: var(--ink-muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 640px) { .cm-dia { grid-template-columns: 64px minmax(0, 1fr); } .cm-dia__resumen { grid-column: 1 / -1; } }
-
-/* Adentro del asistente. */
-.cm-eod__app { padding: 14px 18px; border-radius: 16px; background: var(--surface-200); }
-.cm-eod__app p { margin: 6px 0 0; font-size: 15px; line-height: 22px; color: var(--ink); }
-.cm-eod__antes { display: flex; align-items: flex-start; gap: var(--space-3); padding: 12px 16px; border-radius: 14px; background: var(--warning-soft); color: var(--warning); font-size: 14px; line-height: 20px; }
-.cm-eod__antes svg { flex: none; margin-top: 2px; }
-.cm-eod__totales { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
-.cm-eod__totales > div { display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; border-radius: 16px; background: var(--surface-200); }
-.cm-eod__totales b { font-size: 32px; line-height: 1.1; font-weight: 700; color: var(--ink); }
-.cm-eod__totales span { font-size: 13px; color: var(--ink-subtle); }
-.cm-eod__lista { display: flex; flex-direction: column; gap: 6px; }
-.cm-eod__lista p { margin: 0; font-size: 14px; color: var(--ink-muted); }
-.cm-eod__lista b { color: var(--ink); font-weight: 600; }
 
 /* ---------- El mes en una pantalla: una línea por paso ---------- */
 .cm { gap: 14px; }
@@ -199,8 +182,9 @@ button.cm-fila:hover, a.cm-fila:hover { background: var(--cm-bloque-alto); borde
 .cm-dial--cerrado .cm-dial__marca { background: var(--success); color: var(--surface-000); }
 .cm-dial--sin-cerrar .cm-dial__marca { background: var(--warning-soft); color: var(--warning); }
 .cm-dial--sin-cerrar .cm-dial__est { color: var(--warning); }
-.cm-dial--hoy { border-color: var(--brand); }
 .cm-dial--hoy .cm-dial__est { color: var(--brand); }
+/* El día que se está mirando abajo. */
+.cm-dial[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); }
 @media (max-width: 560px) { .cm-semana { gap: 4px; } .cm-dial { padding: 8px 2px; } .cm-dial__num { font-size: 18px; } .cm-dial__est { display: none; } }
 .cm-step__ir { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--ink-subtle); cursor: pointer; }
 .cm-step__ir:hover { background: var(--cm-bloque-alto); color: var(--ink); }
@@ -220,3 +204,95 @@ button.cm-fila:hover, a.cm-fila:hover { background: var(--cm-bloque-alto); borde
 .cm-herramienta__tit { display: none; }
 .cm-herramienta + .cm-herramienta .cm-herramienta__tit, .cm-herramienta:has(+ .cm-herramienta) .cm-herramienta__tit { display: flex; }
 .cm-herramienta .hk-table th, .cm-herramienta .hk-table td { padding-left: var(--space-3); padding-right: var(--space-3); }
+
+/* ---------- End of Day en una sola pantalla (Aldana, 27/11) ----------
+   Todas las tareas del día en una lista: cada una con su casillero (el círculo de la izquierda se pinta con la respuesta) y las tres
+   respuestas a un toque. Lo contestado se apaga un poco, para que el ojo vaya a lo que falta. Abajo, fijo, cuántas faltan y el único
+   naranja de la pantalla: «Cerrar el día». */
+.eodl { padding: 0; }
+.eodl-cab { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-5); padding: 18px 22px 14px; }
+.eodl-cab__texto { flex: 1 1 320px; min-width: 0; }
+.eodl-dia { margin: 0; font-size: 18px; line-height: 24px; font-weight: 650; color: var(--ink); }
+.eodl-cab__sub { margin: 3px 0 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+.eodl-cab__sub b { color: var(--ink); font-weight: 600; }
+.eodl-avance { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: 0 0 200px; }
+.eodl-avance__n { font-size: 13px; line-height: 18px; color: var(--ink-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.eodl-avance__n b { font-size: 15px; color: var(--ink); font-weight: 650; }
+.eodl-avance__pista { width: 100%; height: 6px; border-radius: 3px; background: var(--cm-bloque-alto); overflow: hidden; }
+.eodl-avance__pista > i { display: block; height: 100%; border-radius: 3px; background: var(--brand-fill); transition: width 200ms ease-out; }
+.eodl-avance__pista > i[data-listo] { background: var(--success); }
+
+.eodl-lista, .eodl-grupo__lista { list-style: none; margin: 0; padding: 0; }
+.eodl-grupo__tit { margin: 0; padding: 14px 22px 6px; border-top: 1px solid var(--cm-linea); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--ink-subtle); }
+.eodl-grupo__tit + .eodl-grupo__lista > .eodl-tarea:first-child { border-top: 0; }
+
+.eodl-tarea { display: grid; grid-template-columns: 26px minmax(0, 1fr); column-gap: 14px; padding: 14px 22px; border-top: 1px solid var(--cm-linea); scroll-margin: 96px 0 120px; }
+.eodl-marca { width: 26px; height: 26px; margin-top: 4px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--border-strong); color: var(--ink-subtle); background: none; }
+.eodl-tarea[data-estado="hecho"] .eodl-marca { background: var(--success); border-color: var(--success); color: var(--surface-000); }
+.eodl-tarea[data-estado="no-llegue"] .eodl-marca, .eodl-tarea[data-estado="falta"] .eodl-marca { background: var(--warning-soft); border-color: var(--warning); color: var(--warning); }
+.eodl-tarea[data-estado="no-hacia-falta"] .eodl-marca { background: var(--cm-bloque-alto); border-color: var(--cm-bloque-alto); color: var(--ink-muted); }
+
+.eodl-tarea__fila { display: flex; align-items: flex-start; gap: var(--space-4); min-width: 0; }
+.eodl-tarea__texto { flex: 1 1 auto; min-width: 0; }
+.eodl-tarea__titulo { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; font-size: 15px; line-height: 22px; font-weight: 600; color: var(--ink); }
+.eodl-app { height: 20px; min-width: 20px; padding: 0 8px; font-size: 12px; font-weight: 600; }
+.eodl-tarea__antes { margin: 2px 0 0; font-size: 13px; line-height: 19px; color: var(--warning); }
+.eodl-tarea__det { margin: 2px 0 0; font-size: 13px; line-height: 19px; color: var(--ink-muted); }
+.eodl-tarea[data-estado="hecho"] .eodl-tarea__titulo, .eodl-tarea[data-estado="no-hacia-falta"] .eodl-tarea__titulo { color: var(--ink-muted); font-weight: 500; }
+.eodl-tarea[data-estado="hecho"] .eodl-tarea__det, .eodl-tarea[data-estado="no-hacia-falta"] .eodl-tarea__det { color: var(--ink-subtle); }
+
+/* Las tres respuestas, como un selector de una sola opción. */
+.eodl-ops { flex: none; display: inline-flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--cm-bloque-alto); }
+.eodl-op svg { flex: none; }
+.eodl-op { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 12px; border: 0; border-radius: 9px; background: none; font: inherit; font-size: 13px; font-weight: 500; color: var(--ink-muted); cursor: pointer; white-space: nowrap; transition: background-color 120ms ease-out, color 120ms ease-out; }
+.eodl-op:hover:not(:disabled):not([aria-checked="true"]) { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.eodl-op:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.eodl-op:disabled { cursor: default; }
+.eodl-op:disabled:not([aria-checked="true"]) { opacity: .55; }
+.eodl-op[aria-checked="true"] { font-weight: 650; }
+.eodl-op[data-op="hecho"][aria-checked="true"] { background: var(--success-soft); color: var(--success); }
+.eodl-op[data-op="no-llegue"][aria-checked="true"] { background: var(--warning-soft); color: var(--warning); }
+.eodl-op[data-op="no-hacia-falta"][aria-checked="true"] { background: var(--cm-bloque); color: var(--ink); }
+
+.eodl-tarea__aviso { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 0; font-size: 13px; line-height: 18px; color: var(--warning); }
+.eodl-tarea__aviso svg { flex: none; margin-top: 2px; }
+.eodl-nota { margin-top: 10px; }
+/* El motivo que falta se pinta en el casillero mismo. */
+.eodl-nota[data-falta] .hk-input { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 7%, var(--surface-100)); }
+.eodl-acciones { flex: none; display: flex; align-items: center; gap: 4px; }
+.eodl-nota-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 40px; border: 0; border-radius: 10px; background: none; color: var(--ink-subtle); cursor: pointer; }
+.eodl-nota-btn:hover { color: var(--ink); background: var(--cm-bloque-alto); }
+.eodl-nota-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.eodl-nota-btn[data-oculto] { visibility: hidden; }
+
+.eodl-notadia { display: flex; flex-direction: column; gap: 8px; padding: 16px 22px 20px; border-top: 1px solid var(--cm-linea); }
+.eodl-opcional { margin-left: 4px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+
+/* El pie: fijo abajo mientras se baja por la lista. */
+.eodl-pie { position: sticky; bottom: 14px; z-index: 5; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3) var(--space-4); padding: 10px 12px 10px 18px; border-radius: 16px; background: var(--surface-100); box-shadow: 0 0 0 1px var(--border), 0 10px 30px #0000003d; }
+[data-theme="light"] .eodl-pie { box-shadow: 0 0 0 1px var(--border), 0 10px 30px #1a103024; }
+.eodl-pie__estado { flex: 1 1 260px; min-width: 0; }
+.eodl-pie__falta { display: inline-flex; align-items: center; gap: 8px; padding: 4px 0; border: 0; background: none; font: inherit; font-size: 14px; line-height: 20px; color: var(--warning); cursor: pointer; text-align: left; border-radius: 6px; }
+.eodl-pie__falta svg { flex: none; }
+.eodl-pie__falta:hover span { text-decoration: underline; text-underline-offset: 3px; }
+.eodl-pie__falta:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.eodl-pie__ok { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; color: var(--success); font-weight: 500; }
+.eodl-pie__ok--listo { color: var(--ink); }
+.eodl-pie .hk-btn { flex: none; margin-left: auto; }
+
+@media (max-width: 760px) {
+  .eodl-cab, .eodl-notadia { padding-left: 16px; padding-right: 16px; }
+  .eodl-grupo__tit { padding-left: 16px; padding-right: 16px; }
+  .eodl-avance { flex: 1 1 100%; align-items: stretch; }
+  .eodl-avance__n { align-self: flex-start; }
+  .eodl-tarea { grid-template-columns: 24px minmax(0, 1fr); column-gap: 10px; padding: 14px 16px; }
+  .eodl-marca { width: 24px; height: 24px; margin-top: 0; }
+  .eodl-tarea__fila { flex-direction: column; gap: 10px; }
+  /* Las respuestas usan todo el ancho de la tarjeta (también debajo del casillero) y sin íconos: así entran las tres en un teléfono de 360. */
+  .eodl-acciones { width: calc(100% + 34px); margin-left: -34px; }
+  .eodl-ops { flex: 1 1 auto; display: flex; min-width: 0; }
+  .eodl-op { flex: 1 1 auto; padding: 0 6px; height: 40px; }
+  .eodl-op svg { display: none; }
+  .eodl-pie { bottom: 8px; padding: 10px 12px; }
+  .eodl-pie .hk-btn { width: 100%; justify-content: center; }
+}
